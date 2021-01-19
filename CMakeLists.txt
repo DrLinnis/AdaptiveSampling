@@ -61,12 +61,13 @@ endif( DX12LIB_BUILD_SAMPLES )
 
 # My own added code:
 add_subdirectory( projects/RayTray )
+add_subdirectory( projects/Playground )
 
-set_target_properties( RayTray
+set_target_properties( RayTray Playground 
     PROPERTIES
         FOLDER RTRTprojects
 )
 
 set_directory_properties( PROPERTIES 
-    VS_STARTUP_PROJECT RayTray
+    VS_STARTUP_PROJECT Playground
 )
