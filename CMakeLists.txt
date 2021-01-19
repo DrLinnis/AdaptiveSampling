@@ -1,6 +1,6 @@
 cmake_minimum_required( VERSION 3.16.1 ) # Latest version of CMake when this file was created.
 
-option( DX12LIB_BUILD_SAMPLES "Build samples for DX12Lib" ON )
+option( DX12LIB_BUILD_SAMPLES "Build samples for DX12Lib" OFF )
 
 # Use solution folders to organize projects
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -38,6 +38,7 @@ add_subdirectory( extern/DirectXTex )
 add_subdirectory( GameFramework )
 add_subdirectory( DX12Lib )
 
+
 if ( DX12LIB_BUILD_SAMPLES )
     add_subdirectory( Samples/01-ClearScreen)
     add_subdirectory( Samples/02-Cube )
@@ -55,3 +56,17 @@ if ( DX12LIB_BUILD_SAMPLES )
         VS_STARTUP_PROJECT 05-Models
     )
 endif( DX12LIB_BUILD_SAMPLES )
+
+
+
+# My own added code:
+add_subdirectory( projects/RayTray )
+
+set_target_properties( RayTray
+    PROPERTIES
+        FOLDER RTRTprojects
+)
+
+set_directory_properties( PROPERTIES 
+    VS_STARTUP_PROJECT RayTray
+)
