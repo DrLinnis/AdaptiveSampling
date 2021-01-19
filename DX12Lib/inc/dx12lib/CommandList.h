@@ -410,6 +410,19 @@ public:
         SetGraphicsDynamicStructuredBuffer( slot, bufferData.size(), sizeof( T ), bufferData.data() );
     }
 
+
+    /**
+     * Set dynamic structured buffer contents.  // Author: Linus
+     */
+    void SetComputeDynamicStructuredBuffer( uint32_t slot, size_t numElements, size_t elementSize,
+                                            const void* bufferData );
+    template<typename T>
+    void SetComputeDynamicStructuredBuffer( uint32_t slot, const std::vector<T>& bufferData )
+    {
+        SetComputeDynamicStructuredBuffer( slot, bufferData.size(), sizeof( T ), bufferData.data() );
+    }
+
+
     /**
      * Set viewports.
      */

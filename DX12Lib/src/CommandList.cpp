@@ -1105,10 +1105,10 @@ std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, bool
     // clang-format off
     // Define a plane that is aligned with the X-Z plane and the normal is facing up in the Y-axis.
     VertexCollection vertices = {
-        Vertex( XMFLOAT3( -0.5f * width, 0.0f, 0.5f * height ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
-        Vertex( XMFLOAT3( 0.5f * width, 0.0f, 0.5f * height ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
-        Vertex( XMFLOAT3( 0.5f * width, 0.0f, -0.5f * height ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
-        Vertex( XMFLOAT3( -0.5f * width, 0.0f, -0.5f * height ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
+        Vertex( XMFLOAT3( -0.5f * width, 0.5f * height, 0.0 ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width, 0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
     };
     // clang-format on
     IndexCollection indices = { 1, 3, 0, 2, 3, 1 };
@@ -1272,6 +1272,19 @@ void CommandList::SetGraphicsDynamicStructuredBuffer( uint32_t slot, size_t numE
 
     m_d3d12CommandList->SetGraphicsRootShaderResourceView( slot, heapAllocation.GPU );
 }
+
+void CommandList::SetComputeDynamicStructuredBuffer( uint32_t slot, size_t numElements, size_t elementSize,
+                                                      const void* bufferData )
+{
+    size_t bufferSize = numElements * elementSize;
+
+    auto heapAllocation = m_UploadBuffer->Allocate( bufferSize, elementSize );
+
+    memcpy( heapAllocation.CPU, bufferData, bufferSize );
+    m_d3d12CommandList->SetComputeRootShaderResourceView( slot, heapAllocation.GPU );
+}
+
+
 void CommandList::SetViewport( const D3D12_VIEWPORT& viewport )
 {
     SetViewports( { viewport } );
