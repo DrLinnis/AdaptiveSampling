@@ -4,10 +4,12 @@ set( TARGET_NAME RayTray )
 
 set( HEADER_FILES
     inc/DummyGame.h
+    inc/SceneVisitor.h
 )
 
 set( SRC_FILES
     src/main.cpp
+    src/SceneVisitor.cpp
     src/DummyGame.cpp
 )
 
