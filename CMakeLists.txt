@@ -10,7 +10,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Output directory f
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) # Output directory for shared lib (.DLL)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) # Output directory for executables (.EXE)
 
-project( LearningDirectX12 LANGUAGES CXX )
+project( DXRframework LANGUAGES CXX )
 
 # Enable to build shared libraries.
 option(BUILD_SHARED_LIBS "Create shared libraries." OFF)
