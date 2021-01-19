@@ -14,14 +14,14 @@ shaders and RTRT.
 Open source code is free to use. GO HAM.
 
 Intro tutorials:
-http://rtintro.realtimerendering.com/
-http://intro-to-dxr.cwyman.org/
+    http://rtintro.realtimerendering.com/
+    http://intro-to-dxr.cwyman.org/
 
 "Advance" tutorials/tips:
-https://developer.nvidia.com/blog/best-practices-using-nvidia-rtx-ray-tracing/
-https://developer.nvidia.com/blog/profiling-dxr-shaders-with-timer-instrumentation/
-https://developer.nvidia.com/blog/rtx-best-practices/
-https://sites.google.com/view/arewedonewithraytracing
+    https://developer.nvidia.com/blog/best-practices-using-nvidia-rtx-ray-tracing/
+    https://developer.nvidia.com/blog/profiling-dxr-shaders-with-timer-instrumentation/
+    https://developer.nvidia.com/blog/rtx-best-practices/
+    https://sites.google.com/view/arewedonewithraytracing
 
 #### Resources:
     https://github.com/NVIDIAGameWorks/DxrTutorials
