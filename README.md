@@ -1,7 +1,6 @@
 # AdaptiveSampling
     Master Thesis in RTRT, applying spatial-temporal adaptive sampling in real-time. 
-***
-
+    
 ### Credit:
 ---
 
