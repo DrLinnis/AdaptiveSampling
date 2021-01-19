@@ -1,11 +1,31 @@
-# LearningDirectX12
+# AdaptiveSampling
+    Master Thesis in RTRT, applying spatial-temporal adaptive sampling in real-time. 
+***
 
-This repository is intended to be used as a code repository for learning DirectX 12. The tutorials can be found on https://www.3dgep.com
+### Credit:
+DXR12 Framework based on https://github.com/jpvanoosten/LearningDirectX12 but modified for compute
+shaders and RTRT. 
+---
+    
+### Meetings:
+##### Meeting notes 19/1:
+---
+Open source code is free to use. GO HAM.
 
-This project uses [CMake](https://cmake.org/) (3.18.3 or newer) to generate the project and solution files.
+Intro tutorials:
+http://rtintro.realtimerendering.com/
+http://intro-to-dxr.cwyman.org/
 
-To use this project, run the [GenerateProjectFiles.bat](GenerateProjectFiles.bat) script and open the generated Visual Studio solution file in the build_vs2017 or build_vs2019 folder that gets created (depending on the version of Visual Studio you have installed).
+"Advance" tutorials/tips:
+https://developer.nvidia.com/blog/best-practices-using-nvidia-rtx-ray-tracing/
+https://developer.nvidia.com/blog/profiling-dxr-shaders-with-timer-instrumentation/
+https://developer.nvidia.com/blog/rtx-best-practices/
+https://sites.google.com/view/arewedonewithraytracing
 
-Assets for the samples can be downloaded using the [DownloadAssets.bat](DownloadAssets.bat) batch file located in the root folder of this project.
+#### Resources:
+    https://github.com/NVIDIAGameWorks/DxrTutorials
+    
+    
 
-For more instructions see [Getting Started](https://github.com/jpvanoosten/LearningDirectX12/wiki/Getting-Started).
+
+
