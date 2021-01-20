@@ -34,7 +34,7 @@ using namespace DirectX;
 // An enum for root signature parameters.
 // I'm not using scoped enums to avoid the explicit cast that would be required
 // to use these as root indices in the root signature.
-namespace RootParameters
+namespace DisplayRootParameters
 {
 enum
 {
@@ -297,15 +297,15 @@ bool DummyGame::LoadContent()
 
         CD3DX12_DESCRIPTOR_RANGE1 descriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
 
-        CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-        rootParameters[RootParameters::Textures].InitAsDescriptorTable( 1, &descriptorRange,
+        CD3DX12_ROOT_PARAMETER1 rootParameters[DisplayRootParameters::NumRootParameters];
+        rootParameters[DisplayRootParameters::Textures].InitAsDescriptorTable( 1, &descriptorRange,
                                                                                D3D12_SHADER_VISIBILITY_PIXEL );
 
         CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler( 0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR );
         //CD3DX12_STATIC_SAMPLER_DESC anisotropicSampler( 0, D3D12_FILTER_ANISOTROPIC );
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( RootParameters::NumRootParameters, rootParameters, 1, &linearClampSampler,
+        rootSignatureDescription.Init_1_1( DisplayRootParameters::NumRootParameters, rootParameters, 1, &linearClampSampler,
                                            rootSignatureFlags );
 
         m_DisplayRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
@@ -540,7 +540,7 @@ void DummyGame::OnRender()
     float scalePlane      = 20.0f;
     float translateOffset = scalePlane / 2.0f;
 
-    commandList->SetShaderResourceView( RootParameters::Textures, 0,
+    commandList->SetShaderResourceView( DisplayRootParameters::Textures, 0,
         m_RenderShaderView, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
     m_Plane->Accept( visitor );
 

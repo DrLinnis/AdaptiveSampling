@@ -31,10 +31,17 @@ using namespace DirectX;
 #include <algorithm>  // For std::min, std::max, and std::clamp.
 #include <random>
 
-// An enum for root signature parameters.
-// I'm not using scoped enums to avoid the explicit cast that would be required
-// to use these as root indices in the root signature.
-namespace RootParameters
+namespace PostProcessingRootParamaters
+{
+enum
+{
+    Input,      // Texture2D Output : register( t0 );
+    Output,     // RWTexture2D Output : register( u0 );
+    NumRootParameters
+};
+}
+
+namespace DisplayRootParameters
 {
 enum
 {
@@ -44,62 +51,6 @@ enum
 }
 
 
-void DummyGame::FillRandomScene() {
-    materialList.clear();
-
-    materialList.push_back( Ray::Material( MODE_MATERIAL_DIALECTIC, 1.5 ) );
-    materialList.push_back( Ray::Material( MODE_MATERIAL_COLOUR, { 0.5, 0.5, 0.5 } ) );
-
-    sphereList.clear();
-    sphereList.push_back( Ray::Sphere( 0, -1000, 0, 1000, materialList.size() - 1 ));
-    for ( int a = -11; a < 11; a++ )
-    {
-        for ( int b = -11; b < 11; b++ )
-        {
-            float choose_mat = Math::random_double();
-            float center[]   = { a + 0.9 * Math::random_double(), 0.2, b + 0.9 * Math::random_double() };
-
-            if ( choose_mat < 0.8 )
-            {
-                // diffuse
-                std::array<float, 3> albedo = { Math::random_double() * Math::random_double(),
-                    Math::random_double() * Math::random_double(),
-                    Math::random_double() * Math::random_double()
-                };
-                materialList.push_back(Ray::Material( MODE_MATERIAL_COLOUR, albedo ));
-                sphereList.push_back( Ray::Sphere( center, 0.2, materialList.size() - 1 ) );
-            }
-            else if ( choose_mat < 0.95 )
-            {
-                // metal
-                std::array<float, 3> albedo = { Math::random_double( 0.5, 1 ) * Math::random_double( 0.5, 1 ),
-                                    Math::random_double( 0.5, 1 ) * Math::random_double( 0.5, 1 ),
-                                    Math::random_double( 0.5, 1 ) * Math::random_double( 0.5, 1 ) 
-                };
-                float fuzz       = Math::random_double( 0, 0.5 );
-                materialList.push_back( Ray::Material( MODE_MATERIAL_METAL, albedo, fuzz ) );
-                sphereList.push_back( Ray::Sphere( center, 0.2, materialList.size() - 1 ));
-            }
-            else
-            {
-                // glass
-                sphereList.push_back( Ray::Sphere( center[0], center[1], center[2], 
-                    0.2, 0 ));
-            }
-        }
-    }
-
-    // Big Glass
-    sphereList.push_back( Ray::Sphere( 0, 1, 0, 1, 0 ));
-
-    // Big Colour
-    materialList.push_back( Ray::Material( MODE_MATERIAL_COLOUR, { 0.4, 0.2, 0.1 } ) );
-    sphereList.push_back( Ray::Sphere( -4, 1, 0, 1, materialList.size() - 1 ));
-
-    // Big Metal
-    materialList.push_back( Ray::Material( MODE_MATERIAL_COLOUR, { 0.7, 0.6, 0.5 }, 0.5 ) );
-    sphereList.push_back( Ray::Sphere( 4, 1, 0, 1, materialList.size() - 1 ));
-}
 
 DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSync )
 : m_ScissorRect( CD3DX12_RECT( 0, 0, LONG_MAX, LONG_MAX ) )
@@ -128,38 +79,11 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
     m_Window->Resize += ResizeEvent::slot( &DummyGame::OnResize, this );
     m_Window->DPIScaleChanged += DPIScaleEvent::slot( &DummyGame::OnDPIScaleChanged, this );
 
-    // Spheres
-    #if 1
-    materialList = { Ray::Material( MODE_MATERIAL_COLOUR, { 0.4392, 0.5020, 0.5647 } ),
-                     Ray::Material( MODE_MATERIAL_COLOUR, { 0.9373, 0.5569, 0.2196 } ),
-                     Ray::Material( MODE_MATERIAL_METAL, { 0.4392, 0.5020, 0.5647 } , 0.5f ) 
-    };
-    sphereList   = { Ray::Sphere( 0, 1, 5, 1, 0 ),
-                     Ray::Sphere( 5, 2, 5, 2.5, 1 ),
-                     Ray::Sphere( 0, -25, 0, 25, 2 )
-    };
-    #else
-    this->FillRandomScene();
-    #endif
-
-    // Default ray context
-    rayCB.NbrSpheres       = static_cast<uint32_t>( sphereList.size() );
-    rayCB.NbrMaterials     = static_cast<uint32_t>( materialList.size() );
-    rayCB.WindowResolution = { static_cast<uint32_t>( m_Width ), static_cast<uint32_t>( m_Height ) };
-
-    rayCB.VoidColour = { 0.529, 0.808, 0.922, 1 };
-
-    // Default camera
-    camCB.CameraWindow = { 1.6, 0.9 };
-    camCB.CameraPos    = { 0, 1, -10, 0};
-    camCB.CameraLookAt = { 0, 0, 0, 0 };
-    camCB.CameraUp     = { 0, 1, 0, 0 };
 }
 
 DummyGame::~DummyGame()
 {
-    sphereList.clear();
-    materialList.clear();
+
 }
 
 uint32_t DummyGame::Run()
@@ -174,8 +98,6 @@ uint32_t DummyGame::Run()
 
     return retCode;
 }
-
-#define RAY_PIPELINE 1
 
 bool DummyGame::LoadContent()
 {
@@ -210,48 +132,44 @@ bool DummyGame::LoadContent()
 
     m_RenderShaderView = m_Device->CreateShaderResourceView( m_RenderShaderResource );
 
-    #if RAY_PIPELINE
     // Create an off-screen render for the compute shader
-    D3D12_RESOURCE_DESC stagingDesc = m_RenderShaderResource->GetD3D12ResourceDesc();
-    stagingDesc.Format              = backBufferFormat;
-    stagingDesc.Flags               |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; // try or eq else
+    {
+        D3D12_RESOURCE_DESC stagingDesc = m_RenderShaderResource->GetD3D12ResourceDesc();
+        stagingDesc.Format              = backBufferFormat;
+        stagingDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;  // try or eq else
+
+        m_StagingResource = m_Device->CreateTexture( stagingDesc );
+        m_StagingResource->SetName( L"Post Processing Render Buffer" );
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.Format                           = Texture::GetUAVCompatableFormat( stagingDesc.Format );
+        uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Texture2DArray.MipSlice          = 0;
+
+        m_StagingUnorderedAccessView = m_Device->CreateUnorderedAccessView( m_StagingResource, nullptr, &uavDesc );
+    }
     
-    m_StagingResource = m_Device->CreateTexture( stagingDesc);
-    m_StagingResource->SetName( L"Ray Render Buffer" );
 
-    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-    uavDesc.Format = Texture::GetUAVCompatableFormat( stagingDesc.Format );
-    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    uavDesc.Texture2DArray.MipSlice        = 0;
-
-    m_StagingUnorderedAccessView = m_Device->CreateUnorderedAccessView( m_StagingResource, nullptr, &uavDesc );
-
-    #endif
     // Start loading resources while the rest of the resources are created.
     commandQueue.ExecuteCommandList( commandList ); 
-    CD3DX12_STATIC_SAMPLER_DESC linearClampSampler( 0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-                                                    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-                                                    D3D12_TEXTURE_ADDRESS_MODE_CLAMP );
-    // Ray tracer pipeline
-#if RAY_PIPELINE
+    CD3DX12_STATIC_SAMPLER_DESC pointClampSampler( 0, D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP );
+
+    //Post Processing Compute Shader
     {
         // Load compute shader
         ComPtr<ID3DBlob> cs;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/RayTray/RayTracer.cso", &cs ) );
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/PostProcess.cso", &cs ) );
     
         // Create root signature
         CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
                                           D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
 
-        CD3DX12_ROOT_PARAMETER1 rootParameters[Ray::NumRootParameters];
+        CD3DX12_ROOT_PARAMETER1 rootParameters[PostProcessingRootParamaters::NumRootParameters];
         // Division by 4 becase sizeof gives in number of bytes, not 32 bits.
-        rootParameters[Ray::RayContext].InitAsConstants( sizeof( Ray::RayCB ) / 4, 0 );
-        rootParameters[Ray::CameraContext].InitAsConstants( sizeof( Ray::CamCB ) / 4, 1 );
-        rootParameters[Ray::Output].InitAsDescriptorTable( 1, &output);
-        rootParameters[Ray::SphereList].InitAsShaderResourceView( 0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                                                                    D3D12_SHADER_VISIBILITY_ALL );
-        rootParameters[Ray::MaterialList].InitAsShaderResourceView( 1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                                                                    D3D12_SHADER_VISIBILITY_ALL );
+        rootParameters[PostProcessingRootParamaters::Output].InitAsDescriptorTable( 1, &output);
+        rootParameters[PostProcessingRootParamaters::Input].InitAsShaderResourceView(
+            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
 
         
 
@@ -262,10 +180,10 @@ bool DummyGame::LoadContent()
                                                         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( Ray::NumRootParameters, 
-                            rootParameters, 1, &linearClampSampler, rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( PostProcessingRootParamaters::NumRootParameters, 
+                            rootParameters, 0, &pointClampSampler, rootSignatureFlags );
 
-        m_RayRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+        m_PostProcessRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
         // Create Pipeline State Object (PSO) for compute shader
         struct RayPipelineState
@@ -274,20 +192,19 @@ bool DummyGame::LoadContent()
             CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
         } rayPipelineStateStream;
 
-        rayPipelineStateStream.pRootSignature = m_RayRootSignature->GetD3D12RootSignature().Get();
+        rayPipelineStateStream.pRootSignature = m_PostProcessRootSignature->GetD3D12RootSignature().Get();
         rayPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( cs.Get() );
 
-        m_RayPipelineState = m_Device->CreatePipelineStateObject( rayPipelineStateStream );
+        m_PostProcessPipelineState = m_Device->CreatePipelineStateObject( rayPipelineStateStream );
     }
-    #endif
 
     // Display Pipeline
     {
         // Load the shaders.
         ComPtr<ID3DBlob> vs;
         ComPtr<ID3DBlob> ps;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/RayTray/Vertex.cso", &vs ) );
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/RayTray/Pixel.cso", &ps ) );
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Vertex.cso", &vs ) );
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Pixel.cso", &ps ) );
 
         // Allow input layout and deny unnecessary access to certain pipeline stages.
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -297,16 +214,13 @@ bool DummyGame::LoadContent()
 
         CD3DX12_DESCRIPTOR_RANGE1 descriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
 
-        CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-        rootParameters[RootParameters::Textures].InitAsDescriptorTable( 1, &descriptorRange,
+        CD3DX12_ROOT_PARAMETER1 rootParameters[DisplayRootParameters::NumRootParameters];
+        rootParameters[DisplayRootParameters::Textures].InitAsDescriptorTable( 1, &descriptorRange,
                                                                                D3D12_SHADER_VISIBILITY_PIXEL );
 
-        CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler( 0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR );
-        //CD3DX12_STATIC_SAMPLER_DESC anisotropicSampler( 0, D3D12_FILTER_ANISOTROPIC );
-
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( RootParameters::NumRootParameters, rootParameters, 1, &linearClampSampler,
-                                           rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( DisplayRootParameters::NumRootParameters, rootParameters, 1,
+                                           &pointClampSampler, rootSignatureFlags );
 
         m_DisplayRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -376,7 +290,6 @@ void DummyGame::OnResize( ResizeEventArgs& e )
 
     m_RenderTarget.Resize( m_Width, m_Height );
 
-    rayCB.WindowResolution = { static_cast<uint32_t>( m_Width ), static_cast<uint32_t>( m_Height ) };
 }
 
 void DummyGame::OnDPIScaleChanged( DPIScaleEventArgs& e )
@@ -395,10 +308,10 @@ void DummyGame::UnloadContent()
     m_RenderShaderResource.reset();
 
     m_DisplayRootSignature.reset();
-    m_RayRootSignature.reset();
+    m_PostProcessRootSignature.reset();
 
     m_DisplayPipelineState.reset();
-    m_RayPipelineState.reset();
+    m_PostProcessPipelineState.reset();
 
     m_RenderTarget.Reset();
 
@@ -434,35 +347,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
     // Defacto update
     {
-
-        float dx_vert = cos( m_Pitch / 10.0f ) * sin( m_Yaw / 10.0f + Math::PI / 2 );
-        float dz_vert = cos( m_Pitch / 10.0f ) * cos( m_Yaw / 10.0f + Math::PI / 2 );
-
-        float dx = cos(m_Pitch / 10.0f) * sin( m_Yaw / 10.0f );
-        float dy = sin( m_Pitch / 10.0f );
-        float dz = cos( m_Pitch / 10.0f ) * cos( m_Yaw / 10.0f );
-
-        camCB.CameraPos.x += speed * e.DeltaTime * ( dx * ( m_Forward - m_Backward ) + dx_vert * ( m_Left - m_Right ) );
-
-        camCB.CameraPos.y += speed * e.DeltaTime * ( m_Up - m_Down + dy * ( m_Forward - m_Backward ) );
-
-        camCB.CameraPos.z += speed * e.DeltaTime * ( dz * ( m_Forward - m_Backward ) + dz_vert * ( m_Left - m_Right ) );
-
-        camCB.CameraLookAt.x = camCB.CameraPos.x + sin( m_Yaw / 10.0f) * lookat_dist ;
-        camCB.CameraLookAt.y = camCB.CameraPos.y + sin( m_Pitch / 10.0f ) * lookat_dist;
-        camCB.CameraLookAt.z = camCB.CameraPos.z + cos( m_Yaw / 10.0f ) * lookat_dist;
-    
-        //rayCB.TimeSeed = Math::random_double();
-        rayCB.TimeSeed = theta;
-
-        //sphereList[1].Position.x = 0;
-        //sphereList[1].Position.y = 65 * cos( theta / 2.0f );
-        //sphereList[1].Position.z = 65 * sin( theta / 2.0f );
-
-        //sphereList[0].Position.x = 0;
-        //sphereList[0].Position.y = 60 * cos( theta / 3.0f );
-        //sphereList[0].Position.z = 60 * sin( theta / 3.0f );
-
+        
     }
 
 
@@ -493,33 +378,29 @@ void DummyGame::OnRender()
     // Create a scene visitor that is used to perform the actual rendering of the meshes in the scenes.
     SceneVisitor visitor( *commandList );
 
-#if RAY_PIPELINE
-    commandList->SetPipelineState( m_RayPipelineState );
-    commandList->SetComputeRootSignature( m_RayRootSignature );
-
-    //commandList->ClearTexture( m_StagingResource, clearColor );
-    
-    commandList->SetCompute32BitConstants( Ray::RayContext, rayCB );
-
-    commandList->SetCompute32BitConstants( Ray::CameraContext, camCB );
-
-    commandList->SetUnorderedAccessView( Ray::Output, 0, m_StagingUnorderedAccessView);
-    
-    commandList->SetComputeDynamicStructuredBuffer( Ray::SphereList, sphereList );
-
-    commandList->SetComputeDynamicStructuredBuffer( Ray::MaterialList, materialList );
-
-    commandList->Dispatch( Math::DivideByMultiple( m_Width, Ray::BLOCK_WIDTH),
-                           Math::DivideByMultiple( m_Height, Ray::BLOCK_HEIGHT ), 1 
-    );  
-
-    commandList->UAVBarrier( m_StagingResource );
-
-    if ( m_RenderShaderResource->GetD3D12Resource() != m_StagingResource->GetD3D12Resource() )
+    // Post process compute shader execute and transfer staging resource to display.
     {
-        commandList->CopyResource( m_RenderShaderResource, m_StagingResource );
+        commandList->SetPipelineState( m_PostProcessPipelineState );
+        commandList->SetComputeRootSignature( m_PostProcessRootSignature );
+
+        // commandList->ClearTexture( m_StagingResource, clearColor );
+
+        // set uniforms
+        {
+            commandList->SetUnorderedAccessView( PostProcessingRootParamaters::Output, 0,
+                                                 m_StagingUnorderedAccessView );
+        }
+
+        commandList->Dispatch( Math::DivideByMultiple( m_Width, 16 ), Math::DivideByMultiple( m_Height, 9 ), 1 );
+
+        commandList->UAVBarrier( m_StagingResource );
+
+        if ( m_RenderShaderResource->GetD3D12Resource() != m_StagingResource->GetD3D12Resource() )
+        {
+            commandList->CopyResource( m_RenderShaderResource, m_StagingResource );
+        }
     }
-    #endif
+    
     /*
         Display Pipeline render!
     */
@@ -540,7 +421,7 @@ void DummyGame::OnRender()
     float scalePlane      = 20.0f;
     float translateOffset = scalePlane / 2.0f;
 
-    commandList->SetShaderResourceView( RootParameters::Textures, 0,
+    commandList->SetShaderResourceView( DisplayRootParameters::Textures, 0,
         m_RenderShaderView, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
     m_Plane->Accept( visitor );
 

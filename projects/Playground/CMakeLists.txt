@@ -14,7 +14,7 @@ set( SRC_FILES
 )
 
 set( COMPUTER_SHADER_FILES
-    shaders/RayTracer.hlsl
+    shaders/PostProcess.hlsl
 )
 
 set( VERTEX_SHADER_FILES 

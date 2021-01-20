@@ -58,7 +58,7 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR lpCmdLi
 
     GameFramework::Create( hInstance );
     {
-        std::unique_ptr<DummyGame> demo = std::make_unique<DummyGame>( L"HDR", 1600, 900, true );
+        std::unique_ptr<DummyGame> demo = std::make_unique<DummyGame>( L"Playground Master Thesis", 1600, 900, true );
         retCode                         = demo->Run();
     }
     GameFramework::Destroy();
