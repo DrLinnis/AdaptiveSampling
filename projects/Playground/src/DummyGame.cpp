@@ -101,7 +101,7 @@ uint32_t DummyGame::Run()
 
 bool DummyGame::LoadContent()
 {
-    m_Device    = Device::Create();
+    m_Device    = Device::Create(true);
 
     m_SwapChain = m_Device->CreateSwapChain( m_Window->GetWindowHandle(), DXGI_FORMAT_R8G8B8A8_UNORM );
     m_SwapChain->SetVSync( m_VSync );
