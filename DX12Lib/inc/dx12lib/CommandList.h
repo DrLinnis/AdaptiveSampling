@@ -27,7 +27,7 @@
  *  @date October 22, 2018
  *  @author Jeremiah van Oosten
  *
- *  @brief CommandList class encapsulates a ID3D12GraphicsCommandList2 interface.
+ *  @brief CommandList class encapsulates a ID3D12GraphicsCommandList4 interface.
  *  The CommandList class provides additional functionality that makes working with
  *  DirectX 12 applications easier.
  */
@@ -88,9 +88,9 @@ public:
     }
 
     /**
-     * Get direct access to the ID3D12GraphicsCommandList2 interface.
+     * Get direct access to the ID3D12GraphicsCommandList4 interface.
      */
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> GetD3D12CommandList() const
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> GetD3D12CommandList() const
     {
         return m_d3d12CommandList;
     }
@@ -616,7 +616,7 @@ private:
     // The device that is used to create this command list.
     Device&                                            m_Device;
     D3D12_COMMAND_LIST_TYPE                            m_d3d12CommandListType;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> m_d3d12CommandList;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> m_d3d12CommandList;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator>     m_d3d12CommandAllocator;
 
     // For copy queues, it may be necessary to generate mips while loading textures.
