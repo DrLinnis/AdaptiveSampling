@@ -79,7 +79,7 @@ public:
      * Create a new DX12 device using the provided adapter.
      * If no adapter is specified, then the highest performance adapter will be  chosen.
      */
-    static std::shared_ptr<Device> Create( std::shared_ptr<Adapter> adapter = nullptr );
+    static std::shared_ptr<Device> Create( bool DXRsupport = false, std::shared_ptr<Adapter> adapter = nullptr );
 
     /**
      * Get a description of the adapter that was used to create the device.
@@ -220,7 +220,7 @@ public:
         D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE ) const;
 
 protected:
-    explicit Device( std::shared_ptr<Adapter> adapter );
+    explicit Device( bool DXRsupport, std::shared_ptr<Adapter> adapter );
     virtual ~Device();
 
     std::shared_ptr<PipelineStateObject>

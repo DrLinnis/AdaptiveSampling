@@ -201,8 +201,8 @@ public:
 class MakeDevice : public Device
 {
 public:
-    MakeDevice( std::shared_ptr<Adapter> adapter )
-    : Device( adapter )
+    MakeDevice(bool DXRsupport,  std::shared_ptr<Adapter> adapter )
+    : Device( DXRsupport, adapter )
     {}
 
     virtual ~MakeDevice() {}
@@ -226,9 +226,9 @@ void Device::ReportLiveObjects()
     dxgiDebug->Release();
 }
 
-std::shared_ptr<Device> Device::Create( std::shared_ptr<Adapter> adapter )
+std::shared_ptr<Device> Device::Create( bool DXRsupport, std::shared_ptr<Adapter> adapter )
 {
-    return std::make_shared<MakeDevice>( adapter );
+    return std::make_shared<MakeDevice>( DXRsupport, adapter );
 }
 
 std::wstring Device::GetDescription() const
@@ -236,7 +236,7 @@ std::wstring Device::GetDescription() const
     return m_Adapter->GetDescription();
 }
 
-Device::Device( std::shared_ptr<Adapter> adapter )
+Device::Device( bool DXRsupport, std::shared_ptr<Adapter> adapter )
 : m_Adapter( adapter )
 {
     if ( !m_Adapter )
@@ -247,7 +247,7 @@ Device::Device( std::shared_ptr<Adapter> adapter )
 
     auto dxgiAdapter = m_Adapter->GetDXGIAdapter();
 
-    ThrowIfFailed( D3D12CreateDevice( dxgiAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS( &m_d3d12Device ) ) );
+    ThrowIfFailed( D3D12CreateDevice( dxgiAdapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS( &m_d3d12Device ) ) );
 
     // Enable debug messages (only works if the debug layer has already been enabled).
     ComPtr<ID3D12InfoQueue> pInfoQueue;
@@ -299,14 +299,28 @@ Device::Device( std::shared_ptr<Adapter> adapter )
 
     // Check features.
     {
+        if (DXRsupport) {
+            D3D12_FEATURE_DATA_D3D12_OPTIONS5 features5;
+            HRESULT hr = m_d3d12Device->CheckFeatureSupport( D3D12_FEATURE_D3D12_OPTIONS5, &features5,
+                                                       sizeof( D3D12_FEATURE_DATA_D3D12_OPTIONS5 ) );
+            if ( FAILED( hr ) || features5.RaytracingTier == D3D12_RAYTRACING_TIER_NOT_SUPPORTED )
+            {
+                throw std::exception( "Raytracing is not supported on this device." \
+                    "Make sure your GPU supports DXR (such as Nvidia's Volta or Turing RTX) " \
+                    "and you're on the latest drivers. The DXR fallback layer is not supported." );
+            }
+        }
+        
         D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData;
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
         if ( FAILED( m_d3d12Device->CheckFeatureSupport( D3D12_FEATURE_ROOT_SIGNATURE, &featureData,
-                                                         sizeof( D3D12_FEATURE_DATA_ROOT_SIGNATURE ) ) ) )
+                                                            sizeof( D3D12_FEATURE_DATA_ROOT_SIGNATURE ) ) ) )
         {
             featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
         }
         m_HighestRootSignatureVersion = featureData.HighestVersion;
+        
+        
     }
 }
 
