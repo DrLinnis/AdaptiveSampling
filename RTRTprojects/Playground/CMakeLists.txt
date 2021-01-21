@@ -50,7 +50,8 @@ set_source_files_properties( ${SHADER_FILES}
 
 # Added bypass to DXC.exe automatic computation
  set_source_files_properties( ${RAY_TRACING_SHADER_FILES}
-    PROPERTIES VS_TOOL_OVERRIDE "None"
+    PROPERTIES 
+        VS_TOOL_OVERRIDE "None"
  )
 
 set_source_files_properties( ${VERTEX_SHADER_FILES}
