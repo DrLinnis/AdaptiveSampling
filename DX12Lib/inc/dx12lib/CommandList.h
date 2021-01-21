@@ -67,6 +67,8 @@ class Texture;
 class UnorderedAccessView;
 class UploadBuffer;
 class VertexBuffer;
+class AccelerationStructure;
+class AccelerationBuffer;
 
 class CommandList : public std::enable_shared_from_this<CommandList>
 {
@@ -326,6 +328,21 @@ public:
      */
     void CopyTextureSubresource( const std::shared_ptr<Texture>& texture, uint32_t firstSubresource,
                                  uint32_t numSubresources, D3D12_SUBRESOURCE_DATA* subresourceData );
+
+    /*
+     * Build acceleration structure for Top level AS.
+     */
+    std::shared_ptr<AccelerationStructure>
+        BuildTopLevelAccelerationStructure( std::shared_ptr<dx12lib::AccelerationBuffer>          pBottomLevelAS,
+                                            D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS  inputs,
+                                            D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info );
+
+    /*
+     * Build acceleration structure for Bottom level AS.
+     */
+    std::shared_ptr<AccelerationStructure>
+        BuildBottomLevelAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS  inputs,
+                                              D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info );
 
     /**
      * Set a dynamic constant buffer data to an inline descriptor in the root
@@ -608,7 +625,7 @@ private:
 
     // Copy the contents of a CPU buffer to a GPU buffer (possibly replacing the previous buffer contents).
     Microsoft::WRL::ComPtr<ID3D12Resource> CopyBuffer( size_t bufferSize, const void* bufferData,
-                                                       D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE );
+                                                       D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
     // Binds the current descriptor heaps to the command list.
     void BindDescriptorHeaps();

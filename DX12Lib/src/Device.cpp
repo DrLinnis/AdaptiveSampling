@@ -101,6 +101,7 @@ public:
     virtual ~MakeTexture() {}
 };
 
+
 class MakeStructuredBuffer : public StructuredBuffer
 {
 public:
@@ -542,4 +543,12 @@ DXGI_SAMPLE_DESC Device::GetMultisampleQualityLevels( DXGI_FORMAT format, UINT n
     }
 
     return sampleDesc;
+}
+
+
+/* New Methods */
+void Device::GetRaytracingAccelerationStructurePrebuildInfo(D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS* pInput,
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO* pOut)
+{
+    m_d3d12Device->GetRaytracingAccelerationStructurePrebuildInfo( pInput, pOut );
 }

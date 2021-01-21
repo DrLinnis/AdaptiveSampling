@@ -26,6 +26,7 @@
 #include <dx12lib/UnorderedAccessView.h>
 #include <dx12lib/UploadBuffer.h>
 #include <dx12lib/VertexBuffer.h>
+#include <dx12lib/AccelerationStructure.h>
 
 using namespace dx12lib;
 
@@ -184,7 +185,7 @@ void CommandList::ResolveSubresource( const std::shared_ptr<Resource>& dstRes, c
     TrackResource( dstRes );
 }
 
-ComPtr<ID3D12Resource> CommandList::CopyBuffer( size_t bufferSize, const void* bufferData, D3D12_RESOURCE_FLAGS flags )
+ComPtr<ID3D12Resource> CommandList::CopyBuffer( size_t bufferSize, const void* bufferData, D3D12_RESOURCE_FLAGS flags)
 {
     ComPtr<ID3D12Resource> d3d12Resource;
     if ( bufferSize == 0 )
@@ -235,7 +236,7 @@ ComPtr<ID3D12Resource> CommandList::CopyBuffer( size_t bufferSize, const void* b
 std::shared_ptr<VertexBuffer> CommandList::CopyVertexBuffer( size_t numVertices, size_t vertexStride,
                                                              const void* vertexBufferData )
 {
-    auto                          d3d12Resource = CopyBuffer( numVertices * vertexStride, vertexBufferData );
+    auto d3d12Resource = CopyBuffer( numVertices * vertexStride, vertexBufferData );
     std::shared_ptr<VertexBuffer> vertexBuffer =
         m_Device.CreateVertexBuffer( d3d12Resource, numVertices, vertexStride );
 
@@ -1690,4 +1691,159 @@ void CommandList::BindDescriptorHeaps()
     }
 
     m_d3d12CommandList->SetDescriptorHeaps( numDescriptorHeaps, descriptorHeaps );
+}
+
+
+/* New functions */
+std::shared_ptr<AccelerationStructure>
+    CommandList::BuildTopLevelAccelerationStructure( std::shared_ptr<dx12lib::AccelerationBuffer> pBottomLevelAS,
+                                                     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS  inputs,
+                                                     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info )
+{
+   
+    D3D12_RESOURCE_DESC bufDesc = {};
+    bufDesc.Alignment           = 0;
+    bufDesc.DepthOrArraySize    = 1;
+    bufDesc.Dimension           = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufDesc.Format              = DXGI_FORMAT_UNKNOWN;
+    bufDesc.Height              = 1;
+    bufDesc.Layout              = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufDesc.MipLevels           = 1;
+    bufDesc.SampleDesc.Count    = 1;
+    bufDesc.SampleDesc.Quality  = 0;
+
+    bufDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    bufDesc.Width = info.ScratchDataSizeInBytes;
+
+    std::shared_ptr<AccelerationBuffer> pScratch = std::make_shared<MakeAccelerationBuffer>(
+        m_Device, bufDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+
+    bufDesc.Width = info.ResultDataMaxSizeInBytes;
+
+    std::shared_ptr<AccelerationBuffer> pResult = std::make_shared<MakeAccelerationBuffer>(
+        m_Device, bufDesc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
+
+    // Instance description buffer (e.g. tranform matrix).
+    bufDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    bufDesc.Width = sizeof( D3D12_RAYTRACING_INSTANCE_DESC );
+
+    std::shared_ptr<AccelerationBuffer> pInstanceDescBuffer = std::make_shared<MakeAccelerationBuffer>(
+        m_Device, bufDesc, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+
+    float m[] = {
+        1, 0, 0, 0, 
+        0, 1, 0, 0, 
+        0, 0, 1, 0 
+    };  // Identity matrix for 3x4
+
+    D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDesc;
+    pInstanceDescBuffer->GetD3D12Resource()->Map( 0, nullptr, (void**)&pInstanceDesc );
+
+    // Initialize the instance desc. We only have a single instance
+    pInstanceDesc->InstanceID = 0;  // This value will be exposed to the shader via InstanceID()
+    pInstanceDesc->InstanceContributionToHitGroupIndex = 0;  // This is the offset inside the shader-table. We only have a single geometry, so the offset 0
+    pInstanceDesc->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+    memcpy( pInstanceDesc->Transform, &m, sizeof( pInstanceDesc->Transform ) );
+    pInstanceDesc->AccelerationStructure = pBottomLevelAS.get()->GetD3D12Resource()->GetGPUVirtualAddress();
+    pInstanceDesc->InstanceMask          = 0xFF;
+
+    // Unmap
+    pInstanceDescBuffer->GetD3D12Resource()->Unmap( 0, nullptr );
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+    asDesc.Inputs                                             = inputs;
+    asDesc.Inputs.InstanceDescs                               = pInstanceDescBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.DestAccelerationStructureData                      = pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData                   = pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    m_d3d12CommandList->BuildRaytracingAccelerationStructure( &asDesc, 0, nullptr );
+
+    return std::make_shared<AccelerationStructure>( pScratch, pResult, pInstanceDescBuffer );
+
+}
+
+
+std::shared_ptr<AccelerationStructure>
+    CommandList::BuildBottomLevelAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs,
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info )
+{
+    /*
+    buffers->pScratch =
+        createBufferForAcceleration( pDevice, info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                     D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT );
+    buffers->pResult =
+        createBufferForAcceleration( pDevice, info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                     D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, D3D12_HEAP_TYPE_DEFAULT );
+
+    // Create the bottom-level AS
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+    asDesc.Inputs                                             = inputs;
+    asDesc.DestAccelerationStructureData                      = buffers->pResult->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData                   = buffers->pScratch->GetGPUVirtualAddress();
+
+    pCmdList->BuildRaytracingAccelerationStructure( &asDesc, 0, nullptr );
+    */
+
+    D3D12_RESOURCE_DESC bufDesc = {};
+    bufDesc.Alignment           = 0;
+    bufDesc.DepthOrArraySize    = 1;
+    bufDesc.Dimension           = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufDesc.Format              = DXGI_FORMAT_UNKNOWN;
+    bufDesc.Height              = 1;
+    bufDesc.Layout              = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufDesc.MipLevels           = 1;
+    bufDesc.SampleDesc.Count    = 1;
+    bufDesc.SampleDesc.Quality  = 0;
+
+    bufDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    bufDesc.Width = info.ScratchDataSizeInBytes;
+
+    std::shared_ptr<AccelerationBuffer> pScratch = std::make_shared<MakeAccelerationBuffer>(
+        m_Device, bufDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+
+    bufDesc.Width = info.ResultDataMaxSizeInBytes;
+
+    std::shared_ptr<AccelerationBuffer> pResult = std::make_shared<MakeAccelerationBuffer>(
+        m_Device, bufDesc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+    asDesc.Inputs                                             = inputs;
+    asDesc.DestAccelerationStructureData                      = pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData                   = pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    m_d3d12CommandList->BuildRaytracingAccelerationStructure( &asDesc, 0, nullptr );
+
+    return std::make_shared<AccelerationStructure>( pScratch, pResult);
+
+    /*
+    assert( texture );
+
+    auto d3d12Device         = m_Device.GetD3D12Device();
+    auto destinationResource = texture->GetD3D12Resource();
+
+    if ( destinationResource )
+    {
+        // Resource must be in the copy-destination state.
+        TransitionBarrier( texture, D3D12_RESOURCE_STATE_COPY_DEST );
+        FlushResourceBarriers();
+
+        UINT64 requiredSize =
+            GetRequiredIntermediateSize( destinationResource.Get(), firstSubresource, numSubresources );
+
+        // Create a temporary (intermediate) resource for uploading the subresources
+        ComPtr<ID3D12Resource> intermediateResource;
+        ThrowIfFailed( d3d12Device->CreateCommittedResource(
+            &CD3DX12_HEAP_PROPERTIES( D3D12_HEAP_TYPE_UPLOAD ), D3D12_HEAP_FLAG_NONE,
+            &CD3DX12_RESOURCE_DESC::Buffer( requiredSize ), D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS( &intermediateResource ) ) );
+
+        UpdateSubresources( m_d3d12CommandList.Get(), destinationResource.Get(), intermediateResource.Get(), 0,
+                            firstSubresource, numSubresources, subresourceData );
+
+        TrackResource( intermediateResource );
+        TrackResource( destinationResource );
+    }
+    */
 }

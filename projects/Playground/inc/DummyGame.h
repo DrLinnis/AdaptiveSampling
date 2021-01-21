@@ -10,6 +10,8 @@
 
 #include <string>
 
+#include <memory>
+
 namespace dx12lib
 {
 class CommandList;
@@ -23,6 +25,7 @@ class ShaderResourceView;
 class UnorderedAccessView;
 class SwapChain;
 class Texture;
+class AccelerationBuffer;
 } 
 
 class Window;  // From GameFramework.
@@ -87,6 +90,14 @@ protected:
     void OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList, const dx12lib::RenderTarget& renderTarget );
 
 private:
+
+    std::shared_ptr<dx12lib::AccelerationBuffer> topLevelAS;
+    std::shared_ptr<dx12lib::AccelerationBuffer> bottomLevelAS;
+
+    uint64_t mTlasSize = 0;
+
+    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
+    void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 

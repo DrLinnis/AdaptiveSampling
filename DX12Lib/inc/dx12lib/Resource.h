@@ -87,10 +87,11 @@ protected:
 //    friend class CommandList;
 
     // Resource creation should go through the device.
-    Resource( Device& device, const D3D12_RESOURCE_DESC& resourceDesc,
-                       const D3D12_CLEAR_VALUE* clearValue = nullptr );
+    Resource( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue = nullptr,
+              const D3D12_RESOURCE_STATES initState = D3D12_RESOURCE_STATE_COMMON,
+              const D3D12_HEAP_TYPE       heapType  = D3D12_HEAP_TYPE_DEFAULT );
     Resource( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource,
-              const D3D12_CLEAR_VALUE* clearValue = nullptr );
+              const D3D12_CLEAR_VALUE*    clearValue = nullptr );
 
     virtual ~Resource() = default;
 

@@ -99,6 +99,12 @@ public:
         return m_d3d12Device->GetDescriptorHandleIncrementSize( type );
     }
 
+    /*
+     *  Gets the Ray Tracing acceleration structure information // Added by Linus.
+     */
+    void GetRaytracingAccelerationStructurePrebuildInfo( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS*  pInput,
+                                                         D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO* pOut );
+
     /**
      * Create a swapchain using the provided OS window handle.
      */

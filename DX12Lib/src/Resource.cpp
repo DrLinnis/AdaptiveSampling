@@ -7,8 +7,9 @@
 
 using namespace dx12lib;
 
-Resource::Resource( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue )
-: m_Device( device )
+Resource::Resource(Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue,
+                    const D3D12_RESOURCE_STATES initState, const D3D12_HEAP_TYPE heapType )
+    : m_Device(device)
 {
     auto d3d12Device = m_Device.GetD3D12Device();
 
@@ -17,17 +18,17 @@ Resource::Resource( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, con
         m_d3d12ClearValue = std::make_unique<D3D12_CLEAR_VALUE>( *clearValue );
     }
 
-    ThrowIfFailed( d3d12Device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES( D3D12_HEAP_TYPE_DEFAULT ), D3D12_HEAP_FLAG_NONE, &resourceDesc,
-        D3D12_RESOURCE_STATE_COMMON, m_d3d12ClearValue.get(), IID_PPV_ARGS( &m_d3d12Resource ) ) );
+    ThrowIfFailed( d3d12Device->CreateCommittedResource( &CD3DX12_HEAP_PROPERTIES( heapType ), D3D12_HEAP_FLAG_NONE,
+                                                         &resourceDesc, initState,
+                                                         m_d3d12ClearValue.get(), IID_PPV_ARGS( &m_d3d12Resource ) ) );
 
-    ResourceStateTracker::AddGlobalResourceState( m_d3d12Resource.Get(), D3D12_RESOURCE_STATE_COMMON );
+    ResourceStateTracker::AddGlobalResourceState( m_d3d12Resource.Get(), initState );
 
     CheckFeatureSupport();
 }
 
 Resource::Resource( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource,
-                    const D3D12_CLEAR_VALUE* clearValue )
+                    const D3D12_CLEAR_VALUE* clearValue)
 : m_Device( device )
 , m_d3d12Resource( resource )
 {
