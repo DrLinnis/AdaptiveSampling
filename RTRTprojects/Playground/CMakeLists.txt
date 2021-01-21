@@ -25,15 +25,21 @@ set( PIXEL_SHADER_FILES
     shaders/Pixel.hlsl
 )
 
+set( RAY_TRACING_SHADER_FILES
+    shaders/RayTracer.hlsl
+)
+
+
 set( SHADER_FILES
     ${VERTEX_SHADER_FILES}
     ${PIXEL_SHADER_FILES}
     ${COMPUTER_SHADER_FILES}
+    ${RAY_TRACING_SHADER_FILES}
 )
 
-source_group( "Resources\\Shaders" FILES ${SHADER_FILES} )
+source_group( "Resources\\Shaders" FILES ${SHADER_FILES})
 
-set_source_files_properties( ${SHADER_FILES}
+set_source_files_properties( ${SHADER_FILES} 
     PROPERTIES
         VS_SHADER_OBJECT_FILE_NAME "${CMAKE_SOURCE_DIR}/Data/Shaders/${TARGET_NAME}/%(Filename).cso"
         VS_SHADER_MODEL 6.0
@@ -41,6 +47,11 @@ set_source_files_properties( ${SHADER_FILES}
         VS_SHADER_ENABLE_DEBUG $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:ON>
         VS_SHADER_FLAGS $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-Qembed_debug>
 )
+
+# Added bypass to DXC.exe automatic computation
+ set_source_files_properties( ${RAY_TRACING_SHADER_FILES}
+    PROPERTIES VS_TOOL_OVERRIDE "None"
+ )
 
 set_source_files_properties( ${VERTEX_SHADER_FILES}
     PROPERTIES 

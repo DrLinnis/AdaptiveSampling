@@ -15,7 +15,9 @@
 #include <dx12lib/SwapChain.h>
 #include <dx12lib/Texture.h>
 #include <dx12lib/Visitor.h>
+
 #include <dx12lib/AccelerationStructure.h>
+#include <dx12lib/RT_PipelineStateObject.h>
 
 #include <GameFramework/Window.h>
 
@@ -213,6 +215,24 @@ void DummyGame::CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler,
     m_RenderTarget.AttachTexture( AttachmentPoint::Color0, renderedImage );
 }
 
+void DummyGame::CreateRayTracingPipeline() {
+    // Need 10 subobjects:
+    //  1 for the DXIL library
+    //  1 for hit-group
+    //  2 for RayGen root-signature (root-signature and the subobject association)
+    //  2 for the root-signature shared between miss and hit shaders (signature and association)
+    //  2 for shader config (shared between all programs. 1 for the config, 1 for association)
+    //  1 for pipeline config
+    //  1 for the global root signature
+    std::array<D3D12_STATE_SUBOBJECT, 10> subobjects;
+    uint32_t                              index = 0;
+
+    // Load 
+    ComPtr<ID3DBlob> cs;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/PostProcess.cso", &cs ) );
+
+}
+
 bool DummyGame::LoadContent()
 {
     m_Device    = Device::Create(true);
@@ -297,6 +317,8 @@ bool DummyGame::LoadContent()
 
     topLevelAS = topLevelBuffers->GetResult();
     bottomLevelAS = bottomLevelBuffers->GetResult();
+
+    CreateRayTracingPipeline();
 
 #endif
 

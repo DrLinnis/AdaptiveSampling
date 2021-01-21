@@ -13,7 +13,7 @@ const SamplerState MeshTextureSampler
 
 Texture2D Texture : register( t0 );
 
-static const float2 texture_step = float2(1.0 / 1600.0, 1.0 / 900.0);
+static const float2 texture_step = { 1.0 / 1600.0, 1.0 / 900.0 };
 
 float4 main( PixelShaderOutput IN ) : SV_TARGET
 {

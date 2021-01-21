@@ -19,6 +19,7 @@ class Device;
 class GUI;
 class Mesh;
 class PipelineStateObject;
+class RT_PipelineStateObject;
 class Scene;
 class RootSignature;
 class ShaderResourceView;
@@ -98,6 +99,7 @@ private:
 
     void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
+    void CreateRayTracingPipeline();
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 

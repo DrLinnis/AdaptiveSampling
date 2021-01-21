@@ -60,8 +60,8 @@ endif( DX12LIB_BUILD_SAMPLES )
 
 
 # My own added code:
-add_subdirectory( projects/RayTray )
-add_subdirectory( projects/Playground )
+add_subdirectory( RTRTprojects/RayTray )
+add_subdirectory( RTRTprojects/Playground )
 
 set_target_properties( RayTray Playground 
     PROPERTIES
