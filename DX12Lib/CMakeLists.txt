@@ -40,6 +40,7 @@ set( HEADER_FILES
     inc/dx12lib/VertexBuffer.h
     inc/dx12lib/Visitor.h
     inc/dx12lib/AccelerationStructure.h
+    inc/dx12lib/RT_PipelineStateObject.h
 )
 
 set( SOURCE_FILES
@@ -79,6 +80,7 @@ set( SOURCE_FILES
     src/VertexBuffer.cpp
     src/VertexTypes.cpp
     src/AccelerationStructure.cpp
+    src/RT_PipelineStateObject.cpp
 )
 
 set( IMGUI_HEADERS
