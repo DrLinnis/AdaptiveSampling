@@ -82,14 +82,21 @@ target_include_directories( ${TARGET_NAME}
 target_link_libraries( ${TARGET_NAME}
     GameFramework
     DX12Lib
-    d3dcompiler.lib
     Shlwapi.lib
+    dxgi.lib
+    dxguid.lib
+    d3dcompiler.lib
 )
 
 # Set debug database to enable the "Edit and Continue" feature.
 target_compile_options( ${TARGET_NAME}
     PRIVATE $<$<CONFIG:Debug>:/ZI>
 )
+
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD         # Adds a post-build event to MyTest
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different           # which executes "cmake - E copy_if_different..."
+        "${PROJECT_SOURCE_DIR}/dxcompiler.dll"               # <--this is in-file
+        $<TARGET_FILE_DIR:${TARGET_NAME}>)                          # <--this is out-file path
 
 # Set Local Debugger Settings (Command Arguments and Environment Variables)
 set( COMMAND_ARGUMENTS "-wd \"${CMAKE_SOURCE_DIR}\"" )
