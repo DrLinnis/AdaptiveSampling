@@ -91,15 +91,22 @@ protected:
     void OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList, const dx12lib::RenderTarget& renderTarget );
 
 private:
-
+    // Added tutorial member
     std::shared_ptr<dx12lib::AccelerationBuffer> topLevelAS;
     std::shared_ptr<dx12lib::AccelerationBuffer> bottomLevelAS;
 
     uint64_t mTlasSize = 0;
 
+    std::shared_ptr<dx12lib::RootSignature> m_EmptyRootSig;
+    std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
+
+    // new helper functions
     void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
-    void CreateRayTracingPipeline();
+    void CreateRayTracingPipeline(  );
+
+
+
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 

@@ -53,6 +53,7 @@ class DescriptorAllocator;
 class GUI;
 class IndexBuffer;
 class PipelineStateObject;
+class RT_PipelineStateObject;
 class RenderTarget;
 class Resource;
 class RootSignature;
@@ -159,6 +160,8 @@ public:
                                                       size_t numVertices, size_t vertexStride );
 
     std::shared_ptr<RootSignature> CreateRootSignature( const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc );
+    std::shared_ptr<RootSignature> CreateRayRootSignature( const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc );
+
 
     template<class PipelineStateStream>
     std::shared_ptr<PipelineStateObject> CreatePipelineStateObject( PipelineStateStream& pipelineStateStream )
@@ -171,6 +174,13 @@ public:
 
     std::shared_ptr<ConstantBufferView> CreateConstantBufferView( const std::shared_ptr<ConstantBuffer>& constantBuffer,
                                                                   size_t                                 offset = 0 );
+    
+    std::shared_ptr<RT_PipelineStateObject> CreateRayPipelineState( uint32_t                     nbrSubObjects,
+                                                                 const D3D12_STATE_SUBOBJECT* pSubObjects ) 
+    { 
+        return DoCreateRayPipelineStateObject( nbrSubObjects, pSubObjects );
+    }
+
 
     std::shared_ptr<ShaderResourceView>
         CreateShaderResourceView( const std::shared_ptr<Resource>&       resource,
@@ -231,6 +241,9 @@ protected:
 
     std::shared_ptr<PipelineStateObject>
         DoCreatePipelineStateObject( const D3D12_PIPELINE_STATE_STREAM_DESC& pipelineStateStreamDesc );
+
+    std::shared_ptr<RT_PipelineStateObject> DoCreateRayPipelineStateObject( uint32_t                     nbrSubObjects,
+                                                                         const D3D12_STATE_SUBOBJECT* pSubObject );
 
 private:
     Microsoft::WRL::ComPtr<ID3D12Device5> m_d3d12Device;

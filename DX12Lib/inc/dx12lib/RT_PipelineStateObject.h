@@ -1,18 +1,98 @@
 #include <d3d12.h>       // For D3D12_PIPELINE_STATE_STREAM_DESC, and ID3D12PipelineState
 #include <wrl/client.h>  // For Microsoft::WRL::ComPtr
 
+#include <dxcapi.h>
+
 namespace dx12lib
 {
 
 class Device;
+class RootSignature;
+
+using namespace Microsoft::WRL;
+
+class ShaderHelper
+{
+public:
+    static ComPtr<IDxcBlob> CompileLibrary( const WCHAR* filename, const WCHAR* targetString );
+};
+
+struct DxilLibrary
+{
+    DxilLibrary( ComPtr<IDxcBlob> pBlob, const WCHAR* entryPoint[], uint32_t entryPointCount );
+
+    DxilLibrary()
+    : DxilLibrary( nullptr, nullptr, 0 )
+    {}
+
+    D3D12_DXIL_LIBRARY_DESC        dxilLibDesc = {};
+    D3D12_STATE_SUBOBJECT          stateSubobject {};
+    ComPtr<IDxcBlob>               pShaderBlob;
+    std::vector<D3D12_EXPORT_DESC> exportDesc;
+    std::vector<std::wstring>      exportName;
+};
+
+struct HitProgram
+{
+    HitProgram( LPCWSTR ahsExport, LPCWSTR chsExport, const std::wstring& name );
+
+    std::wstring          exportName;
+    D3D12_HIT_GROUP_DESC  desc;
+    D3D12_STATE_SUBOBJECT subObject;
+};
+
+struct ExportAssociation
+{
+    ExportAssociation( const WCHAR* exportNames[], uint32_t exportCount,
+                       const D3D12_STATE_SUBOBJECT* pSubobjectToAssociate );
+
+    D3D12_STATE_SUBOBJECT                  subobject   = {};
+    D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+};
+
+struct LocalRootSignature
+{
+    LocalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc );
+
+    std::shared_ptr<RootSignature> pRootSig;
+    ID3D12RootSignature*           pInterface = nullptr;
+    D3D12_STATE_SUBOBJECT       subobject  = {};
+};
+
+struct GlobalRootSignature
+{
+    GlobalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc );
+
+    std::shared_ptr<RootSignature> pRootSig;
+    ID3D12RootSignature*           pInterface = nullptr;
+    D3D12_STATE_SUBOBJECT       subobject  = {};
+};
+
+struct ShaderConfig
+{
+    ShaderConfig( uint32_t maxAttributeSizeInBytes, uint32_t maxPayloadSizeInBytes );
+
+    D3D12_RAYTRACING_SHADER_CONFIG shaderConfig = {};
+    D3D12_STATE_SUBOBJECT          subobject    = {};
+};
+
+struct PipelineConfig
+{
+    PipelineConfig( uint32_t maxTraceRecursionDepth );
+
+    D3D12_RAYTRACING_PIPELINE_CONFIG config    = {};
+    D3D12_STATE_SUBOBJECT            subobject = {};
+};
+
 
 class RT_PipelineStateObject
 {
 public:
-    Microsoft::WRL::ComPtr<ID3D12StateObject> GetD3D12PipelineState() const
+    ID3D12StateObject* GetD3D12PipelineState() const
     {
         return m_d3d12PipelineState;
     }
+    
 
 protected:
     RT_PipelineStateObject( Device& device, uint32_t nbrSubObjects, const D3D12_STATE_SUBOBJECT* pSubObjects );
@@ -20,6 +100,6 @@ protected:
 
 private:
     Device&                                     m_Device;
-    Microsoft::WRL::ComPtr<ID3D12StateObject>   m_d3d12PipelineState;
+    ID3D12StateObject* m_d3d12PipelineState;
 };
 }  // namespace dx12lib

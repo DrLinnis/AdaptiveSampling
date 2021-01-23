@@ -20,6 +20,7 @@
 #include <dx12lib/Texture.h>
 #include <dx12lib/UnorderedAccessView.h>
 #include <dx12lib/VertexBuffer.h>
+#include <dx12lib/RT_PipelineStateObject.h>
 
 using namespace dx12lib;
 
@@ -77,11 +78,22 @@ public:
 
     virtual ~MakePipelineStateObject() {}
 };
+
+class MakeRayPipelineStateObject : public RT_PipelineStateObject
+{
+public:
+    MakeRayPipelineStateObject( Device& device, uint32_t nbrSubObjects, const D3D12_STATE_SUBOBJECT* pSubObjects )
+    : RT_PipelineStateObject( device, nbrSubObjects, pSubObjects )
+    {}
+
+    virtual ~MakeRayPipelineStateObject() {}
+};
+
 class MakeRootSignature : public RootSignature
 {
 public:
     MakeRootSignature( Device& device, const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc )
-    : RootSignature( device, rootSignatureDesc )
+    : RootSignature( device, rootSignatureDesc)
     {}
 
     virtual ~MakeRootSignature() {}
@@ -479,6 +491,15 @@ std::shared_ptr<dx12lib::RootSignature>
     return rootSignature;
 }
 
+std::shared_ptr<dx12lib::RootSignature>
+    dx12lib::Device::CreateRayRootSignature( const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc )
+{
+    std::shared_ptr<RootSignature> rootSignature = std::make_shared<MakeRootSignature>( *this, rootSignatureDesc );
+
+    return rootSignature;
+}
+
+
 std::shared_ptr<PipelineStateObject> Device::DoCreatePipelineStateObject(
     const D3D12_PIPELINE_STATE_STREAM_DESC& pipelineStateStreamDesc )
 {
@@ -486,6 +507,12 @@ std::shared_ptr<PipelineStateObject> Device::DoCreatePipelineStateObject(
         std::make_shared<MakePipelineStateObject>( *this, pipelineStateStreamDesc );
 
     return pipelineStateObject;
+}
+
+std::shared_ptr<RT_PipelineStateObject>
+    Device::DoCreateRayPipelineStateObject( uint32_t nbrSubObjects, const D3D12_STATE_SUBOBJECT* pSubObject )
+{
+    return std::make_shared<MakeRayPipelineStateObject>( *this, nbrSubObjects, pSubObject );
 }
 
 std::shared_ptr<ConstantBufferView>

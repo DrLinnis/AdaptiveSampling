@@ -98,6 +98,11 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD         # Adds a post-build 
         "${PROJECT_SOURCE_DIR}/dxcompiler.dll"               # <--this is in-file
         $<TARGET_FILE_DIR:${TARGET_NAME}>)                          # <--this is out-file path
 
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD         # Adds a post-build event to MyTest
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different           # which executes "cmake - E copy_if_different..."
+        "${PROJECT_SOURCE_DIR}/dxil.dll"               # <--this is in-file
+        $<TARGET_FILE_DIR:${TARGET_NAME}>)                          # <--this is out-file path
+
 # Set Local Debugger Settings (Command Arguments and Environment Variables)
 set( COMMAND_ARGUMENTS "-wd \"${CMAKE_SOURCE_DIR}\"" )
 configure_file( ${TARGET_NAME}.vcxproj.user.in ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.vcxproj.user @ONLY )

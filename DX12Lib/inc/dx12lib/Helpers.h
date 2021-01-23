@@ -40,6 +40,9 @@
 #include <comdef.h> // For _com_error class (used to decode HR result codes).
 
 #include <d3d12.h>
+#include <sstream>
+#include <dxcapi.h>
+#include <string>
 
 // From DXSampleHelper.h 
 // Source: https://github.com/Microsoft/DirectX-Graphics-Samples

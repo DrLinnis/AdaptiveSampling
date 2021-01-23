@@ -18,6 +18,7 @@
 
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
+#include <dxcapi.h>
 
 #include <GameFramework/Window.h>
 
@@ -215,7 +216,53 @@ void DummyGame::CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler,
     m_RenderTarget.AttachTexture( AttachmentPoint::Color0, renderedImage );
 }
 
+struct RootSignatureDesc
+{
+    D3D12_ROOT_SIGNATURE_DESC1           desc = {};
+    std::vector<D3D12_DESCRIPTOR_RANGE1> range;
+    std::vector<D3D12_ROOT_PARAMETER1>   rootParams;
+};
+
+RootSignatureDesc createRayGenRootDesc()
+{
+    // Create the root-signature
+    RootSignatureDesc desc;
+    desc.range.resize( 2 );
+    // gOutput
+    desc.range[0].BaseShaderRegister                = 0;
+    desc.range[0].NumDescriptors                    = 1;
+    desc.range[0].RegisterSpace                     = 0;
+    desc.range[0].RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    desc.range[0].OffsetInDescriptorsFromTableStart = 0;
+
+    // gRtScene
+    desc.range[1].BaseShaderRegister                = 0;
+    desc.range[1].NumDescriptors                    = 1;
+    desc.range[1].RegisterSpace                     = 0;
+    desc.range[1].RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    desc.range[1].OffsetInDescriptorsFromTableStart = 1;
+
+    desc.rootParams.resize( 1 );
+    desc.rootParams[0].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    desc.rootParams[0].DescriptorTable.NumDescriptorRanges = 2;
+    desc.rootParams[0].DescriptorTable.pDescriptorRanges   = desc.range.data();
+
+    // Create the desc
+    desc.desc.NumParameters = 1;
+    desc.desc.pParameters   = desc.rootParams.data();
+    desc.desc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+    return desc;
+}
+
+static const WCHAR* kRayGenShader     = L"rayGen";
+static const WCHAR* kMissShader       = L"miss";
+static const WCHAR* kClosestHitShader = L"chs";
+static const WCHAR* kHitGroup         = L"HitGroup";
+
 void DummyGame::CreateRayTracingPipeline() {
+    
+    
     // Need 10 subobjects:
     //  1 for the DXIL library
     //  1 for hit-group
@@ -228,9 +275,56 @@ void DummyGame::CreateRayTracingPipeline() {
     uint32_t                              index = 0;
 
     // Load 
-    ComPtr<ID3DBlob> cs;
-    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/PostProcess.cso", &cs ) );
+    ComPtr<IDxcBlob> shaders =
+        ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_3" );
+    const WCHAR*     entryPoints[] = { kRayGenShader, kMissShader, kClosestHitShader }; // SIZE 3
+    
+    DxilLibrary      dxilLib( shaders, entryPoints, 3 );
+    subobjects[index++] = dxilLib.stateSubobject; // 0 Library
 
+    HitProgram hitProgram( nullptr, kClosestHitShader, kHitGroup );
+    subobjects[index++] = hitProgram.subObject; // 1 Hit Group.
+
+    // Create the ray-gen root-signature and association
+    LocalRootSignature rgsRootSignature( m_Device, createRayGenRootDesc().desc );
+    subobjects[index] = rgsRootSignature.subobject;  // 2 RayGen Root Sig
+
+    uint32_t          rgsRootIndex = index++;  // 2
+    ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
+    subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
+
+    // Create the miss- and hit-programs root-signature and association
+    D3D12_ROOT_SIGNATURE_DESC1 emptyDesc = {};
+    emptyDesc.Flags                     = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+    LocalRootSignature hitMissRootSignature( m_Device, emptyDesc );
+    subobjects[index] = hitMissRootSignature.subobject;  // 4 Root Sig to be shared between Miss and CHS
+
+    uint32_t          hitMissRootIndex    = index++;  // 4
+    const WCHAR*      missHitExportName[] = { kMissShader, kClosestHitShader }; // SIZE 2
+    ExportAssociation missHitRootAssociation( missHitExportName, 2, &( subobjects[hitMissRootIndex] ) );
+    subobjects[index++] = missHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+
+    // Bind the payload size to the programs
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * 1 );
+    subobjects[index] = shaderConfig.subobject;  // 6 Shader Config
+
+    uint32_t          shaderConfigIndex = index++;  // 6
+    const WCHAR*      shaderExports[]   = { kMissShader, kClosestHitShader, kRayGenShader }; // SIZE 3
+    ExportAssociation configAssociation( shaderExports, 3, &( subobjects[shaderConfigIndex] ) );
+    subobjects[index++] = configAssociation.subobject;  // 7 Associate Shader Config to Miss, CHS, RGS
+
+    // Create the pipeline config
+    PipelineConfig config( 0 );
+    subobjects[index++] = config.subobject;  // 8
+
+    // Create the global root signature and store the empty signature
+    GlobalRootSignature root( m_Device, {} );
+    m_EmptyRootSig      = root.pRootSig;
+    subobjects[index++] = root.subobject;  // 9
+
+
+
+    m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
 }
 
 bool DummyGame::LoadContent()
@@ -359,8 +453,13 @@ void DummyGame::UnloadContent()
     m_DisplayRootSignature.reset();
     m_PostProcessRootSignature.reset();
 
+    m_EmptyRootSig.reset();
+    m_RayPipelineState.reset();
+
     m_DisplayPipelineState.reset();
     m_PostProcessPipelineState.reset();
+
+
 
     m_RenderTarget.Reset();
 
