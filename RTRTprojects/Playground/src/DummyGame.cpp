@@ -15,6 +15,7 @@
 #include <dx12lib/SwapChain.h>
 #include <dx12lib/Texture.h>
 #include <dx12lib/Visitor.h>
+#include <dx12lib/ShaderTableBuffer.h>
 
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
@@ -327,6 +328,39 @@ void DummyGame::CreateRayTracingPipeline() {
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
 }
 
+void DummyGame::CreateShaderTable() {
+    
+    m_ShaderTableEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+    m_ShaderTableEntrySize += 8;
+    m_ShaderTableEntrySize = align_to( D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES, m_ShaderTableEntrySize );
+    uint32_t shaderTableSize = m_ShaderTableEntrySize * 3;
+
+    m_ShaderTable = m_Device->CreateShaderTableBuffer( shaderTableSize );
+
+    uint8_t* pData;
+    ThrowIfFailed( m_ShaderTable->Map( (void**)&pData ) );
+
+    ID3D12StateObjectProperties* pRtsoProps;
+    m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
+
+    // Entry 0 - ray-gen program ID and descriptor data
+    memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+
+    // This is where we need to set the descriptor data for the ray-gen shader. We'll get to it in the next tutorial
+
+    // Entry 1 - miss program
+    memcpy( pData + m_ShaderTableEntrySize, pRtsoProps->GetShaderIdentifier( kMissShader ),
+            D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+
+    // Entry 2 - hit program
+    uint8_t* pHitEntry = pData + m_ShaderTableEntrySize * 2;  // +2 skips the ray-gen and miss entries
+    memcpy( pHitEntry, pRtsoProps->GetShaderIdentifier( kHitGroup ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+
+    // Unmap
+    m_ShaderTable->Unmap();
+
+}
+
 bool DummyGame::LoadContent()
 {
     m_Device    = Device::Create(true);
@@ -412,7 +446,9 @@ bool DummyGame::LoadContent()
     topLevelAS = topLevelBuffers->GetResult();
     bottomLevelAS = bottomLevelBuffers->GetResult();
 
-    CreateRayTracingPipeline();
+    CreateRayTracingPipeline(); // Tutotiral 4
+
+    CreateShaderTable(); // Tutorial 5
 
 #endif
 

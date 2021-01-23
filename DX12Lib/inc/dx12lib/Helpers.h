@@ -397,3 +397,4 @@ namespace Math
 #define WSTR1(x) L##x
 #define WSTR(x) WSTR1(x)
 #define NAME_D3D12_OBJECT(x) x->SetName( WSTR(__FILE__ "(" STR(__LINE__) "): " L#x) )
+#define align_to( _alignment, _val ) ( ( ( _val + _alignment - 1 ) / _alignment ) * _alignment )

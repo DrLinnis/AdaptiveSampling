@@ -21,6 +21,7 @@
 #include <dx12lib/UnorderedAccessView.h>
 #include <dx12lib/VertexBuffer.h>
 #include <dx12lib/RT_PipelineStateObject.h>
+#include <dx12lib/ShaderTableBuffer.h>
 
 using namespace dx12lib;
 
@@ -179,6 +180,20 @@ public:
     {}
 
     virtual ~MakeByteAddressBuffer() {}
+};
+
+class MakeShaderTableBuffer : public ShaderTableBuffer
+{
+public:
+    MakeShaderTableBuffer( Device& device, const D3D12_RESOURCE_DESC& desc )
+    : ShaderTableBuffer( device, desc )
+    {}
+
+    MakeShaderTableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resoruce )
+    : ShaderTableBuffer( device, resoruce )
+    {}
+
+    virtual ~MakeShaderTableBuffer() {}
 };
 
 class MakeDescriptorAllocator : public DescriptorAllocator
@@ -433,6 +448,17 @@ std::shared_ptr<StructuredBuffer> Device::CreateStructuredBuffer( ComPtr<ID3D12R
         std::make_shared<MakeStructuredBuffer>( *this, resource, numElements, elementSize );
 
     return structuredBuffer;
+}
+
+std::shared_ptr<ShaderTableBuffer> dx12lib::Device::CreateShaderTableBuffer( size_t bufferSize )
+{
+    // Align-up to 4-bytes
+    bufferSize = Math::AlignUp( bufferSize, 4 );
+
+    std::shared_ptr<ShaderTableBuffer> buffer = std::make_shared<MakeShaderTableBuffer>(
+        *this, CD3DX12_RESOURCE_DESC::Buffer( bufferSize, D3D12_RESOURCE_FLAG_NONE ) );
+
+    return buffer;
 }
 
 std::shared_ptr<IndexBuffer> Device::CreateIndexBuffer( size_t numIndicies, DXGI_FORMAT indexFormat )

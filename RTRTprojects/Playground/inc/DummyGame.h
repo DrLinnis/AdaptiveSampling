@@ -27,6 +27,7 @@ class UnorderedAccessView;
 class SwapChain;
 class Texture;
 class AccelerationBuffer;
+class ShaderTableBuffer;
 } 
 
 class Window;  // From GameFramework.
@@ -100,11 +101,14 @@ private:
     std::shared_ptr<dx12lib::RootSignature> m_EmptyRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
 
+    uint32_t                                    m_ShaderTableEntrySize = 0;
+    std::shared_ptr<dx12lib::ShaderTableBuffer> m_ShaderTable;
+
     // new helper functions
     void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
     void CreateRayTracingPipeline(  );
-
+    void CreateShaderTable();
 
 
 

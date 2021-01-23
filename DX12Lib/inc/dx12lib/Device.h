@@ -64,6 +64,7 @@ class SwapChain;
 class Texture;
 class UnorderedAccessView;
 class VertexBuffer;
+class ShaderTableBuffer;
 
 class Device
 {
@@ -136,6 +137,11 @@ public:
     std::shared_ptr<StructuredBuffer> CreateStructuredBuffer( size_t numElements, size_t elementSize );
     std::shared_ptr<StructuredBuffer> CreateStructuredBuffer( Microsoft::WRL::ComPtr<ID3D12Resource> resource,
                                                               size_t numElements, size_t elementSize );
+
+    /*
+     * Create a ShaderTable buffer.
+    */
+    std::shared_ptr<ShaderTableBuffer> CreateShaderTableBuffer( size_t bufferSize );
 
     /**
      * Create a Texture resource.
