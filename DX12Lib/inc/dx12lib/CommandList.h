@@ -56,6 +56,7 @@ class GenerateMipsPSO;
 class IndexBuffer;
 class PanoToCubemapPSO;
 class PipelineStateObject;
+class RT_PipelineStateObject;
 class RenderTarget;
 class Resource;
 class ResourceStateTracker;
@@ -440,6 +441,8 @@ public:
     }
 
 
+
+
     /**
      * Set viewports.
      */
@@ -456,6 +459,13 @@ public:
      * Set the pipeline state object on the command list.
      */
     void SetPipelineState( const std::shared_ptr<PipelineStateObject>& pipelineState );
+
+    /**
+     * Set the pipeline state object on the command list.
+     */
+    void SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState );
+
+
 
     /**
      * Set the current root signature on the command list.
@@ -550,6 +560,11 @@ public:
      * Dispatch a compute shader.
      */
     void Dispatch( uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1 );
+
+    /**
+     * Dispatch rays for ray tracing.
+     */
+    void DispatchRays( D3D12_DISPATCH_RAYS_DESC* pRaytraceDesc );
 
 protected:
     friend class CommandQueue;

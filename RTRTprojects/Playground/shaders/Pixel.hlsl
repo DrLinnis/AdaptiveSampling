@@ -18,7 +18,7 @@ static const float2 texture_step = { 1.0 / 1600.0, 1.0 / 900.0 };
 float4 main( PixelShaderOutput IN ) : SV_TARGET
 {
 #if 1 
-    return Texture.Sample(MeshTextureSampler, IN.TexCoord);
+    return Texture.Sample(MeshTextureSampler, IN.TexCoord);// + float4(1.0, 0.0, 0.0, 0.0);
 #else
     float4 result;
     for (int x = -1; x <= 1; x++)

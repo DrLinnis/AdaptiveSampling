@@ -361,6 +361,34 @@ void DummyGame::CreateShaderTable() {
 
 }
 
+void DummyGame::CreateShaderResource() {
+
+    DXGI_FORMAT uavFormat = Texture::GetUAVCompatableFormat( DXGI_FORMAT_R8G8B8A8_UNORM_SRGB );
+
+    
+    auto renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( uavFormat, m_Width, m_Height, 1, 1, 1,
+                                                    0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS );
+
+    m_OutputResource = m_Device->CreateTexture( renderDesc, nullptr );
+
+    // Create view of output resource
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.Format                           = uavFormat;
+    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDesc.Texture2DArray.MipSlice          = 0;
+    m_Device->CreateUnorderedAccessView( m_OutputResource, nullptr, &uavDesc );
+
+
+    // Create SRV for TLAS after the UAV above. 
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc          = {};
+    srvDesc.ViewDimension                            = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    srvDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.RaytracingAccelerationStructure.Location = topLevelAS->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    m_Device->CreateShaderResourceView( nullptr, &srvDesc);
+}
+
+
 bool DummyGame::LoadContent()
 {
     m_Device    = Device::Create(true);
@@ -384,7 +412,7 @@ bool DummyGame::LoadContent()
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 
     // Create a colour descriptor with appropriate size
-    auto colorDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height);
+    auto colorDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1);
 
     // Create an off-screen render target with a single color buffer.
     colorDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -447,6 +475,8 @@ bool DummyGame::LoadContent()
     bottomLevelAS = bottomLevelBuffers->GetResult();
 
     CreateRayTracingPipeline(); // Tutotiral 4
+
+    CreateShaderResource(); // Tutorial 6
 
     CreateShaderTable(); // Tutorial 5
 
@@ -561,8 +591,50 @@ void DummyGame::OnRender()
 
     // Create a scene visitor that is used to perform the actual rendering of the meshes in the scenes.
     SceneVisitor visitor( *commandList );
+    
+    // Ray tracing calling.
+    {
+        
+        D3D12_DISPATCH_RAYS_DESC raytraceDesc = {};
+        raytraceDesc.Width                    = m_Width;
+        raytraceDesc.Height                   = m_Height;
+        raytraceDesc.Depth                    = 1;
+
+        // RayGen is the first entry in the shader-table
+        raytraceDesc.RayGenerationShaderRecord.StartAddress =
+            m_ShaderTable->GetD3D12Resource()->GetGPUVirtualAddress() + 0 * m_ShaderTableEntrySize;
+        raytraceDesc.RayGenerationShaderRecord.SizeInBytes = m_ShaderTableEntrySize;
+
+        // Miss is the second entry in the shader-table
+        size_t missOffset                          = 1 * m_ShaderTableEntrySize;
+        raytraceDesc.MissShaderTable.StartAddress =
+            m_ShaderTable->GetD3D12Resource()->GetGPUVirtualAddress() + missOffset;
+        raytraceDesc.MissShaderTable.StrideInBytes = m_ShaderTableEntrySize;
+        raytraceDesc.MissShaderTable.SizeInBytes   = m_ShaderTableEntrySize;  // Only a s single miss-entry
+
+        // Hit is the third entry in the shader-table
+        size_t hitOffset                         = 2 * m_ShaderTableEntrySize;
+        raytraceDesc.HitGroupTable.StartAddress = m_ShaderTable->GetD3D12Resource()->GetGPUVirtualAddress() + hitOffset;
+        raytraceDesc.HitGroupTable.StrideInBytes = m_ShaderTableEntrySize;
+        raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize;
+
+        // set pipeline
+        commandList->SetComputeRootSignature( m_EmptyRootSig );
+        commandList->SetPipelineState1( m_RayPipelineState );
+
+
+        commandList->DispatchRays( &raytraceDesc );
+
+        commandList->UAVBarrier( m_OutputResource );
+
+
+        commandList->CopyResource( m_StagingResource, m_OutputResource );
+
+    }
+    
 
     // Post process compute shader execute and transfer staging resource to display.
+    if (false)
     {
         commandList->SetPipelineState( m_PostProcessPipelineState );
         commandList->SetComputeRootSignature( m_PostProcessRootSignature );
@@ -590,7 +662,7 @@ void DummyGame::OnRender()
     */
 
     // Clear the render targets.
-    commandList->ClearTexture( m_RenderTarget.GetTexture( AttachmentPoint::Color0 ), clearColor );
+    commandList->ClearTexture( m_RenderTarget.GetTexture( AttachmentPoint::Color0 ), clearColor ); 
 
     commandList->SetPipelineState( m_DisplayPipelineState );
     commandList->SetGraphicsRootSignature( m_DisplayRootSignature );
@@ -607,6 +679,7 @@ void DummyGame::OnRender()
 
     commandList->SetShaderResourceView( DisplayRootParameters::Textures, 0,
         m_RenderShaderView, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
+
     m_Plane->Accept( visitor );
 
     // Resolve the MSAA render target to the swapchain's backbuffer.

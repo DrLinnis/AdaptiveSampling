@@ -92,23 +92,34 @@ protected:
     void OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList, const dx12lib::RenderTarget& renderTarget );
 
 private:
-    // Added tutorial member
+    // Added tutorial member:
+    // Tut 3
     std::shared_ptr<dx12lib::AccelerationBuffer> topLevelAS;
     std::shared_ptr<dx12lib::AccelerationBuffer> bottomLevelAS;
 
     uint64_t mTlasSize = 0;
-
+    
+    // Tut 4
     std::shared_ptr<dx12lib::RootSignature> m_EmptyRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
-
+    
+    // Tut 5
     uint32_t                                    m_ShaderTableEntrySize = 0;
     std::shared_ptr<dx12lib::ShaderTableBuffer> m_ShaderTable;
+
+    // Tut 6
+    std::shared_ptr<dx12lib::Texture>               m_OutputResource;
+    std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputResourceView;
+    static const uint32_t                           kSrvUavHeapSize = 2;
+
+
 
     // new helper functions
     void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
     void CreateRayTracingPipeline(  );
     void CreateShaderTable();
+    void CreateShaderResource();
 
 
 

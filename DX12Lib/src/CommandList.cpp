@@ -14,6 +14,7 @@
 #include <dx12lib/Mesh.h>
 #include <dx12lib/PanoToCubemapPSO.h>
 #include <dx12lib/PipelineStateObject.h>
+#include <dx12lib/RT_PipelineStateObject.h>
 #include <dx12lib/RenderTarget.h>
 #include <dx12lib/Resource.h>
 #include <dx12lib/ResourceStateTracker.h>
@@ -1323,6 +1324,17 @@ void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& 
     }
 }
 
+void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState ) {
+    assert( pipelineState );
+
+    auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState();
+
+    m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
+
+    TrackResource( d3d12PipelineStateObject );
+
+}
+
 void CommandList::SetGraphicsRootSignature( const std::shared_ptr<RootSignature>& rootSignature )
 {
     assert( rootSignature );
@@ -1606,6 +1618,18 @@ void CommandList::Dispatch( uint32_t numGroupsX, uint32_t numGroupsY, uint32_t n
     }
 
     m_d3d12CommandList->Dispatch( numGroupsX, numGroupsY, numGroupsZ );
+}
+
+void CommandList::DispatchRays(D3D12_DISPATCH_RAYS_DESC* pRaytraceDesc) 
+{
+    FlushResourceBarriers();
+
+    for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
+    {
+        m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this );
+    }
+
+    m_d3d12CommandList->DispatchRays( pRaytraceDesc );
 }
 
 bool CommandList::Close( const std::shared_ptr<CommandList>& pendingCommandList )

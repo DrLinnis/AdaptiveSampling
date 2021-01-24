@@ -30,7 +30,7 @@ void main( ComputeShaderInput IN )
     int x = IN.DispatchThreadID.x;
     float u = x * du;
     
-#if 1
+#if 0
     output[IN.DispatchThreadID.xy] = float4(u, v, 0, 1);
 #else
     output[IN.DispatchThreadID.xy] = float4(1, 0, 1, 1);
