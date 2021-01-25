@@ -60,6 +60,7 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR lpCmdLi
     {
         std::unique_ptr<DummyGame> demo = std::make_unique<DummyGame>( L"Playground Master Thesis", 1600, 900, true );
         retCode                         = demo->Run();
+        demo.reset();
     }
     GameFramework::Destroy();
 

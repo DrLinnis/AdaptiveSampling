@@ -27,6 +27,7 @@ class UnorderedAccessView;
 class SwapChain;
 class Texture;
 class AccelerationBuffer;
+class AccelerationStructure;
 class ShaderTableBuffer;
 } 
 
@@ -94,23 +95,26 @@ protected:
 private:
     // Added tutorial member:
     // Tut 3
-    std::shared_ptr<dx12lib::AccelerationBuffer> topLevelAS;
-    std::shared_ptr<dx12lib::AccelerationBuffer> bottomLevelAS;
+    std::shared_ptr<dx12lib::AccelerationBuffer>    topLevelAS;
+    std::shared_ptr<dx12lib::AccelerationStructure> topLevelBuffers;
+
+    std::shared_ptr<dx12lib::AccelerationBuffer>    bottomLevelAS;
+    std::shared_ptr<dx12lib::AccelerationStructure> bottomLevelBuffers;
 
     uint64_t mTlasSize = 0;
     
     // Tut 4
-    std::shared_ptr<dx12lib::RootSignature> m_EmptyRootSig;
+    std::shared_ptr<dx12lib::RootSignature>          m_EmptyRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
     
     // Tut 5
-    uint32_t                                    m_ShaderTableEntrySize = 0;
+    size_t                                    m_ShaderTableEntrySize = 0;
     std::shared_ptr<dx12lib::ShaderTableBuffer> m_ShaderTable;
 
     // Tut 6
     std::shared_ptr<dx12lib::Texture>               m_OutputResource;
     std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputResourceView;
-    static const uint32_t                           kSrvUavHeapSize = 2;
+    std::shared_ptr<dx12lib::ShaderResourceView>    m_TlasSRV;
 
 
 

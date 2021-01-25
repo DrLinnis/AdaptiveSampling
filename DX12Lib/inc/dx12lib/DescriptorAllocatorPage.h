@@ -86,6 +86,10 @@ public:
      */
     void ReleaseStaleDescriptors();
 
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGpuDescriptorHandle() {
+        return m_d3d12DescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+    }
+
 protected:
     DescriptorAllocatorPage( Device& device, D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors );
     virtual ~DescriptorAllocatorPage() = default;

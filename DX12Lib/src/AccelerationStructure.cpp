@@ -10,7 +10,8 @@
 
 using namespace dx12lib;
 
-std::shared_ptr<AccelerationBuffer> AccelerationStructure::GetResult() {
+std::shared_ptr<AccelerationBuffer> AccelerationStructure::GetResult() const
+{
     return this->pResult;
 }
 

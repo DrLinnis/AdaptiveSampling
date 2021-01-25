@@ -1314,11 +1314,12 @@ void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& 
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState().Get();
-    if ( m_PipelineState != d3d12PipelineStateObject )
+    if ( m_PipelineState != d3d12PipelineStateObject || rayTracingPipeline )
     {
         m_PipelineState = d3d12PipelineStateObject;
 
         m_d3d12CommandList->SetPipelineState( d3d12PipelineStateObject );
+        rayTracingPipeline = false;
 
         TrackResource( d3d12PipelineStateObject );
     }
@@ -1328,11 +1329,14 @@ void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineS
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState();
+    if (!rayTracingPipeline) {
 
-    m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
+        m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
 
-    TrackResource( d3d12PipelineStateObject );
+        rayTracingPipeline = true;
 
+        TrackResource( d3d12PipelineStateObject );
+    }
 }
 
 void CommandList::SetGraphicsRootSignature( const std::shared_ptr<RootSignature>& rootSignature )

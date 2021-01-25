@@ -66,7 +66,14 @@ public:
         , pInstanceDesc( pInstanceDesc )
     {}
 
-    std::shared_ptr<AccelerationBuffer> GetResult();
+    void reset()
+    {
+        pScratch.reset();
+        pResult.reset();
+        pInstanceDesc.reset();
+    }
+
+    std::shared_ptr<AccelerationBuffer> GetResult() const;
 
 private: 
     std::shared_ptr<AccelerationBuffer>    pScratch;    // required for intermediate computation
