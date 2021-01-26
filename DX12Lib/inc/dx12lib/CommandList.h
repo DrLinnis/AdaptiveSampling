@@ -331,19 +331,11 @@ public:
                                  uint32_t numSubresources, D3D12_SUBRESOURCE_DATA* subresourceData );
 
     /*
-     * Build acceleration structure for Top level AS.
+     * Build acceleration structure.
      */
-    std::shared_ptr<AccelerationStructure>
-        BuildTopLevelAccelerationStructure( std::shared_ptr<dx12lib::AccelerationBuffer>          pBottomLevelAS,
-                                            D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS  inputs,
-                                            D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info );
+    void BuildRaytracingAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC* pDesc );
 
-    /*
-     * Build acceleration structure for Bottom level AS.
-     */
-    std::shared_ptr<AccelerationStructure>
-        BuildBottomLevelAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS  inputs,
-                                              D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info );
+
 
     /**
      * Set a dynamic constant buffer data to an inline descriptor in the root

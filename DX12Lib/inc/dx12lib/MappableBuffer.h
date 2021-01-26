@@ -10,7 +10,7 @@ namespace dx12lib
 
 class Device;
 
-class ShaderTableBuffer : public Resource
+class MappableBuffer : public Resource
 {
 public:
     size_t GetBufferSize() const
@@ -22,9 +22,9 @@ public:
     void    Unmap();
 
 protected:
-    ShaderTableBuffer( Device& device, const D3D12_RESOURCE_DESC& resDesc );
-    ShaderTableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource );
-    virtual ~ShaderTableBuffer() = default;
+    MappableBuffer( Device& device, const D3D12_RESOURCE_DESC& resDesc );
+    MappableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource );
+    virtual ~MappableBuffer() = default;
 
 private:
     size_t m_BufferSize;

@@ -15,11 +15,12 @@
 #include <dx12lib/SwapChain.h>
 #include <dx12lib/Texture.h>
 #include <dx12lib/Visitor.h>
-#include <dx12lib/ShaderTableBuffer.h>
 #include <dx12lib/UnorderedAccessView.h>
 
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
+#include <dx12lib/MappableBuffer.h>
+
 #include <dxcapi.h>
 
 #include <GameFramework/Window.h>
@@ -38,7 +39,17 @@ using namespace DirectX;
 #include <algorithm>  // For std::min, std::max, and std::clamp.
 #include <random>
 
-namespace PostProcessingRootParamaters
+namespace RayGenRootParameters
+{
+enum
+{
+    Output,                     // gOutput : register(u0);
+    RayAccelerationStructure,   // gRtScene : register(t0);
+    NumRootParameters
+};
+}
+
+namespace PostProcessingRootParameters
 {
 enum
 {
@@ -106,33 +117,37 @@ uint32_t DummyGame::Run()
     return retCode;
 }
 
-void DummyGame::CreatePostProcessor(const D3D12_STATIC_SAMPLER_DESC* sampler) 
+void DummyGame::CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler )
 {
     // Load compute shader
     ComPtr<ID3DBlob> cs;
     ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/PostProcess.cso", &cs ) );
 
-    // Create root signature
-    CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
-                                      D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+    { 
+        // Create root signature
+        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
+                                          D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
 
-    CD3DX12_ROOT_PARAMETER1 rootParameters[PostProcessingRootParamaters::NumRootParameters];
-    // Division by 4 becase sizeof gives in number of bytes, not 32 bits.
-    rootParameters[PostProcessingRootParamaters::Output].InitAsDescriptorTable( 1, &output );
-    rootParameters[PostProcessingRootParamaters::Input].InitAsShaderResourceView( 0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                                                                                  D3D12_SHADER_VISIBILITY_ALL );
+        CD3DX12_ROOT_PARAMETER1 rootParameters[PostProcessingRootParameters::NumRootParameters];
+        // Division by 4 becase sizeof gives in number of bytes, not 32 bits.
+        rootParameters[PostProcessingRootParameters::Output].InitAsDescriptorTable( 1, &output );
+        rootParameters[PostProcessingRootParameters::Input].InitAsShaderResourceView( 0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+                                                                                      D3D12_SHADER_VISIBILITY_ALL );
 
-    // Allow input layout and deny unnecessary access to certain pipeline stages.
-    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+        // Allow input layout and deny unnecessary access to certain pipeline stages.
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-    rootSignatureDescription.Init_1_1( PostProcessingRootParamaters::NumRootParameters, rootParameters, 0, sampler,
-                                       rootSignatureFlags );
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( PostProcessingRootParameters::NumRootParameters, rootParameters, 0, sampler,
+                                           rootSignatureFlags );
 
-    m_PostProcessRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+        
+        m_PostProcessRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+    }
+
 
     // Create Pipeline State Object (PSO) for compute shader
     struct RayPipelineState
@@ -218,45 +233,6 @@ void DummyGame::CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler,
     m_RenderTarget.AttachTexture( AttachmentPoint::Color0, renderedImage );
 }
 
-struct RootSignatureDesc
-{
-    D3D12_ROOT_SIGNATURE_DESC1           desc = {};
-    std::vector<D3D12_DESCRIPTOR_RANGE1> range;
-    std::vector<D3D12_ROOT_PARAMETER1>   rootParams;
-};
-
-RootSignatureDesc createRayGenRootDesc()
-{
-    // Create the root-signature
-    RootSignatureDesc desc;
-    desc.range.resize( 2 );
-    // gOutput
-    desc.range[0].BaseShaderRegister                = 0;
-    desc.range[0].NumDescriptors                    = 1;
-    desc.range[0].RegisterSpace                     = 0;
-    desc.range[0].RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    desc.range[0].OffsetInDescriptorsFromTableStart = 0;
-
-    // gRtScene
-    desc.range[1].BaseShaderRegister                = 0;
-    desc.range[1].NumDescriptors                    = 1;
-    desc.range[1].RegisterSpace                     = 0;
-    desc.range[1].RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    desc.range[1].OffsetInDescriptorsFromTableStart = 1;
-
-    desc.rootParams.resize( 1 );
-    desc.rootParams[0].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    desc.rootParams[0].DescriptorTable.NumDescriptorRanges = 2;
-    desc.rootParams[0].DescriptorTable.pDescriptorRanges   = desc.range.data();
-
-    // Create the desc
-    desc.desc.NumParameters = 1;
-    desc.desc.pParameters   = desc.rootParams.data();
-    desc.desc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-    return desc;
-}
-
 static const WCHAR* kRayGenShader     = L"rayGen";
 static const WCHAR* kMissShader       = L"miss";
 static const WCHAR* kClosestHitShader = L"chs";
@@ -281,26 +257,67 @@ void DummyGame::CreateRayTracingPipeline() {
         ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_3" );
     const WCHAR*     entryPoints[] = { kRayGenShader, kMissShader, kClosestHitShader }; // SIZE 3
     
-    DxilLibrary      dxilLib( shaders, entryPoints, 3 );
+    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 3 );
     subobjects[index++] = dxilLib.stateSubobject; // 0 Library
 
     HitProgram hitProgram( nullptr, kClosestHitShader, kHitGroup );
     subobjects[index++] = hitProgram.subObject; // 1 Hit Group.
 
     // Create the ray-gen root-signature and association
-    LocalRootSignature rgsRootSignature( m_Device, createRayGenRootDesc().desc );
-    subobjects[index] = rgsRootSignature.subobject;  // 2 RayGen Root Sig
+    {
+        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
+                                          D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+
+        CD3DX12_ROOT_PARAMETER1 rayRootParameters[RayGenRootParameters::NumRootParameters];
+
+        rayRootParameters[RayGenRootParameters::Output].InitAsDescriptorTable( 1, &output );
+        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsShaderResourceView(
+            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
+
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( RayGenRootParameters::NumRootParameters, rayRootParameters, 0, nullptr,
+                                           rootSignatureFlags );
+
+        m_RayGenRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+    }
+
+    ID3D12RootSignature* pRayInterface = m_RayGenRootSig->GetD3D12RootSignature().Get();
+
+    D3D12_STATE_SUBOBJECT rayGenSubobject = {};
+    rayGenSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+    rayGenSubobject.pDesc                 = &pRayInterface;
+
+    subobjects[index] = rayGenSubobject;  // 2 RayGen Root Sig
+
+    
 
     uint32_t          rgsRootIndex = index++;  // 2
     ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
 
-    // Create the miss- and hit-programs root-signature and association
-    D3D12_ROOT_SIGNATURE_DESC1 emptyDesc = {};
-    emptyDesc.Flags                     = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-    LocalRootSignature hitMissRootSignature( m_Device, emptyDesc );
-    subobjects[index] = hitMissRootSignature.subobject;  // 4 Root Sig to be shared between Miss and CHS
+    // Create the MISS- and HIT-programs root-signature
+    {
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
+        CD3DX12_ROOT_PARAMETER1 emptyRootParameters = {};
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+
+        m_HitMissRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+    }
+
+    ID3D12RootSignature* pEmptyInterface = m_HitMissRootSig->GetD3D12RootSignature().Get();
+    D3D12_STATE_SUBOBJECT emptySubobject = {};
+    emptySubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+    emptySubobject.pDesc                 = &pEmptyInterface;
+
+    subobjects[index] = emptySubobject;  // 4 Root Sig to be shared between Miss and CHS
+    // END MISS/HITT
+    
+    // Miss and Hit associations
     uint32_t          hitMissRootIndex    = index++;  // 4
     const WCHAR*      missHitExportName[] = { kMissShader, kClosestHitShader }; // SIZE 2
     ExportAssociation missHitRootAssociation( missHitExportName, 2, &( subobjects[hitMissRootIndex] ) );
@@ -319,23 +336,29 @@ void DummyGame::CreateRayTracingPipeline() {
     PipelineConfig config( 0 );
     subobjects[index++] = config.subobject;  // 8
 
-    // Create the global root signature and store the empty signature
+    // Create the GLOBAL root signature and store the empty signature
+    {
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
-    GlobalRootSignature root( m_Device, {} );
-    m_EmptyRootSig      = root.pRootSig;
-    subobjects[index++] = root.subobject;  // 9
+        CD3DX12_ROOT_PARAMETER1 emptyRootParameters = {};
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+
+        m_EmptyRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+    }
+
+    ID3D12RootSignature*  pGlobalInterface      = m_EmptyRootSig->GetD3D12RootSignature().Get();
+    D3D12_STATE_SUBOBJECT emptyGlobalSubobject  = {};
+    emptyGlobalSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+    emptyGlobalSubobject.pDesc                  = &pGlobalInterface;
+
+    subobjects[index++] = emptyGlobalSubobject; // 9
+    // END GLOBAL
 
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
 
-    /*
-    rgsRootSignature.pRootSig.reset();
-    hitMissRootSignature.pRootSig.reset();
-    root.pRootSig.reset();
     shaders.Reset();
-    dxilLib.pShaderBlob.Reset();
-    */
-
-
 }
 
 void DummyGame::CreateShaderTable() {
@@ -345,33 +368,33 @@ void DummyGame::CreateShaderTable() {
     m_ShaderTableEntrySize = align_to( D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES, m_ShaderTableEntrySize );
     uint32_t shaderTableSize = m_ShaderTableEntrySize * 3;
 
-    m_ShaderTable = m_Device->CreateShaderTableBuffer( shaderTableSize );
+    m_ShaderTable = m_Device->CreateMappableBuffer( shaderTableSize );
 
     uint8_t* pData;
-    ThrowIfFailed( m_ShaderTable->Map( (void**)&pData ) );
+    ThrowIfFailed( m_ShaderTable->Map( (void**)&pData ) ); // Map
+    {
+        ID3D12StateObjectProperties* pRtsoProps;
+        m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
 
-    ID3D12StateObjectProperties* pRtsoProps;
-    m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
+        // Entry 0 - ray-gen program ID and descriptor data
+        memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
 
-    // Entry 0 - ray-gen program ID and descriptor data
-    memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+        // Write the address of this ray output view
+        uint64_t heapStart = m_RayOutputResourceView->GetGpuDescriptorHandle().ptr;
 
-    // Write the address of this ray output view
-    uint64_t heapStart = m_RayOutputResourceView->GetGpuDescriptorHandle().ptr;
+        uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        memcpy( pDescriptorTable, &heapStart, sizeof( uint64_t ) ); 
 
-    uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-    memcpy( pDescriptorTable, &heapStart, sizeof( heapStart ) ); 
+        // Entry 1 - miss program
+        uint8_t* pMissEntry = pData + m_ShaderTableEntrySize;
+        memcpy( pMissEntry, pRtsoProps->GetShaderIdentifier( kMissShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
 
-    // Entry 1 - miss program
-    uint8_t* pMissEntry = pData + m_ShaderTableEntrySize;
-    memcpy( pMissEntry, pRtsoProps->GetShaderIdentifier( kMissShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+        // Entry 2 - hit program
+        uint8_t* pHitEntry = pData + m_ShaderTableEntrySize * 2;  // +2 skips the ray-gen and miss entries
+        memcpy( pHitEntry, pRtsoProps->GetShaderIdentifier( kHitGroup ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
 
-    // Entry 2 - hit program
-    uint8_t* pHitEntry = pData + m_ShaderTableEntrySize * 2;  // +2 skips the ray-gen and miss entries
-    memcpy( pHitEntry, pRtsoProps->GetShaderIdentifier( kHitGroup ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
-
-    // Unmap
-    m_ShaderTable->Unmap();
+    }
+    m_ShaderTable->Unmap(); // Unmap
 
 }
 
@@ -384,6 +407,7 @@ void DummyGame::CreateShaderResource() {
                                                     0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS );
 
     m_OutputResource = m_Device->CreateTexture( renderDesc, nullptr );
+    m_OutputResource->SetName( L"RayGen output texture" );
 
     // Create view of output resource
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -476,11 +500,11 @@ bool DummyGame::LoadContent()
     std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_Plane->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
     std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_Plane->GetRootNode()->GetMesh()->GetIndexBuffer();
 
-    bottomLevelBuffers = AccelerationStructure::CreateBottomLevelAS( m_Device, commandList,
-        pVertexBuffer, pIndexBuffer );
+    bottomLevelBuffers = AccelerationStructure::CreateBottomLevelAS( m_Device.get(), commandList.get(),
+        pVertexBuffer.get(), pIndexBuffer.get() );
 
-    topLevelBuffers = AccelerationStructure::CreateTopLevelAS( m_Device, commandList,
-        bottomLevelBuffers->GetResult(), &mTlasSize );
+    topLevelBuffers = AccelerationStructure::CreateTopLevelAS( m_Device.get(), commandList.get(),
+        bottomLevelBuffers->GetResult().get(), &mTlasSize );
 
     commandQueueCompute.ExecuteCommandList( commandList );
     commandQueueCompute.Flush();
@@ -534,6 +558,9 @@ void DummyGame::UnloadContent()
     m_OutputResource.reset();
     m_RayOutputResourceView.reset();
     m_TlasSRV.reset();
+
+    m_RayGenRootSig.reset();
+    m_HitMissRootSig.reset();
 
     m_EmptyRootSig.reset();
     m_RayPipelineState.reset();
@@ -677,7 +704,7 @@ void DummyGame::OnRender()
 
         // set uniforms
         {
-            commandList->SetUnorderedAccessView( PostProcessingRootParamaters::Output, 0,
+            commandList->SetUnorderedAccessView( PostProcessingRootParameters::Output, 0,
                                                  m_StagingUnorderedAccessView );
         }
 

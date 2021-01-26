@@ -21,7 +21,9 @@
 #include <dx12lib/UnorderedAccessView.h>
 #include <dx12lib/VertexBuffer.h>
 #include <dx12lib/RT_PipelineStateObject.h>
-#include <dx12lib/ShaderTableBuffer.h>
+
+#include <dx12lib/MappableBuffer.h>
+#include <dx12lib/AccelerationStructure.h>
 
 using namespace dx12lib;
 
@@ -182,18 +184,18 @@ public:
     virtual ~MakeByteAddressBuffer() {}
 };
 
-class MakeShaderTableBuffer : public ShaderTableBuffer
+class MakeMappableBuffer : public MappableBuffer
 {
 public:
-    MakeShaderTableBuffer( Device& device, const D3D12_RESOURCE_DESC& desc )
-    : ShaderTableBuffer( device, desc )
+    MakeMappableBuffer( Device& device, const D3D12_RESOURCE_DESC& desc )
+    : MappableBuffer( device, desc )
     {}
 
-    MakeShaderTableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resoruce )
-    : ShaderTableBuffer( device, resoruce )
+    MakeMappableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resoruce )
+    : MappableBuffer( device, resoruce )
     {}
 
-    virtual ~MakeShaderTableBuffer() {}
+    virtual ~MakeMappableBuffer() {}
 };
 
 class MakeDescriptorAllocator : public DescriptorAllocator
@@ -450,13 +452,25 @@ std::shared_ptr<StructuredBuffer> Device::CreateStructuredBuffer( ComPtr<ID3D12R
     return structuredBuffer;
 }
 
-std::shared_ptr<ShaderTableBuffer> dx12lib::Device::CreateShaderTableBuffer( size_t bufferSize )
+std::shared_ptr<MappableBuffer> dx12lib::Device::CreateMappableBuffer( size_t bufferSize)
 {
     // Align-up to 4-bytes
     bufferSize = Math::AlignUp( bufferSize, 4 );
 
-    std::shared_ptr<ShaderTableBuffer> buffer = std::make_shared<MakeShaderTableBuffer>(
+    std::shared_ptr<MappableBuffer> buffer = std::make_shared<MakeMappableBuffer>(
         *this, CD3DX12_RESOURCE_DESC::Buffer( bufferSize, D3D12_RESOURCE_FLAG_NONE ) );
+
+    return buffer;
+}
+
+std::shared_ptr<AccelerationBuffer> dx12lib::Device::CreateAccelerationBuffer( size_t                      bufferSize,
+                                                                               const D3D12_RESOURCE_FLAGS  flag,
+                                                                               const D3D12_RESOURCE_STATES initState )
+{
+    // Align-up to 4-bytes
+    bufferSize = Math::AlignUp( bufferSize, 4 );
+
+    std::shared_ptr<AccelerationBuffer> buffer = std::make_shared<MakeAccelerationBuffer>( *this, CD3DX12_RESOURCE_DESC::Buffer( bufferSize, flag ), initState );
 
     return buffer;
 }

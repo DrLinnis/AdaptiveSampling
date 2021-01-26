@@ -48,7 +48,7 @@ ComPtr<IDxcBlob> ShaderHelper::CompileLibrary( const WCHAR* filename, const WCHA
     return pBlob;
 }
 
-DxilLibrary::DxilLibrary( ComPtr<IDxcBlob> pBlob, const WCHAR* entryPoint[], uint32_t entryPointCount )
+DxilLibrary::DxilLibrary( IDxcBlob* pBlob, const WCHAR* entryPoint[], uint32_t entryPointCount )
 : pShaderBlob( pBlob )
 {
     stateSubobject.Type  = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
@@ -57,7 +57,7 @@ DxilLibrary::DxilLibrary( ComPtr<IDxcBlob> pBlob, const WCHAR* entryPoint[], uin
     dxilLibDesc = {};
     exportDesc.resize( entryPointCount );
     exportName.resize( entryPointCount );
-    if ( pBlob.Get() )
+    if ( pBlob )
     {
         dxilLibDesc.DXILLibrary.pShaderBytecode = pBlob->GetBufferPointer();
         dxilLibDesc.DXILLibrary.BytecodeLength  = pBlob->GetBufferSize();
@@ -77,7 +77,6 @@ DxilLibrary::DxilLibrary( ComPtr<IDxcBlob> pBlob, const WCHAR* entryPoint[], uin
 HitProgram::HitProgram( LPCWSTR ahsExport, LPCWSTR chsExport, const std::wstring& name )
 : exportName( name )
 {
-    desc                        = {};
     desc.AnyHitShaderImport     = ahsExport;
     desc.ClosestHitShaderImport = chsExport;
     desc.HitGroupExport         = exportName.c_str();
@@ -95,22 +94,6 @@ ExportAssociation::ExportAssociation( const WCHAR* exportNames[], uint32_t expor
 
     subobject.Type  = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
     subobject.pDesc = &association;
-}
-
-LocalRootSignature::LocalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc )
-{
-    pRootSig        = pDevice->CreateRayRootSignature( desc );
-    pInterface = pRootSig->GetD3D12RootSignature().Get();
-    subobject.pDesc                 = &pInterface;
-    subobject.Type  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-}
-
-GlobalRootSignature::GlobalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc )
-{
-    pRootSig        = pDevice->CreateRayRootSignature( desc );
-    pInterface               = pRootSig->GetD3D12RootSignature().Get();
-    subobject.pDesc = &pInterface;
-    subobject.Type  = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
 }
 
 ShaderConfig::ShaderConfig( uint32_t maxAttributeSizeInBytes, uint32_t maxPayloadSizeInBytes )

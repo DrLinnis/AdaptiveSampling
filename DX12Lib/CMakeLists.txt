@@ -41,7 +41,7 @@ set( HEADER_FILES
     inc/dx12lib/Visitor.h
     inc/dx12lib/AccelerationStructure.h
     inc/dx12lib/RT_PipelineStateObject.h
-    inc/dx12lib/ShaderTableBuffer.h
+    inc/dx12lib/MappableBuffer.h
 )
 
 set( SOURCE_FILES
@@ -82,7 +82,7 @@ set( SOURCE_FILES
     src/VertexTypes.cpp
     src/AccelerationStructure.cpp
     src/RT_PipelineStateObject.cpp
-    src/ShaderTableBuffer.cpp
+    src/MappableBuffer.cpp
 )
 
 set( IMGUI_HEADERS

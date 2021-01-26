@@ -64,7 +64,9 @@ class SwapChain;
 class Texture;
 class UnorderedAccessView;
 class VertexBuffer;
-class ShaderTableBuffer;
+
+class MappableBuffer;
+class AccelerationBuffer;
 
 class Device
 {
@@ -139,9 +141,15 @@ public:
                                                               size_t numElements, size_t elementSize );
 
     /*
-     * Create a ShaderTable buffer.
+     * Create a buffer that is mappable.
     */
-    std::shared_ptr<ShaderTableBuffer> CreateShaderTableBuffer( size_t bufferSize );
+    std::shared_ptr<MappableBuffer> CreateMappableBuffer( size_t bufferSize );
+
+    /*
+     * Create an Acceleration Structure Buffer.
+     */
+    std::shared_ptr<AccelerationBuffer>
+        CreateAccelerationBuffer( size_t bufferSize, const D3D12_RESOURCE_FLAGS flag,  const D3D12_RESOURCE_STATES initState );
 
     /**
      * Create a Texture resource.

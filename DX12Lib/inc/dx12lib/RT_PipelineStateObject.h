@@ -19,7 +19,7 @@ public:
 
 struct DxilLibrary
 {
-    DxilLibrary( ComPtr<IDxcBlob> pBlob, const WCHAR* entryPoint[], uint32_t entryPointCount );
+    DxilLibrary( IDxcBlob* pBlob, const WCHAR* entryPoint[], uint32_t entryPointCount );
 
     DxilLibrary()
     : DxilLibrary( nullptr, nullptr, 0 )
@@ -27,7 +27,7 @@ struct DxilLibrary
 
     D3D12_DXIL_LIBRARY_DESC        dxilLibDesc = {};
     D3D12_STATE_SUBOBJECT          stateSubobject {};
-    ComPtr<IDxcBlob>               pShaderBlob;
+    IDxcBlob*                       pShaderBlob;
     std::vector<D3D12_EXPORT_DESC> exportDesc;
     std::vector<std::wstring>      exportName;
 };
@@ -37,8 +37,8 @@ struct HitProgram
     HitProgram( LPCWSTR ahsExport, LPCWSTR chsExport, const std::wstring& name );
 
     std::wstring          exportName;
-    D3D12_HIT_GROUP_DESC  desc;
-    D3D12_STATE_SUBOBJECT subObject;
+    D3D12_HIT_GROUP_DESC  desc      = {};
+    D3D12_STATE_SUBOBJECT subObject = {};
 };
 
 struct ExportAssociation
@@ -48,24 +48,6 @@ struct ExportAssociation
 
     D3D12_STATE_SUBOBJECT                  subobject   = {};
     D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-};
-
-struct LocalRootSignature
-{
-    LocalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc );
-
-    std::shared_ptr<RootSignature> pRootSig;
-    ID3D12RootSignature*           pInterface = nullptr;
-    D3D12_STATE_SUBOBJECT       subobject  = {};
-};
-
-struct GlobalRootSignature
-{
-    GlobalRootSignature( std::shared_ptr<Device> pDevice, const D3D12_ROOT_SIGNATURE_DESC1& desc );
-
-    std::shared_ptr<RootSignature> pRootSig;
-    ID3D12RootSignature*           pInterface = nullptr;
-    D3D12_STATE_SUBOBJECT       subobject  = {};
 };
 
 struct ShaderConfig

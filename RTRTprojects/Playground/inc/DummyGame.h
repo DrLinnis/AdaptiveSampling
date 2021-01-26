@@ -28,7 +28,7 @@ class SwapChain;
 class Texture;
 class AccelerationBuffer;
 class AccelerationStructure;
-class ShaderTableBuffer;
+class MappableBuffer;
 } 
 
 class Window;  // From GameFramework.
@@ -104,12 +104,16 @@ private:
     uint64_t mTlasSize = 0;
     
     // Tut 4
+    std::shared_ptr<dx12lib::RootSignature> m_RayGenRootSig;
+    std::shared_ptr<dx12lib::RootSignature> m_HitMissRootSig;
+
+
     std::shared_ptr<dx12lib::RootSignature>          m_EmptyRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
     
     // Tut 5
     size_t                                    m_ShaderTableEntrySize = 0;
-    std::shared_ptr<dx12lib::ShaderTableBuffer> m_ShaderTable;
+    std::shared_ptr<dx12lib::MappableBuffer> m_ShaderTable;
 
     // Tut 6
     std::shared_ptr<dx12lib::Texture>               m_OutputResource;

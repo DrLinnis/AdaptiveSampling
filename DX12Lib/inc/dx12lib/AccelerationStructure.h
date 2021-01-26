@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Buffer.h"
+#include "MappableBuffer.h"
 
 #include "d3dx12.h"
 #include <memory>
@@ -14,11 +15,14 @@ class CommandList;
 class VertexBuffer;
 class IndexBuffer;
 class Buffer;
+class MappableBuffer;
 
 class AccelerationBuffer : public Resource
 {
 protected:
-    AccelerationBuffer( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_RESOURCE_STATES initState,
+    AccelerationBuffer( Device& device, 
+                        const D3D12_RESOURCE_DESC& resourceDesc, 
+                        const D3D12_RESOURCE_STATES initState,
                         const D3D12_HEAP_TYPE heapType )
     : Resource( device, resourceDesc, nullptr, initState, heapType )
     {}
@@ -30,7 +34,9 @@ protected:
 class MakeAccelerationBuffer : public AccelerationBuffer
 {
 public:
-    MakeAccelerationBuffer( Device& device, const D3D12_RESOURCE_DESC& resDesc, const D3D12_RESOURCE_STATES initState,
+    MakeAccelerationBuffer( Device& device,
+                            const D3D12_RESOURCE_DESC& resDesc, 
+                            const D3D12_RESOURCE_STATES initState,
                             const D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_DEFAULT )
     : AccelerationBuffer( device, resDesc, initState, heapType )
     {}
@@ -46,24 +52,24 @@ class AccelerationStructure
 {
 public:
     static std::shared_ptr<AccelerationStructure> CreateTopLevelAS( 
-        std::shared_ptr<dx12lib::Device> pDevice, std::shared_ptr<dx12lib::CommandList> pCommandList,
-        std::shared_ptr<dx12lib::AccelerationBuffer> pBottomLevelAS, uint64_t* pTlasSize );
+        dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
+        dx12lib::AccelerationBuffer* pBottomLevelAS, uint64_t* pTlasSize );
 
-    static std::shared_ptr<AccelerationStructure> CreateBottomLevelAS( 
-        std::shared_ptr<dx12lib::Device> pDevice, std::shared_ptr<dx12lib::CommandList> pCommandList,
-        std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer, std::shared_ptr<dx12lib::IndexBuffer> pIndexBuffer );
-    
-    AccelerationStructure( std::shared_ptr<AccelerationBuffer> pScratch, std::shared_ptr<AccelerationBuffer> pResult)
-    : pScratch( pScratch )
-    , pResult( pResult )
+    static std::shared_ptr<AccelerationStructure> CreateBottomLevelAS( dx12lib::Device*       pDevice,
+                                                                       dx12lib::CommandList*  pCommandList,
+                                                                       dx12lib::VertexBuffer* pVertexBuffer,
+                                                                       dx12lib::IndexBuffer*  pIndexBuffer );
+
+    AccelerationStructure()
+    : pScratch( nullptr )
+    , pResult( nullptr )
     , pInstanceDesc( nullptr )
     {}
 
-    AccelerationStructure( std::shared_ptr<AccelerationBuffer> pScratch, std::shared_ptr<AccelerationBuffer> pResult,
-                           std::shared_ptr<AccelerationBuffer> pInstanceDesc )
-        : pScratch( pScratch )
-        , pResult( pResult )
-        , pInstanceDesc( pInstanceDesc )
+    AccelerationStructure( AccelerationStructure* Acc )
+    : pScratch( Acc->pScratch )
+    , pResult( Acc->pResult )
+    , pInstanceDesc( Acc->pInstanceDesc )
     {}
 
     void reset()
@@ -73,12 +79,16 @@ public:
         pInstanceDesc.reset();
     }
 
-    std::shared_ptr<AccelerationBuffer> GetResult() const;
+    std::shared_ptr<AccelerationBuffer> GetResult() const {
+        return pResult;
+    }
 
 private: 
+    
+
     std::shared_ptr<AccelerationBuffer>    pScratch;    // required for intermediate computation
     std::shared_ptr<AccelerationBuffer>    pResult;     // holds the acceleration data. 
-    std::shared_ptr<AccelerationBuffer>    pInstanceDesc;  // Used only for top-level AS
+    std::shared_ptr<MappableBuffer>         pInstanceDesc;  // Used only for top-level AS
 };
 
 }  // namespace dx12lib
