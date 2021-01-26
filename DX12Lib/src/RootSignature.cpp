@@ -6,7 +6,7 @@
 
 using namespace dx12lib;
 
-RootSignature::RootSignature( Device& device, const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc)
+RootSignature::RootSignature( Device& device, const D3D12_ROOT_SIGNATURE_DESC1& rootSignatureDesc )
 : m_Device( device )
 , m_RootSignatureDesc {}
 , m_NumDescriptorsPerTable { 0 }

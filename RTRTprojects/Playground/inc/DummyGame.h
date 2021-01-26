@@ -95,39 +95,41 @@ protected:
 private:
     // Added tutorial member:
     // Tut 3
-    std::shared_ptr<dx12lib::AccelerationBuffer>    topLevelAS;
-    std::shared_ptr<dx12lib::AccelerationStructure> topLevelBuffers;
+    std::shared_ptr<dx12lib::AccelerationBuffer>    m_topLevelAS;
+    std::shared_ptr<dx12lib::AccelerationStructure> m_topLevelBuffers;
 
-    std::shared_ptr<dx12lib::AccelerationBuffer>    bottomLevelAS;
-    std::shared_ptr<dx12lib::AccelerationStructure> bottomLevelBuffers;
+    std::shared_ptr<dx12lib::AccelerationBuffer>    m_bottomLevelAS;
+    std::shared_ptr<dx12lib::AccelerationStructure> m_bottomLevelBuffers;
 
     uint64_t mTlasSize = 0;
     
     // Tut 4
-    std::shared_ptr<dx12lib::RootSignature> m_RayGenRootSig;
-    std::shared_ptr<dx12lib::RootSignature> m_HitMissRootSig;
+    std::shared_ptr<dx12lib::RootSignature>         m_RayGenRootSig;
+    std::shared_ptr<dx12lib::RootSignature>         m_HitMissRootSig;
+    std::shared_ptr<dx12lib::RootSignature>         m_DummyGlobalRootSig;
 
-
-    std::shared_ptr<dx12lib::RootSignature>          m_EmptyRootSig;
+    std::shared_ptr<dx12lib::RootSignature>          m_GlobalRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
     
     // Tut 5
-    size_t                                    m_ShaderTableEntrySize = 0;
-    std::shared_ptr<dx12lib::MappableBuffer> m_ShaderTable;
+    size_t                                          m_ShaderTableEntrySize = 0;
+    std::shared_ptr<dx12lib::MappableBuffer>        m_ShaderTable;
 
     // Tut 6
-    std::shared_ptr<dx12lib::Texture>               m_OutputResource;
-    std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputResourceView;
+    std::shared_ptr<dx12lib::Texture>               m_RayOutputResource;
+
+    std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputUAV;
+    std::shared_ptr<dx12lib::ShaderResourceView>    m_RayOutputSRV;
     std::shared_ptr<dx12lib::ShaderResourceView>    m_TlasSRV;
 
 
 
     // new helper functions
-    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler );
+    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
     void CreateRayTracingPipeline(  );
     void CreateShaderTable();
-    void CreateShaderResource();
+    void CreateShaderResource( DXGI_FORMAT backBufferFormat );
 
 
 
@@ -141,9 +143,11 @@ private:
 
     // Some geometry to render.
     std::shared_ptr<dx12lib::Scene> m_Plane;
+
+    std::shared_ptr<dx12lib::Scene> m_MiniPlane;
     
-    std::shared_ptr<dx12lib::Texture>             m_StagingResource;
-    std::shared_ptr<dx12lib::UnorderedAccessView> m_StagingUnorderedAccessView;
+    std::shared_ptr<dx12lib::Texture>             m_PostProcessOutput;
+    std::shared_ptr<dx12lib::UnorderedAccessView> m_PostProcessOutputUAV;
 
     std::shared_ptr<dx12lib::Texture>             m_RenderShaderResource;
     std::shared_ptr<dx12lib::ShaderResourceView> m_RenderShaderView;

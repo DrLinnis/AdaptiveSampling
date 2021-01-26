@@ -9,6 +9,11 @@ shaders and RTRT.
 
     
 ### Meetings:
+##### Meeting notes 26/1:
+---
+Found another reference DXR system that displays a more complex model:
+    https://github.com/acmarrs/IntroToDXR
+
 ##### Meeting notes 19/1:
 ---
 Open source code is free to use. GO HAM.

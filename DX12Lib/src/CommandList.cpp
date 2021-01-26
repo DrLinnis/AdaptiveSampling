@@ -1361,6 +1361,7 @@ void CommandList::SetGraphicsRootSignature( const std::shared_ptr<RootSignature>
     }
 }
 
+
 void CommandList::SetComputeRootSignature( const std::shared_ptr<RootSignature>& rootSignature )
 {
     assert( rootSignature );
@@ -1369,7 +1370,7 @@ void CommandList::SetComputeRootSignature( const std::shared_ptr<RootSignature>&
     if ( m_RootSignature != d3d12RootSignature )
     {
         m_RootSignature = d3d12RootSignature;
-
+        
         for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
         {
             m_DynamicDescriptorHeap[i]->ParseRootSignature( rootSignature );
