@@ -21,6 +21,7 @@
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
 #include <dx12lib/MappableBuffer.h>
+#include <dx12lib/ShaderTable.h>
 
 #include <dxcapi.h>
 
@@ -39,16 +40,6 @@ using namespace DirectX;
 #include <math.h>
 #include <algorithm>  // For std::min, std::max, and std::clamp.
 #include <random>
-
-namespace RayGenRootParameters
-{
-enum
-{
-    Output,                     // gOutput : register(u0);
-    RayAccelerationStructure,   // gRtScene : register(t0);
-    NumRootParameters
-};
-}
 
 namespace PostProcessingRootParameters
 {
@@ -283,21 +274,22 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Create the ray-gen root-signature and association
     {
-        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
-                                          D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
-        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
+        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                          0 );
 
-        CD3DX12_ROOT_PARAMETER1 rayRootParameters[RayGenRootParameters::NumRootParameters];
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                           1 );
 
-        rayRootParameters[RayGenRootParameters::Output].InitAsDescriptorTable( 1, &output );
-        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsShaderResourceView( 0 );
-        //rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsDescriptorTable( 1, &TlvlAcc );
+        const CD3DX12_DESCRIPTOR_RANGE1 tables[2] = { output, TlvlAcc };
+
+        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+
+        rayRootParams[0].InitAsDescriptorTable( 2, tables );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( RayGenRootParameters::NumRootParameters, rayRootParameters, 0, nullptr,
-                                           rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
 
         m_RayGenRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
     }
@@ -377,22 +369,24 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     {
-        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
-                                          D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+        
 
+        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                          0 );
 
-        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                           1 );
 
-        CD3DX12_ROOT_PARAMETER1 rayRootParameters[RayGenRootParameters::NumRootParameters];
+        const CD3DX12_DESCRIPTOR_RANGE1 tables[2] = { output, TlvlAcc };
 
-        rayRootParameters[RayGenRootParameters::Output].InitAsDescriptorTable( 1, &output );
-        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsDescriptorTable( 1, &TlvlAcc );
+        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+
+        rayRootParams[0].InitAsDescriptorTable( 2, tables );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( RayGenRootParameters::NumRootParameters, rayRootParameters, 0, nullptr,
-                                           rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
 
         m_GlobalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
     }
@@ -417,12 +411,26 @@ void DummyGame::CreateShaderTable() {
 
         // Entry 0 - ray-gen program ID and descriptor data
         memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
+        
 
-        // Write the address of this ray output view
-        uint64_t rayOutputPtr = m_RayOutputUAV->GetGpuDescriptorHandle().ptr;
+#if 1
+        uint64_t heapUavSrvPtr = m_RayHeapHeader->GetGpuDescriptorHandle().ptr;
 
         uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-        memcpy( pDescriptorTable, &rayOutputPtr, sizeof( uint64_t ) ); 
+        memcpy( pDescriptorTable, &heapUavSrvPtr, sizeof( uint64_t ) );
+#endif
+#if 0
+        uint64_t rayOutPtr = m_RayOutputUAV->GetGpuDescriptorHandle().ptr;
+
+        uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        memcpy( pDescriptorTable, &rayOutPtr, sizeof( uint64_t ) );
+#endif
+#if 0
+        uint64_t tlasOutPtr = m_TlasSRV->GetGpuDescriptorHandle().ptr;
+
+        uint8_t* pDescriptorTable2 = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + sizeof(uint64_t);
+        memcpy( pDescriptorTable2, &tlasOutPtr, sizeof( uint64_t ) );
+#endif
 
         // Entry 1 - miss program
         uint8_t* pMissEntry = pData + m_ShaderTableEntrySize;
@@ -439,22 +447,18 @@ void DummyGame::CreateShaderTable() {
 
 void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 {
+    D3D12_RESOURCE_DESC renderDesc = m_RenderShaderResource->GetD3D12ResourceDesc();
+    renderDesc.Format              = backBufferFormat;
+    renderDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;  // try or eq else
+
+    m_RayOutputResource = m_Device->CreateTexture( renderDesc );
+    m_RayOutputResource->SetName( L"RayGen output texture" );
+
     // Create an off-screen render for the compute shader
-    {
-        D3D12_RESOURCE_DESC renderDesc = m_RenderShaderResource->GetD3D12ResourceDesc();
-        renderDesc.Format              = backBufferFormat;
-        renderDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;  // try or eq else
-
-        m_RayOutputResource = m_Device->CreateTexture( renderDesc );
-        m_RayOutputResource->SetName( L"RayGen output texture" );
-
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-        uavDesc.Format                           = Texture::GetUAVCompatableFormat( renderDesc.Format );
-        uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
-        uavDesc.Texture2DArray.MipSlice          = 0;
-
-        m_RayOutputUAV = m_Device->CreateUnorderedAccessView( m_RayOutputResource, nullptr, &uavDesc );
-    }
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.Format                           = Texture::GetUAVCompatableFormat( renderDesc.Format );
+    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDesc.Texture2DArray.MipSlice          = 0;
 
     // Create SRV for TLAS after the UAV above. 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc          = {};
@@ -462,7 +466,8 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     srvDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.RaytracingAccelerationStructure.Location = m_topLevelAS->GetD3D12Resource()->GetGPUVirtualAddress();
 
-    m_TlasSRV = m_Device->CreateShaderResourceView( nullptr, &srvDesc );
+
+    m_RayHeapHeader = m_Device->CreateShaderTableView( m_RayOutputResource, &srvDesc, nullptr, &uavDesc );
 }
 
 bool DummyGame::LoadContent()
@@ -539,7 +544,6 @@ bool DummyGame::LoadContent()
     CreateShaderResource( backBufferFormat );  // Tutorial 6
 
     CreateShaderTable(); // Tutorial 5
-
 #endif
 
     return true;
@@ -703,12 +707,13 @@ void DummyGame::OnRender()
         commandList->SetPipelineState1( m_RayPipelineState );
         commandList->SetComputeRootSignature( m_GlobalRootSig );
 
-        // set uniforms
-        {
-            commandList->SetShaderResourceView( RayGenRootParameters::RayAccelerationStructure, 0, m_TlasSRV );
 
-            commandList->SetUnorderedAccessView( RayGenRootParameters::Output, 0, m_RayOutputUAV );
+        //Set uniforms
+        {
+            commandList->SetShaderTableView( 0, 0, m_RayHeapHeader );
+
         }
+
 
         commandList->DispatchRays( &raytraceDesc );
 
@@ -720,6 +725,8 @@ void DummyGame::OnRender()
         }
     }
     
+
+
 
     // Post process compute shader execute and transfer staging resource to display.
 #if 0

@@ -70,6 +70,7 @@ class UploadBuffer;
 class VertexBuffer;
 class AccelerationStructure;
 class AccelerationBuffer;
+class ShaderTableView;
 
 class CommandList : public std::enable_shared_from_this<CommandList>
 {
@@ -492,6 +493,8 @@ public:
                                  D3D12_RESOURCE_STATES stateAfter   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                  size_t                bufferOffset = 0 );
 
+   
+
     /**
      * Set the CBV on the rendering pipeline.
      */
@@ -523,6 +526,16 @@ public:
      */
     void SetUnorderedAccessView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
                                  const std::shared_ptr<UnorderedAccessView>& uav,
+                                 D3D12_RESOURCE_STATES stateAfter       = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                 UINT                  firstSubresource = 0,
+                                 UINT                  numSubresources  = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES );
+
+    /**
+     * Set an inline UAV and SRV.
+     *
+     */
+    void SetShaderTableView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
+                                 const std::shared_ptr<ShaderTableView>& uav,
                                  D3D12_RESOURCE_STATES stateAfter       = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                  UINT                  firstSubresource = 0,
                                  UINT                  numSubresources  = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES );

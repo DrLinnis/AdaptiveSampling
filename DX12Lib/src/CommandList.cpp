@@ -28,6 +28,7 @@
 #include <dx12lib/UploadBuffer.h>
 #include <dx12lib/VertexBuffer.h>
 #include <dx12lib/AccelerationStructure.h>
+#include <dx12lib/ShaderTable.h>
 
 using namespace dx12lib;
 
@@ -1107,10 +1108,10 @@ std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, bool
     // clang-format off
     // Define a plane that is aligned with the X-Z plane and the normal is facing up in the Y-axis.
     VertexCollection vertices = {
-        Vertex( XMFLOAT3( -0.5f * width, 0.5f * height, 0.0 ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
-        Vertex( XMFLOAT3( 0.5f * width, 0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
-        Vertex( XMFLOAT3( 0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
-        Vertex( XMFLOAT3( -0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
+        Vertex( XMFLOAT3( -0.5f * width, 0.5f * height, 0.0 ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width, 0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
     };
     // clang-format on
     IndexCollection indices = { 1, 3, 0, 2, 3, 1 };
@@ -1507,6 +1508,35 @@ void CommandList::SetUnorderedAccessView( uint32_t rootParameterIndex, uint32_t 
 
     m_DynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StageDescriptors(
         rootParameterIndex, descriptorOffset, 1, uav->GetDescriptorHandle() );
+}
+
+void CommandList::SetShaderTableView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
+                                      const std::shared_ptr<ShaderTableView>& shrHdr,
+                                      D3D12_RESOURCE_STATES stateAfter, UINT firstSubresource,
+                                      UINT numSubresources )
+{
+    assert( shrHdr );
+
+    auto resource = shrHdr->GetResource();
+    if ( resource )
+    {
+        if ( numSubresources < D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES )
+        {
+            for ( uint32_t i = 0; i < numSubresources; ++i )
+            {
+                TransitionBarrier( resource, stateAfter, firstSubresource + i );
+            }
+        }
+        else
+        {
+            TransitionBarrier( resource, stateAfter );
+        }
+
+        TrackResource( resource );
+    }
+
+    m_DynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StageDescriptors(
+        rootParameterIndex, descriptorOffset, 2, shrHdr->GetDescriptorHandle() );
 }
 
 void CommandList::SetUnorderedAccessView( uint32_t rootParameterIndex, uint32_t descriptorOffset,

@@ -42,6 +42,7 @@ set( HEADER_FILES
     inc/dx12lib/AccelerationStructure.h
     inc/dx12lib/RT_PipelineStateObject.h
     inc/dx12lib/MappableBuffer.h
+    inc/dx12lib/ShaderTable.h
 )
 
 set( SOURCE_FILES
@@ -83,6 +84,7 @@ set( SOURCE_FILES
     src/AccelerationStructure.cpp
     src/RT_PipelineStateObject.cpp
     src/MappableBuffer.cpp
+    src/ShaderTable.cpp
 )
 
 set( IMGUI_HEADERS

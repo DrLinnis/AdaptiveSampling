@@ -29,6 +29,7 @@ class Texture;
 class AccelerationBuffer;
 class AccelerationStructure;
 class MappableBuffer;
+class ShaderTableView;
 } 
 
 class Window;  // From GameFramework.
@@ -118,8 +119,8 @@ private:
     // Tut 6
     std::shared_ptr<dx12lib::Texture>               m_RayOutputResource;
 
+    std::shared_ptr<dx12lib::ShaderTableView>       m_RayHeapHeader;
     std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputUAV;
-    std::shared_ptr<dx12lib::ShaderResourceView>    m_RayOutputSRV;
     std::shared_ptr<dx12lib::ShaderResourceView>    m_TlasSRV;
 
 

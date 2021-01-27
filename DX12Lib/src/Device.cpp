@@ -24,6 +24,7 @@
 
 #include <dx12lib/MappableBuffer.h>
 #include <dx12lib/AccelerationStructure.h>
+#include <dx12lib/ShaderTable.h>
 
 using namespace dx12lib;
 
@@ -580,6 +581,19 @@ std::shared_ptr<UnorderedAccessView>
 {
     std::shared_ptr<UnorderedAccessView> unorderedAccessView =
         std::make_shared<MakeUnorderedAccessView>( *this, resource, counterResource, uav );
+
+    return unorderedAccessView;
+}
+
+std::shared_ptr<ShaderTableView> 
+    Device::CreateShaderTableView(
+        const std::shared_ptr<Resource>& resource,
+        const D3D12_SHADER_RESOURCE_VIEW_DESC* raySrv,
+        const std::shared_ptr<Resource>& counterResource,
+        const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav )
+{
+    std::shared_ptr<ShaderTableView> unorderedAccessView =
+        std::make_shared<MakeShaderTableView>( *this, resource, raySrv, counterResource, uav );
 
     return unorderedAccessView;
 }

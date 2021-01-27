@@ -67,6 +67,7 @@ class VertexBuffer;
 
 class MappableBuffer;
 class AccelerationBuffer;
+class ShaderTableView;
 
 class Device
 {
@@ -204,6 +205,14 @@ public:
         CreateUnorderedAccessView( const std::shared_ptr<Resource>&        resource,
                                    const std::shared_ptr<Resource>&        counterResource = nullptr,
                                    const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav             = nullptr );
+
+    std::shared_ptr<ShaderTableView> 
+        CreateShaderTableView(     const std::shared_ptr<Resource>& resource,
+                                   const D3D12_SHADER_RESOURCE_VIEW_DESC* raySrv,
+                                   const std::shared_ptr<Resource>&        counterResource = nullptr,
+                                   const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav             = nullptr );
+
+
 
     /**
      * Flush all command queues.
