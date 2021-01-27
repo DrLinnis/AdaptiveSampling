@@ -32,6 +32,8 @@
 
 #include <dx12lib/DescriptorAllocation.h>
 
+#include <dx12lib/DescriptorAllocatorPage.h>
+
 #include <d3d12.h>  // For D3D12_SHADER_RESOURCE_VIEW_DESC and D3D12_CPU_DESCRIPTOR_HANDLE
 #include <memory>   // For std::shared_ptr
 
@@ -52,6 +54,11 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandle() const
     {
         return m_Descriptor.GetDescriptorHandle();
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGpuDescriptorHandle() const
+    {
+        return m_Descriptor.GetDescriptorAllocatorPage()->GetGpuDescriptorHandle();
     }
 
 protected:

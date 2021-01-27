@@ -16,6 +16,7 @@
 #include <dx12lib/Texture.h>
 #include <dx12lib/Visitor.h>
 #include <dx12lib/UnorderedAccessView.h>
+#include <dx12lib/ShaderResourceView.h>
 
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
@@ -284,12 +285,13 @@ void DummyGame::CreateRayTracingPipeline() {
     {
         CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
                                           D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParameters[RayGenRootParameters::NumRootParameters];
 
         rayRootParameters[RayGenRootParameters::Output].InitAsDescriptorTable( 1, &output );
-        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsShaderResourceView(
-            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
+        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsShaderResourceView( 0 );
+        //rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsDescriptorTable( 1, &TlvlAcc );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
@@ -378,12 +380,13 @@ void DummyGame::CreateRayTracingPipeline() {
         CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
                                           D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
 
+
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
+
         CD3DX12_ROOT_PARAMETER1 rayRootParameters[RayGenRootParameters::NumRootParameters];
 
         rayRootParameters[RayGenRootParameters::Output].InitAsDescriptorTable( 1, &output );
-        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsShaderResourceView(
-            0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
-
+        rayRootParameters[RayGenRootParameters::RayAccelerationStructure].InitAsDescriptorTable( 1, &TlvlAcc );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
@@ -416,10 +419,10 @@ void DummyGame::CreateShaderTable() {
         memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
 
         // Write the address of this ray output view
-        uint64_t heapStart = m_RayOutputUAV->GetGpuDescriptorHandle().ptr;
+        uint64_t rayOutputPtr = m_RayOutputUAV->GetGpuDescriptorHandle().ptr;
 
         uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-        memcpy( pDescriptorTable, &heapStart, sizeof( uint64_t ) ); 
+        memcpy( pDescriptorTable, &rayOutputPtr, sizeof( uint64_t ) ); 
 
         // Entry 1 - miss program
         uint8_t* pMissEntry = pData + m_ShaderTableEntrySize;
@@ -702,7 +705,7 @@ void DummyGame::OnRender()
 
         // set uniforms
         {
-            //commandList->SetShaderResourceView( RayGenRootParameters::RayAccelerationStructure, 0, m_TlasSRV );
+            commandList->SetShaderResourceView( RayGenRootParameters::RayAccelerationStructure, 0, m_TlasSRV );
 
             commandList->SetUnorderedAccessView( RayGenRootParameters::Output, 0, m_RayOutputUAV );
         }
@@ -719,6 +722,7 @@ void DummyGame::OnRender()
     
 
     // Post process compute shader execute and transfer staging resource to display.
+#if 0
     {
         commandList->SetPipelineState( m_PostProcessPipelineState );
         commandList->SetComputeRootSignature( m_PostProcessRootSignature );
@@ -738,11 +742,12 @@ void DummyGame::OnRender()
             //commandList->CopyResource( m_RenderShaderResource, m_StagingResource );
         }
     }
+#endif
     
+
     /*
         Display Pipeline render!
     */
-
     // Clear the render targets.
     commandList->ClearTexture( m_RenderTarget.GetTexture( AttachmentPoint::Color0 ), clearColor ); 
 
@@ -763,6 +768,8 @@ void DummyGame::OnRender()
         m_RenderShaderView, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 
     m_Plane->Accept( visitor );
+
+    //m_MiniPlane->Accept( visitor );
 
     // Resolve the MSAA render target to the swapchain's backbuffer.
     auto& swapChainRT         = m_SwapChain->GetRenderTarget();
