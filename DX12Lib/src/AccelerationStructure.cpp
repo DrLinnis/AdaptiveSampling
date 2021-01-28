@@ -17,14 +17,12 @@ std::shared_ptr<AccelerationStructure> AccelerationStructure::CreateBottomLevelA
                                                                                    VertexBuffer* pVertexBuffer,
                                                                                    IndexBuffer*  pIndexBuffer )
 {
-    // get location, stride, and size of buffer.
-    D3D12_VERTEX_BUFFER_VIEW vsBufferView  = pVertexBuffer->GetVertexBufferView();
-    D3D12_INDEX_BUFFER_VIEW  idxBufferView = pIndexBuffer->GetIndexBufferView();
 
     // Get prebuild infos
     D3D12_RAYTRACING_GEOMETRY_DESC geomDesc = {};
     geomDesc.Type                           = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
     // NOTE: As a vertex can contain more than just the XYZ position it thus has stride defined seperatly.
+    /**/
     geomDesc.Triangles.VertexBuffer.StartAddress  = pVertexBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
     geomDesc.Triangles.VertexBuffer.StrideInBytes = pVertexBuffer->GetVertexStride();
     geomDesc.Triangles.VertexFormat               = DXGI_FORMAT_R32G32B32_FLOAT;  // XYZ per vertex.
@@ -34,7 +32,7 @@ std::shared_ptr<AccelerationStructure> AccelerationStructure::CreateBottomLevelA
     geomDesc.Triangles.IndexCount  = pIndexBuffer->GetNumIndicies();
     geomDesc.Triangles.IndexFormat = pIndexBuffer->GetIndexFormat();
 
-    //geomDesc.Triangles.Transform3x4 = 0;
+    geomDesc.Triangles.Transform3x4 = 0;
 
     // number of bytes in buffer divided by bytes of a vertex
     geomDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;

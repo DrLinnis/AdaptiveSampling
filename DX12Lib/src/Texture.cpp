@@ -8,8 +8,9 @@
 
 using namespace dx12lib;
 
-Texture::Texture( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue )
-: Resource( device, resourceDesc, clearValue )
+Texture::Texture( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue,
+                  const D3D12_RESOURCE_STATES initState )
+: Resource( device, resourceDesc, clearValue, initState )
 {
     CreateViews();
 }

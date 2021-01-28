@@ -29,7 +29,7 @@ class Texture;
 class AccelerationBuffer;
 class AccelerationStructure;
 class MappableBuffer;
-class ShaderTableView;
+class ShaderTableResourceView;
 } 
 
 class Window;  // From GameFramework.
@@ -96,10 +96,8 @@ protected:
 private:
     // Added tutorial member:
     // Tut 3
-    std::shared_ptr<dx12lib::AccelerationBuffer>    m_topLevelAS;
     std::shared_ptr<dx12lib::AccelerationStructure> m_topLevelBuffers;
 
-    std::shared_ptr<dx12lib::AccelerationBuffer>    m_bottomLevelAS;
     std::shared_ptr<dx12lib::AccelerationStructure> m_bottomLevelBuffers;
 
     uint64_t mTlasSize = 0;
@@ -118,7 +116,7 @@ private:
     // Tut 6
     std::shared_ptr<dx12lib::Texture>               m_RayOutputResource;
 
-    std::shared_ptr<dx12lib::ShaderTableView>       m_RayHeapHeader;
+    std::shared_ptr<dx12lib::ShaderTableResourceView>       m_RayShaderHeap;
     std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputUAV;
     std::shared_ptr<dx12lib::ShaderResourceView>    m_TlasSRV;
 

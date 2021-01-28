@@ -15,53 +15,40 @@ class Device;
 class Resource;
 
 
-class ShaderTableView
+class ShaderTableResourceView
 {
 public:
-    std::shared_ptr<Resource> GetResource() const
-    {
-        return m_Resource;
-    }
-
-    std::shared_ptr<Resource> GetCounterResource() const
-    {
-        return m_CounterResource;
-    }
-
-    D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandle() const
-    {
-        return m_Descriptor.GetDescriptorHandle();
-    }
+    
 
     D3D12_GPU_DESCRIPTOR_HANDLE GetGpuDescriptorHandle() const
     {
-        return m_Descriptor.GetDescriptorAllocatorPage()->GetGpuDescriptorHandle();
+        return m_SrvUavHeap->GetGPUDescriptorHandleForHeapStart();
+    }
+
+    ID3D12DescriptorHeap* GetTableHeap() const {
+        return m_SrvUavHeap;
     }
 
 protected:
-    ShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                         const D3D12_SHADER_RESOURCE_VIEW_DESC* rayTlasSrv, 
-                         const std::shared_ptr<Resource>&        counterResource = nullptr,
-                         const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav             = nullptr );
+    ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
+                             const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
+                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  rayTlasSrv );
 
-    virtual ~ShaderTableView() = default;
+    virtual ~ShaderTableResourceView() = default;
 
 private:
-    Device&                   m_Device;
-    std::shared_ptr<Resource> m_Resource;
-    std::shared_ptr<Resource> m_CounterResource;
-    DescriptorAllocation      m_Descriptor;
+    Device&                     m_Device;
+    ID3D12DescriptorHeap*       m_SrvUavHeap;
 };
 
 
-class MakeShaderTableView : public ShaderTableView
+class MakeShaderTableView : public ShaderTableResourceView
 {
 public:
     MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                         const D3D12_SHADER_RESOURCE_VIEW_DESC* rayTlasSrv,
-                         const std::shared_ptr<Resource>& counterResource, 
-                         const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav )
-    : ShaderTableView( device, outputResource, rayTlasSrv, counterResource, uav )
+                         const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
+                         const D3D12_SHADER_RESOURCE_VIEW_DESC*  rayTlasSrv )
+    : ShaderTableResourceView( device, outputResource, uav, rayTlasSrv )
     {}
 
     virtual ~MakeShaderTableView() {}

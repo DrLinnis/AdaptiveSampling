@@ -106,8 +106,9 @@ public:
 class MakeTexture : public Texture
 {
 public:
-    MakeTexture( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue )
-    : Texture( device, resourceDesc, clearValue )
+    MakeTexture( Device& device, const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue,
+                 const D3D12_RESOURCE_STATES initState )
+    : Texture( device, resourceDesc, clearValue, initState )
     {}
 
     MakeTexture( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource, const D3D12_CLEAR_VALUE* clearValue )
@@ -510,9 +511,11 @@ std::shared_ptr<dx12lib::VertexBuffer>
     return vertexBuffer;
 }
 
-std::shared_ptr<Texture> Device::CreateTexture( const D3D12_RESOURCE_DESC& resourceDesc, const D3D12_CLEAR_VALUE* clearValue )
+std::shared_ptr<Texture> Device::CreateTexture( const D3D12_RESOURCE_DESC&  resourceDesc,
+                                                const D3D12_CLEAR_VALUE*    clearValue,
+                                                const D3D12_RESOURCE_STATES initState )
 {
-    std::shared_ptr<Texture> texture = std::make_shared<MakeTexture>( *this, resourceDesc, clearValue );
+    std::shared_ptr<Texture> texture = std::make_shared<MakeTexture>( *this, resourceDesc, clearValue, initState );
 
     return texture;
 }
@@ -585,15 +588,13 @@ std::shared_ptr<UnorderedAccessView>
     return unorderedAccessView;
 }
 
-std::shared_ptr<ShaderTableView> 
-    Device::CreateShaderTableView(
-        const std::shared_ptr<Resource>& resource,
-        const D3D12_SHADER_RESOURCE_VIEW_DESC* raySrv,
-        const std::shared_ptr<Resource>& counterResource,
-        const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav )
+std::shared_ptr<ShaderTableResourceView> 
+    Device::CreateShaderTableView( const std::shared_ptr<Resource>&        resource,
+                                   const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
+                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  raySrv ) 
 {
-    std::shared_ptr<ShaderTableView> unorderedAccessView =
-        std::make_shared<MakeShaderTableView>( *this, resource, raySrv, counterResource, uav );
+    std::shared_ptr<ShaderTableResourceView> unorderedAccessView =
+        std::make_shared<MakeShaderTableView>( *this, resource, uav, raySrv );
 
     return unorderedAccessView;
 }

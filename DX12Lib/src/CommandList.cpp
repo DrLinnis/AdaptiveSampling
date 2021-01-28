@@ -1406,18 +1406,24 @@ void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& 
     }
 }
 
-void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState ) {
+void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState,
+                                              const std::shared_ptr<ShaderTableResourceView>         shaderTable )
+{
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState();
-    if (!rayTracingPipeline) {
+    m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
 
-        m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
+    rayTracingPipeline = true;
 
-        rayTracingPipeline = true;
+    TrackResource( d3d12PipelineStateObject );
 
-        TrackResource( d3d12PipelineStateObject );
-    }
+    assert( shaderTable );
+
+    ID3D12DescriptorHeap* heaps[1] = { shaderTable->GetTableHeap() };
+
+    m_d3d12CommandList->SetDescriptorHeaps( 1, heaps );
+
 }
 
 void CommandList::SetGraphicsRootSignature( const std::shared_ptr<RootSignature>& rootSignature )
@@ -1602,35 +1608,6 @@ void CommandList::SetUnorderedAccessView( uint32_t rootParameterIndex, uint32_t 
         rootParameterIndex, descriptorOffset, 1, uav->GetDescriptorHandle() );
 }
 
-void CommandList::SetShaderTableView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
-                                      const std::shared_ptr<ShaderTableView>& shrHdr,
-                                      D3D12_RESOURCE_STATES stateAfter, UINT firstSubresource,
-                                      UINT numSubresources )
-{
-    assert( shrHdr );
-
-    auto resource = shrHdr->GetResource();
-    if ( resource )
-    {
-        if ( numSubresources < D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES )
-        {
-            for ( uint32_t i = 0; i < numSubresources; ++i )
-            {
-                TransitionBarrier( resource, stateAfter, firstSubresource + i );
-            }
-        }
-        else
-        {
-            TransitionBarrier( resource, stateAfter );
-        }
-
-        TrackResource( resource );
-    }
-
-    m_DynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StageDescriptors(
-        rootParameterIndex, descriptorOffset, 2, shrHdr->GetDescriptorHandle() );
-}
-
 void CommandList::SetUnorderedAccessView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
                                           const std::shared_ptr<Texture>& texture, UINT mip,
                                           D3D12_RESOURCE_STATES stateAfter, UINT firstSubresource,
@@ -1752,11 +1729,6 @@ void CommandList::Dispatch( uint32_t numGroupsX, uint32_t numGroupsY, uint32_t n
 void CommandList::DispatchRays(D3D12_DISPATCH_RAYS_DESC* pRaytraceDesc) 
 {
     FlushResourceBarriers();
-
-    for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
-    {
-        m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this, true );
-    }
 
     m_d3d12CommandList->DispatchRays( pRaytraceDesc );
 }

@@ -67,7 +67,7 @@ class VertexBuffer;
 
 class MappableBuffer;
 class AccelerationBuffer;
-class ShaderTableView;
+class ShaderTableResourceView;
 
 class Device
 {
@@ -162,7 +162,8 @@ public:
      * @returns A pointer to the created texture.
      */
     std::shared_ptr<Texture> CreateTexture( const D3D12_RESOURCE_DESC& resourceDesc,
-                                            const D3D12_CLEAR_VALUE*   clearValue = nullptr );
+                                            const D3D12_CLEAR_VALUE*    clearValue = nullptr,
+                                            const D3D12_RESOURCE_STATES initState  = D3D12_RESOURCE_STATE_COMMON );
     std::shared_ptr<Texture> CreateTexture( Microsoft::WRL::ComPtr<ID3D12Resource> resource,
                                             const D3D12_CLEAR_VALUE*               clearValue = nullptr );
 
@@ -206,11 +207,9 @@ public:
                                    const std::shared_ptr<Resource>&        counterResource = nullptr,
                                    const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav             = nullptr );
 
-    std::shared_ptr<ShaderTableView> 
-        CreateShaderTableView(     const std::shared_ptr<Resource>& resource,
-                                   const D3D12_SHADER_RESOURCE_VIEW_DESC* raySrv,
-                                   const std::shared_ptr<Resource>&        counterResource = nullptr,
-                                   const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav             = nullptr );
+    std::shared_ptr<ShaderTableResourceView> CreateShaderTableView( const std::shared_ptr<Resource>&        resource,
+                                                                    const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
+                                                                    const D3D12_SHADER_RESOURCE_VIEW_DESC*  raySrv );
 
 
 

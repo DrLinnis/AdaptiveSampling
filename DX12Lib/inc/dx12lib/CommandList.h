@@ -70,7 +70,7 @@ class UploadBuffer;
 class VertexBuffer;
 class AccelerationStructure;
 class AccelerationBuffer;
-class ShaderTableView;
+class ShaderTableResourceView;
 
 class CommandList : public std::enable_shared_from_this<CommandList>
 {
@@ -461,7 +461,8 @@ public:
     /**
      * Set the pipeline state object on the command list.
      */
-    void SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState );
+    void SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState,
+                            const std::shared_ptr<ShaderTableResourceView>         shaderTable );
 
 
 
@@ -537,15 +538,6 @@ public:
                                  UINT                  firstSubresource = 0,
                                  UINT                  numSubresources  = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES );
 
-    /**
-     * Set an inline UAV and SRV.
-     *
-     */
-    void SetShaderTableView( uint32_t rootParameterIndex, uint32_t descriptorOffset,
-                                 const std::shared_ptr<ShaderTableView>& uav,
-                                 D3D12_RESOURCE_STATES stateAfter       = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                 UINT                  firstSubresource = 0,
-                                 UINT                  numSubresources  = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES );
 
     /**
      * Set the UAV on the graphics pipline using a specific mip of the texture.
