@@ -1124,6 +1124,84 @@ std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, bool
     return CreateScene( vertices, indices );
 }
 
+std::shared_ptr<Scene> CommandList::CreateSimpleTriangle()
+{
+    using Vertex = VertexPosition;
+    
+    std::vector<Vertex> vertices = {
+        Vertex( XMFLOAT3( 0,1,0 ) ),  // 0
+        Vertex( XMFLOAT3( 0.866f, -0.5f, 0.0f ) ),  // 1
+        Vertex( XMFLOAT3( -0.866f, -0.5f, 0.0f ) ),  // 2
+    };
+    // clang-format on
+    IndexCollection indices = { 0, 1, 2};
+
+    if ( vertices.empty() )
+    {
+        return nullptr;
+    }
+
+    auto vertexBuffer = CopyVertexBuffer( vertices );
+    auto indexBuffer  = CopyIndexBuffer( indices );
+
+    auto mesh = std::make_shared<Mesh>();
+    // Create a default white material for new meshes.
+    auto material = std::make_shared<Material>( Material::White );
+
+    mesh->SetVertexBuffer( 0, vertexBuffer );
+    mesh->SetIndexBuffer( indexBuffer );
+    mesh->SetMaterial( material );
+
+    auto node = std::make_shared<SceneNode>();
+    node->AddMesh( mesh );
+
+    auto scene = std::make_shared<Scene>();
+    scene->SetRootNode( node );
+
+    return scene;
+
+}
+
+
+std::shared_ptr<Scene> CommandList::CreateSimplePlane( float width, float height )
+{
+    using Vertex = VertexPosition;
+
+    std::vector<Vertex> vertices = {
+        Vertex( XMFLOAT3( -0.5f * width, 0.5f * height, 0.0 ) ),   // 0
+        Vertex( XMFLOAT3( 0.5f * width, 0.5f * height, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width, -0.5f * height, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width, -0.5f * height, 0.0f ) )  // 3
+    };
+    // clang-format on
+    IndexCollection indices = { 1, 3, 0, 2, 3, 1 };
+
+    if ( vertices.empty() )
+    {
+        return nullptr;
+    }
+
+    auto vertexBuffer = CopyVertexBuffer( vertices );
+    auto indexBuffer  = CopyIndexBuffer( indices );
+
+    auto mesh = std::make_shared<Mesh>();
+    // Create a default white material for new meshes.
+    auto material = std::make_shared<Material>( Material::White );
+
+    mesh->SetVertexBuffer( 0, vertexBuffer );
+    mesh->SetIndexBuffer( indexBuffer );
+    mesh->SetMaterial( material );
+
+    auto node = std::make_shared<SceneNode>();
+    node->AddMesh( mesh );
+
+    auto scene = std::make_shared<Scene>();
+    scene->SetRootNode( node );
+
+    return scene;
+}
+
+
 void CommandList::ClearTexture( const std::shared_ptr<Texture>& texture, const float clearColor[4] )
 {
     assert( texture );
@@ -1381,6 +1459,20 @@ void CommandList::SetComputeRootSignature( const std::shared_ptr<RootSignature>&
 
         TrackResource( m_RootSignature );
     }
+}
+
+
+void CommandList::SetLocalRootSignature( const std::shared_ptr<RootSignature>& rootSignature )
+{
+    assert( rootSignature );
+
+    auto d3d12RootSignature = rootSignature->GetD3D12RootSignature().Get();
+
+    for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
+    {
+        m_DynamicDescriptorHeap[i]->ParseRootSignature( rootSignature );
+    }
+
 }
 
 void CommandList::SetConstantBufferView( uint32_t rootParameterIndex, const std::shared_ptr<ConstantBuffer>& buffer,
@@ -1663,7 +1755,7 @@ void CommandList::DispatchRays(D3D12_DISPATCH_RAYS_DESC* pRaytraceDesc)
 
     for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
     {
-        m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this );
+        m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this, true );
     }
 
     m_d3d12CommandList->DispatchRays( pRaytraceDesc );

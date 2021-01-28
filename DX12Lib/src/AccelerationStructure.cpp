@@ -11,6 +11,69 @@
 
 using namespace dx12lib;
 
+
+std::shared_ptr<AccelerationStructure> AccelerationStructure::CreateBottomLevelAS( Device*       pDevice,
+                                                                                   CommandList*  pCommandList,
+                                                                                   VertexBuffer* pVertexBuffer,
+                                                                                   IndexBuffer*  pIndexBuffer )
+{
+    // get location, stride, and size of buffer.
+    D3D12_VERTEX_BUFFER_VIEW vsBufferView  = pVertexBuffer->GetVertexBufferView();
+    D3D12_INDEX_BUFFER_VIEW  idxBufferView = pIndexBuffer->GetIndexBufferView();
+
+    // Get prebuild infos
+    D3D12_RAYTRACING_GEOMETRY_DESC geomDesc = {};
+    geomDesc.Type                           = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    // NOTE: As a vertex can contain more than just the XYZ position it thus has stride defined seperatly.
+    geomDesc.Triangles.VertexBuffer.StartAddress  = pVertexBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    geomDesc.Triangles.VertexBuffer.StrideInBytes = pVertexBuffer->GetVertexStride();
+    geomDesc.Triangles.VertexFormat               = DXGI_FORMAT_R32G32B32_FLOAT;  // XYZ per vertex.
+    geomDesc.Triangles.VertexCount                = pVertexBuffer->GetNumVertices();
+
+    geomDesc.Triangles.IndexBuffer = pIndexBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    geomDesc.Triangles.IndexCount  = pIndexBuffer->GetNumIndicies();
+    geomDesc.Triangles.IndexFormat = pIndexBuffer->GetIndexFormat();
+
+    //geomDesc.Triangles.Transform3x4 = 0;
+
+    // number of bytes in buffer divided by bytes of a vertex
+    geomDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+
+    // Get the size requirements for the scratch and AS buffers
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+    inputs.DescsLayout                                          = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    inputs.Flags          = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+    inputs.NumDescs       = 1;
+    inputs.pGeometryDescs = &geomDesc;
+    inputs.Type           = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
+    pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
+
+    std::shared_ptr<AccelerationStructure> structure = std::make_shared<AccelerationStructure>();
+
+    structure->pScratch =
+        pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+    structure->pScratch->SetName( L"DXR BLAS Scratch" );
+
+    structure->pResult =
+        pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                           D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
+    structure->pResult->SetName( L"DXR BLAS" );
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+    asDesc.Inputs                                             = inputs;
+    asDesc.DestAccelerationStructureData    = structure->pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData = structure->pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
+
+    pCommandList->UAVBarrier( structure->pResult );
+
+    return structure;
+}
+
 std::shared_ptr<AccelerationStructure>
     AccelerationStructure::CreateTopLevelAS( Device* pDevice, CommandList* pCommandList, AccelerationBuffer* pBottomLevelAS, uint64_t* pTlasSize )
 {
@@ -68,68 +131,6 @@ std::shared_ptr<AccelerationStructure>
     structure->pResult->SetName( L"DXR TLAS" );
 
     
-
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
-    asDesc.Inputs                                             = inputs;
-    asDesc.DestAccelerationStructureData    = structure->pResult->GetD3D12Resource()->GetGPUVirtualAddress();
-    asDesc.ScratchAccelerationStructureData = structure->pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
-
-    pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
-
-    pCommandList->UAVBarrier( structure->pResult );
-
-    return structure;
-}
-
-std::shared_ptr<AccelerationStructure>
-AccelerationStructure::CreateBottomLevelAS(Device* pDevice, CommandList* pCommandList,
-    VertexBuffer* pVertexBuffer,
-    IndexBuffer* pIndexBuffer)
-{
-    // get location, stride, and size of buffer.
-    D3D12_VERTEX_BUFFER_VIEW vsBufferView  = pVertexBuffer->GetVertexBufferView();
-    D3D12_INDEX_BUFFER_VIEW  idxBufferView = pIndexBuffer->GetIndexBufferView();
-
-    // Get prebuild infos
-    D3D12_RAYTRACING_GEOMETRY_DESC geomDesc = {};
-    geomDesc.Type                           = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-    // NOTE: As a vertex can contain more than just the XYZ position it thus has stride defined seperatly.
-    geomDesc.Triangles.VertexBuffer.StartAddress  = pVertexBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-    geomDesc.Triangles.VertexBuffer.StrideInBytes = pVertexBuffer->GetVertexStride();
-    geomDesc.Triangles.VertexFormat               = DXGI_FORMAT_R32G32B32_FLOAT;  // XYZ per vertex.
-    geomDesc.Triangles.VertexCount                = pVertexBuffer->GetNumVertices();
-
-    geomDesc.Triangles.IndexBuffer = pIndexBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-    geomDesc.Triangles.IndexCount  = pIndexBuffer->GetNumIndicies();
-    geomDesc.Triangles.IndexFormat = pIndexBuffer->GetIndexFormat();
-
-    geomDesc.Triangles.Transform3x4 = 0;
-
-    // number of bytes in buffer divided by bytes of a vertex
-    geomDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-
-    // Get the size requirements for the scratch and AS buffers
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
-    inputs.DescsLayout    = D3D12_ELEMENTS_LAYOUT_ARRAY; 
-    inputs.Flags          = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
-    inputs.NumDescs       = 1;
-    inputs.pGeometryDescs = &geomDesc;
-    inputs.Type           = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
-    pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
-
-    std::shared_ptr<AccelerationStructure> structure = std::make_shared<AccelerationStructure>();
-
-    structure->pScratch =
-        pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
-    structure->pScratch->SetName( L"DXR BLAS Scratch" );
-
-    structure->pResult =
-        pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                                           D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
-    structure->pResult->SetName( L"DXR BLAS" );
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
     asDesc.Inputs                                             = inputs;

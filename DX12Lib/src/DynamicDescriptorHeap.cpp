@@ -168,7 +168,8 @@ Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DynamicDescriptorHeap::CreateDescri
 
 void DynamicDescriptorHeap::CommitDescriptorTables(
     CommandList&                                                                         commandList,
-    std::function<void( ID3D12GraphicsCommandList*, UINT, D3D12_GPU_DESCRIPTOR_HANDLE )> setFunc )
+    std::function<void( ID3D12GraphicsCommandList*, UINT, D3D12_GPU_DESCRIPTOR_HANDLE )> setFunc,
+    bool justSetHeaps)
 {
     // Compute the number of descriptors that need to be copied
     uint32_t numDescriptorsToCommit = ComputeStaleDescriptorCount();
@@ -209,7 +210,8 @@ void DynamicDescriptorHeap::CommitDescriptorTables(
                                           pSrcDescriptorHandles, nullptr, m_DescriptorHeapType );
 
             // Set the descriptors on the command list using the passed-in setter function.
-            setFunc( d3d12GraphicsCommandList, rootIndex, m_CurrentGPUDescriptorHandle );
+            if ( !justSetHeaps )
+                setFunc( d3d12GraphicsCommandList, rootIndex, m_CurrentGPUDescriptorHandle );
 
             // Offset current CPU and GPU descriptor handles.
             m_CurrentCPUDescriptorHandle.Offset( numSrcDescriptors, m_DescriptorHandleIncrementSize );
@@ -252,9 +254,9 @@ void DynamicDescriptorHeap::CommitStagedDescriptorsForDraw( CommandList& command
                              &ID3D12GraphicsCommandList::SetGraphicsRootUnorderedAccessView );
 }
 
-void DynamicDescriptorHeap::CommitStagedDescriptorsForDispatch( CommandList& commandList )
+void DynamicDescriptorHeap::CommitStagedDescriptorsForDispatch( CommandList& commandList, bool justSetHeaps )
 {
-    CommitDescriptorTables( commandList, &ID3D12GraphicsCommandList::SetComputeRootDescriptorTable );
+    CommitDescriptorTables( commandList, &ID3D12GraphicsCommandList::SetComputeRootDescriptorTable, justSetHeaps );
     CommitInlineDescriptors( commandList, m_InlineCBV, m_StaleCBVBitMask,
                              &ID3D12GraphicsCommandList::SetComputeRootConstantBufferView );
     CommitInlineDescriptors( commandList, m_InlineSRV, m_StaleSRVBitMask,

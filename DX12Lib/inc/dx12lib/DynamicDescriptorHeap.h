@@ -80,7 +80,7 @@ public:
     void StageInlineUAV( uint32_t rootParamterIndex, D3D12_GPU_VIRTUAL_ADDRESS bufferLocation );
 
     void CommitStagedDescriptorsForDraw( CommandList& commandList );
-    void CommitStagedDescriptorsForDispatch( CommandList& commandList );
+    void CommitStagedDescriptorsForDispatch( CommandList& commandList, bool justSetHeaps = false );
 
     /**
      * Copies a single CPU visible descriptor to a GPU visible descriptor heap.
@@ -137,7 +137,8 @@ private:
      */
     void CommitDescriptorTables(
         CommandList&                                                                         commandList,
-        std::function<void( ID3D12GraphicsCommandList*, UINT, D3D12_GPU_DESCRIPTOR_HANDLE )> setFunc );
+        std::function<void( ID3D12GraphicsCommandList*, UINT, D3D12_GPU_DESCRIPTOR_HANDLE )> setFunc,
+        bool                                                                                 justSetHeaps  = false);
     void CommitInlineDescriptors(
         CommandList& commandList, const D3D12_GPU_VIRTUAL_ADDRESS* bufferLocations, uint32_t& bitMask,
         std::function<void( ID3D12GraphicsCommandList*, UINT, D3D12_GPU_VIRTUAL_ADDRESS )> setFunc );

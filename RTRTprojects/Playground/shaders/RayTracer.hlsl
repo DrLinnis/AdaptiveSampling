@@ -84,5 +84,7 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
     const float3 B = float3(0, 1, 0);
     const float3 C = float3(0, 0, 1);
 
-    payload.color = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
+    //payload.color = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
+    payload.color = float3(1, 1, 1);
+
 }

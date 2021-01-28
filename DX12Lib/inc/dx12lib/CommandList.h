@@ -302,6 +302,11 @@ public:
      */
     std::shared_ptr<Scene> CreatePlane( float width = 1.0f, float height = 1.0f, bool reverseWinding = false );
 
+    std::shared_ptr<Scene> CreateSimplePlane( float width = 1.0, float height = 1.0 );
+
+    std::shared_ptr<Scene> CreateSimpleTriangle();
+
+
     /**
      * Clear a texture.
      */
@@ -465,6 +470,8 @@ public:
      */
     void SetGraphicsRootSignature( const std::shared_ptr<RootSignature>& rootSignature );
     void SetComputeRootSignature( const std::shared_ptr<RootSignature>& rootSignature );
+    void SetLocalRootSignature( const std::shared_ptr<RootSignature>& rootSignature );
+
 
     /**
      * Set an inline CBV.

@@ -368,29 +368,6 @@ void DummyGame::CreateRayTracingPipeline() {
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
 
 
-    {
-        
-
-        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                          0 );
-
-        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                           1 );
-
-        const CD3DX12_DESCRIPTOR_RANGE1 tables[2] = { output, TlvlAcc };
-
-        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-
-        rayRootParams[0].InitAsDescriptorTable( 2, tables );
-
-        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-
-        m_GlobalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-    }
-
     shaders.Reset();
 }
 
@@ -413,24 +390,13 @@ void DummyGame::CreateShaderTable() {
         memcpy( pData, pRtsoProps->GetShaderIdentifier( kRayGenShader ), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES );
         
 
-#if 1
+
         uint64_t heapUavSrvPtr = m_RayHeapHeader->GetGpuDescriptorHandle().ptr;
 
         uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
         memcpy( pDescriptorTable, &heapUavSrvPtr, sizeof( uint64_t ) );
-#endif
-#if 0
-        uint64_t rayOutPtr = m_RayOutputUAV->GetGpuDescriptorHandle().ptr;
 
-        uint8_t* pDescriptorTable = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-        memcpy( pDescriptorTable, &rayOutPtr, sizeof( uint64_t ) );
-#endif
-#if 0
-        uint64_t tlasOutPtr = m_TlasSRV->GetGpuDescriptorHandle().ptr;
 
-        uint8_t* pDescriptorTable2 = pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + sizeof(uint64_t);
-        memcpy( pDescriptorTable2, &tlasOutPtr, sizeof( uint64_t ) );
-#endif
 
         // Entry 1 - miss program
         uint8_t* pMissEntry = pData + m_ShaderTableEntrySize;
@@ -488,7 +454,8 @@ bool DummyGame::LoadContent()
     // Create a Cube mesh
     m_Plane = commandList->CreatePlane( 2, 2 );
 
-    m_MiniPlane = commandList->CreatePlane( 1, 1 );
+    //m_RayMesh = commandList->CreateSimplePlane( 1, 1 );
+    m_RayMesh = commandList->CreateSimpleTriangle();
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -524,8 +491,8 @@ bool DummyGame::LoadContent()
     auto& commandQueueCompute = m_Device->GetCommandQueue( D3D12_COMMAND_LIST_TYPE_COMPUTE );
     commandList               = commandQueueCompute.GetCommandList();
 
-    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_MiniPlane->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
-    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_MiniPlane->GetRootNode()->GetMesh()->GetIndexBuffer();
+    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_RayMesh->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
+    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_RayMesh->GetRootNode()->GetMesh()->GetIndexBuffer();
 
     m_bottomLevelBuffers = AccelerationStructure::CreateBottomLevelAS( m_Device.get(), commandList.get(),
         pVertexBuffer.get(), pIndexBuffer.get() );
@@ -589,7 +556,7 @@ void DummyGame::UnloadContent()
     m_HitMissRootSig.reset();
     m_DummyGlobalRootSig.reset();
 
-    m_GlobalRootSig.reset();
+    
     m_RayPipelineState.reset();
     m_ShaderTable.reset();
 
@@ -703,17 +670,17 @@ void DummyGame::OnRender()
             raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize;
         }
         
-
+        // Set pipeline
         commandList->SetPipelineState1( m_RayPipelineState );
-        commandList->SetComputeRootSignature( m_GlobalRootSig );
 
+
+        // bind empty root signature
+        commandList->SetLocalRootSignature( m_RayGenRootSig );
 
         //Set uniforms
         {
             commandList->SetShaderTableView( 0, 0, m_RayHeapHeader );
-
         }
-
 
         commandList->DispatchRays( &raytraceDesc );
 

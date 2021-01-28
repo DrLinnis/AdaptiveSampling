@@ -109,7 +109,6 @@ private:
     std::shared_ptr<dx12lib::RootSignature>         m_HitMissRootSig;
     std::shared_ptr<dx12lib::RootSignature>         m_DummyGlobalRootSig;
 
-    std::shared_ptr<dx12lib::RootSignature>          m_GlobalRootSig;
     std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
     
     // Tut 5
@@ -145,7 +144,7 @@ private:
     // Some geometry to render.
     std::shared_ptr<dx12lib::Scene> m_Plane;
 
-    std::shared_ptr<dx12lib::Scene> m_MiniPlane;
+    std::shared_ptr<dx12lib::Scene> m_RayMesh;
     
     std::shared_ptr<dx12lib::Texture>             m_PostProcessOutput;
     std::shared_ptr<dx12lib::UnorderedAccessView> m_PostProcessOutputUAV;
