@@ -56,7 +56,7 @@ void rayGen()
     float aspectRatio = dims.x / dims.y;
 
     RayDesc ray;
-    ray.Origin = float3(0, 0, -3);
+    ray.Origin = float3(0, 0.5, -5);
     ray.Direction = normalize(float3(d.x * aspectRatio, -d.y, 1));
 
     ray.TMin = 0;
@@ -77,6 +77,7 @@ void miss(inout RayPayload payload)
 [shader("closesthit")]
 void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
+    uint instanceID = InstanceID();
     // calculate (w,u,v) barycentrics
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
 
@@ -84,7 +85,7 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
     const float3 B = float3(0, 1, 0);
     const float3 C = float3(0, 0, 1);
 
-    payload.color = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
-    //payload.color = float3(1, 1, 1);
+    float3 interpolatedVal = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
+    payload.color = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
 
 }

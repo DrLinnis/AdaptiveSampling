@@ -80,30 +80,24 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     AccelerationStructure* pDes)
 {
 
-    
-    D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
-    {
-        instanceDesc.InstanceID = 0;  // This value will be exposed to the shader via InstanceID()
-        // This is the offset inside the shader-table. We only have a single geometry, so the offset 0
-        instanceDesc.InstanceContributionToHitGroupIndex = 0;
-        instanceDesc.Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-        // OR D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_FRONT_COUNTERCLOCKWISE
-        instanceDesc.Transform[0][0] = instanceDesc.Transform[1][1] = instanceDesc.Transform[2][2] = 1;
-        instanceDesc.AccelerationStructure = pBottomLevelAS->GetD3D12Resource()->GetGPUVirtualAddress();
-        instanceDesc.InstanceMask          = 0xFF;
-    }
-    
+    std::shared_ptr<MappableBuffer> pInstanceDescBuffer = pDevice->CreateMappableBuffer( 3 * sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
+    pInstanceDescBuffer->SetName( L"DXR TLAS Instance Description" );
 
-    std::shared_ptr<MappableBuffer> pInstanceDesc = pDevice->CreateMappableBuffer( sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
-    pInstanceDesc->SetName( L"DXR TLAS Instance Description" );
-
-    void* pData;
-    ThrowIfFailed( pInstanceDesc->Map( &pData ) );
-    {  // Initialize the instance desc. We only have a single instance
-        memcpy( pData, &instanceDesc, sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
+    D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDesc;
+    ThrowIfFailed( pInstanceDescBuffer->Map( (void**)&pInstanceDesc ) );
+    {  
+        for (int i = 0; i < 3; i++) {
+            pInstanceDesc[i].InstanceID                  = i;
+            pInstanceDesc[i].InstanceContributionToHitGroupIndex = 0;
+            pInstanceDesc[i].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            pInstanceDesc[i].Transform[0][0] = pInstanceDesc[i].Transform[1][1] = pInstanceDesc[i].Transform[2][2] = 1;
+            pInstanceDesc[i].Transform[0][3]                                                                       = 4.0 * (i - 1);
+            pInstanceDesc[i].AccelerationStructure = pBottomLevelAS->GetD3D12Resource()->GetGPUVirtualAddress();
+            pInstanceDesc[i].InstanceMask             = 0xFF;
+        }
     }
     // Unmap
-    pInstanceDesc->Unmap();
+    pInstanceDescBuffer->Unmap();
     
     
     
@@ -111,9 +105,9 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.DescsLayout  = D3D12_ELEMENTS_LAYOUT_ARRAY;
     inputs.Flags    = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
-    inputs.NumDescs = 1;
+    inputs.NumDescs = 3;
     inputs.Type     = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-    inputs.InstanceDescs = pInstanceDesc->GetD3D12Resource()->GetGPUVirtualAddress();
+    inputs.InstanceDescs = pInstanceDescBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info;
     pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
@@ -149,5 +143,5 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
 
     pDes->pResult  = pResult;
     pDes->pScratch = pScratch;
-    pDes->pInstanceDesc = pInstanceDesc;
+    pDes->pInstanceDesc = pInstanceDescBuffer;
 }
