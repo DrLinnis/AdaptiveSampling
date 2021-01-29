@@ -16,9 +16,29 @@ class VertexBuffer;
 class IndexBuffer;
 class Buffer;
 class MappableBuffer;
+class AccelerationBuffer;
+
+struct AccelerationStructure
+{
+    std::shared_ptr<AccelerationBuffer> pScratch;
+    std::shared_ptr<AccelerationBuffer> pResult;
+    std::shared_ptr<MappableBuffer> pInstanceDesc;
+};
 
 class AccelerationBuffer : public Resource
 {
+public:
+    static void CreateTopLevelAS( dx12lib::Device*             pDevice,
+                                    dx12lib::CommandList*        pCommandList,
+                                    dx12lib::AccelerationBuffer* pBottomLevelAS,
+                                    uint64_t* pTlasSize, AccelerationStructure* pDes );
+
+    static void CreateBottomLevelAS( dx12lib::Device*       pDevice,
+                                    dx12lib::CommandList*  pCommandList,
+                                    dx12lib::VertexBuffer* pVertexBuffer,
+                                    dx12lib::IndexBuffer*  pIndexBuffer,
+                                    AccelerationStructure* pDes );
+
 protected:
     AccelerationBuffer( Device& device, 
                         const D3D12_RESOURCE_DESC& resourceDesc, 
@@ -47,48 +67,4 @@ public:
 
     virtual ~MakeAccelerationBuffer() {}
 };
-
-class AccelerationStructure
-{
-public:
-    static std::shared_ptr<AccelerationStructure> CreateTopLevelAS( 
-        dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
-        dx12lib::AccelerationBuffer* pBottomLevelAS, uint64_t* pTlasSize );
-
-    static std::shared_ptr<AccelerationStructure> CreateBottomLevelAS( dx12lib::Device*       pDevice,
-                                                                       dx12lib::CommandList*  pCommandList,
-                                                                       dx12lib::VertexBuffer* pVertexBuffer,
-                                                                       dx12lib::IndexBuffer*  pIndexBuffer );
-
-    AccelerationStructure()
-    : pScratch( nullptr )
-    , pResult( nullptr )
-    , pInstanceDesc( nullptr )
-    {}
-
-    AccelerationStructure( AccelerationStructure* Acc )
-    : pScratch( Acc->pScratch )
-    , pResult( Acc->pResult )
-    , pInstanceDesc( Acc->pInstanceDesc )
-    {}
-
-    void reset()
-    {
-        pScratch.reset();
-        pResult.reset();
-        pInstanceDesc.reset();
-    }
-
-    std::shared_ptr<AccelerationBuffer> GetResult() const {
-        return pResult;
-    }
-
-private: 
-    
-
-    std::shared_ptr<AccelerationBuffer>    pScratch;    // required for intermediate computation
-    std::shared_ptr<AccelerationBuffer>    pResult;     // holds the acceleration data. 
-    std::shared_ptr<MappableBuffer>         pInstanceDesc;  // Used only for top-level AS
-};
-
 }  // namespace dx12lib

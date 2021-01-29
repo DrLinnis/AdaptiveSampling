@@ -10,18 +10,19 @@
 using namespace dx12lib;
 
 ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                                                  const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
-                                                  const D3D12_SHADER_RESOURCE_VIEW_DESC*  rayTlasSrv ) 
+                                                  const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                                                  const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv ) 
 : m_Device( device )
+, m_Resource( outputResource )
 {
-    assert( uav || rayTlasSrv );
+    assert( pOutputUav || pRayTlasSrv );
 
     auto d3d12Device          = m_Device.GetD3D12Device();
-    auto d3d12Resource        = outputResource ? outputResource->GetD3D12Resource() : nullptr;
+    auto d3d12Resource = m_Resource ? m_Resource->GetD3D12Resource() : nullptr;
 
-    if ( outputResource )
+    if ( m_Resource )
     {
-        auto d3d12ResourceDesc = outputResource->GetD3D12ResourceDesc();
+        auto d3d12ResourceDesc = m_Resource->GetD3D12ResourceDesc();
 
         // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
         assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
@@ -32,13 +33,19 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     desc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
+
     ThrowIfFailed( d3d12Device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_SrvUavHeap ) ) );
+    m_SrvUavHeap->SetName( L"DXR Descriptor Heap" );
+    
+    D3D12_CPU_DESCRIPTOR_HANDLE srvUavHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 
-    D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+    
+    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, srvUavHandle );
 
-    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, uav, srvHandle );
+    srvUavHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
-    srvHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, srvUavHandle );
 
-    d3d12Device->CreateShaderResourceView( nullptr, rayTlasSrv, srvHandle );
+
+
 }

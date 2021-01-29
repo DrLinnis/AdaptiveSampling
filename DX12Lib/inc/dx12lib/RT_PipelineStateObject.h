@@ -72,7 +72,7 @@ class RT_PipelineStateObject
 public:
     ID3D12StateObject* GetD3D12PipelineState() const
     {
-        return m_d3d12PipelineState;
+        return m_d3d12PipelineState.Get();
     }
     
 
@@ -82,6 +82,6 @@ protected:
 
 private:
     Device&                                     m_Device;
-    ID3D12StateObject* m_d3d12PipelineState;
+    Microsoft::WRL::ComPtr<ID3D12StateObject>   m_d3d12PipelineState;
 };
 }  // namespace dx12lib

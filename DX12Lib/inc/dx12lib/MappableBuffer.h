@@ -13,10 +13,6 @@ class Device;
 class MappableBuffer : public Resource
 {
 public:
-    size_t GetBufferSize() const
-    {
-        return m_BufferSize;
-    }
 
     HRESULT Map( void** pData );
     void    Unmap();
@@ -26,7 +22,20 @@ protected:
     MappableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resource );
     virtual ~MappableBuffer() = default;
 
-private:
-    size_t m_BufferSize;
 };
+
+class MakeMappableBuffer : public MappableBuffer
+{
+public:
+    MakeMappableBuffer( Device& device, const D3D12_RESOURCE_DESC& desc )
+    : MappableBuffer( device, desc )
+    {}
+
+    MakeMappableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resoruce )
+    : MappableBuffer( device, resoruce )
+    {}
+
+    virtual ~MakeMappableBuffer() {}
+};
+
 }  // namespace dx12lib

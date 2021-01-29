@@ -77,8 +77,8 @@ DxilLibrary::DxilLibrary( IDxcBlob* pBlob, const WCHAR* entryPoint[], uint32_t e
 HitProgram::HitProgram( LPCWSTR ahsExport, LPCWSTR chsExport, const std::wstring& name )
 : exportName( name )
 {
-    desc.AnyHitShaderImport     = ahsExport;
-    desc.ClosestHitShaderImport = chsExport;
+    desc.AnyHitShaderImport     = ahsExport; // any hit
+    desc.ClosestHitShaderImport = chsExport; // closest hit
     desc.HitGroupExport         = exportName.c_str();
 
     subObject.Type  = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;

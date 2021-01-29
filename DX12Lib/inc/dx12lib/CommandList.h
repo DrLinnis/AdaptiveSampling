@@ -221,7 +221,7 @@ public:
     /**
      * Load a texture by a filename.
      */
-    std::shared_ptr<Texture> LoadTextureFromFile( const std::wstring& fileName, bool sRGB = false );
+    std::shared_ptr<Texture> LoadTextureFromFile( const std::wstring& fileName, bool sRGB = false , bool generateMips = true);
 
     /**
      * Load a scene file.
@@ -338,8 +338,11 @@ public:
 
     /*
      * Build acceleration structure.
+     * 
+     * Always acompany with a barrier for the result.
      */
-    void BuildRaytracingAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC* pDesc );
+    void BuildRaytracingAccelerationStructure( D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC* pDesc,
+                                               D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC* pPostBuild = nullptr);
 
 
 
@@ -666,7 +669,6 @@ private:
     ID3D12RootSignature* m_RootSignature;
     // Keep track of the currently bond pipeline state object to minimize PSO changes.
     ID3D12PipelineState* m_PipelineState;
-    bool                 rayTracingPipeline = false;
 
     // Resource created in an upload heap. Useful for drawing of dynamic geometry
     // or for uploading constant buffer data that changes every draw call.

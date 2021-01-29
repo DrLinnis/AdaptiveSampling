@@ -292,7 +292,7 @@ void CommandList::SetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY primitiveTopology
     m_d3d12CommandList->IASetPrimitiveTopology( primitiveTopology );
 }
 
-std::shared_ptr<Texture> CommandList::LoadTextureFromFile( const std::wstring& fileName, bool sRGB )
+std::shared_ptr<Texture> CommandList::LoadTextureFromFile( const std::wstring& fileName, bool sRGB, bool generateMips )
 {
     std::shared_ptr<Texture> texture;
     fs::path                 filePath( fileName );
@@ -345,7 +345,7 @@ std::shared_ptr<Texture> CommandList::LoadTextureFromFile( const std::wstring& f
         case TEX_DIMENSION_TEXTURE2D:
             textureDesc = CD3DX12_RESOURCE_DESC::Tex2D( metadata.format, static_cast<UINT64>( metadata.width ),
                                                         static_cast<UINT>( metadata.height ),
-                                                        static_cast<UINT16>( metadata.arraySize ) );
+                                                        static_cast<UINT16>( metadata.arraySize ), generateMips ? 0 : 1 );
             break;
         case TEX_DIMENSION_TEXTURE3D:
             textureDesc = CD3DX12_RESOURCE_DESC::Tex3D( metadata.format, static_cast<UINT64>( metadata.width ),
@@ -382,7 +382,7 @@ std::shared_ptr<Texture> CommandList::LoadTextureFromFile( const std::wstring& f
 
         CopyTextureSubresource( texture, 0, static_cast<uint32_t>( subresources.size() ), subresources.data() );
 
-        if ( subresources.size() < textureResource->GetDesc().MipLevels )
+        if ( subresources.size() < textureResource->GetDesc().MipLevels && generateMips )
         {
             GenerateMips( texture );
         }
@@ -1395,12 +1395,11 @@ void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& 
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState().Get();
-    if ( m_PipelineState != d3d12PipelineStateObject || rayTracingPipeline )
+    if ( m_PipelineState != d3d12PipelineStateObject )
     {
         m_PipelineState = d3d12PipelineStateObject;
 
         m_d3d12CommandList->SetPipelineState( d3d12PipelineStateObject );
-        rayTracingPipeline = false;
 
         TrackResource( d3d12PipelineStateObject );
     }
@@ -1412,17 +1411,14 @@ void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineS
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState();
-    m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
 
-    rayTracingPipeline = true;
+    m_d3d12CommandList->SetPipelineState1( d3d12PipelineStateObject );
 
     TrackResource( d3d12PipelineStateObject );
 
     assert( shaderTable );
 
-    ID3D12DescriptorHeap* heaps[1] = { shaderTable->GetTableHeap() };
-
-    m_d3d12CommandList->SetDescriptorHeaps( 1, heaps );
+    SetDescriptorHeap( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shaderTable->GetTableHeap() );
 
 }
 
@@ -1728,8 +1724,6 @@ void CommandList::Dispatch( uint32_t numGroupsX, uint32_t numGroupsY, uint32_t n
 
 void CommandList::DispatchRays(D3D12_DISPATCH_RAYS_DESC* pRaytraceDesc) 
 {
-    FlushResourceBarriers();
-
     m_d3d12CommandList->DispatchRays( pRaytraceDesc );
 }
 
@@ -1822,7 +1816,8 @@ void CommandList::BindDescriptorHeaps()
 /* New functions */
 
 void dx12lib::CommandList::BuildRaytracingAccelerationStructure(
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC* pDesc )
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC*          pDesc,
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC* pPostBuild )
 {
-    m_d3d12CommandList->BuildRaytracingAccelerationStructure( pDesc, 0, nullptr );
+    m_d3d12CommandList->BuildRaytracingAccelerationStructure( pDesc, pPostBuild == nullptr ? 0 : 1, pPostBuild );
 }

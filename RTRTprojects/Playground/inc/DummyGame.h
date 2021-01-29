@@ -34,6 +34,11 @@ class ShaderTableResourceView;
 
 class Window;  // From GameFramework.
 
+
+#define RAY_TRACER     1
+#define POST_PROCESSOR 0
+#define RASTER_DISPLAY 0
+
 class DummyGame
 {
 public:
@@ -95,44 +100,72 @@ protected:
 
 private:
     // Added tutorial member:
+#if RAY_TRACER
     // Tut 3
-    std::shared_ptr<dx12lib::AccelerationStructure> m_topLevelBuffers;
+    std::shared_ptr<dx12lib::AccelerationBuffer> m_TLAS;
 
-    std::shared_ptr<dx12lib::AccelerationStructure> m_bottomLevelBuffers;
+    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
     uint64_t mTlasSize = 0;
     
     // Tut 4
-    std::shared_ptr<dx12lib::RootSignature>         m_RayGenRootSig;
-    std::shared_ptr<dx12lib::RootSignature>         m_HitMissRootSig;
-    std::shared_ptr<dx12lib::RootSignature>         m_DummyGlobalRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_HitMissRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_DummyGlobalRootSig;
 
-    std::shared_ptr<dx12lib::RT_PipelineStateObject> m_RayPipelineState; 
+    std::shared_ptr<dx12lib::RT_PipelineStateObject>    m_RayPipelineState; 
     
     // Tut 5
-    size_t                                          m_ShaderTableEntrySize = 0;
-    std::shared_ptr<dx12lib::MappableBuffer>        m_ShaderTable;
+    size_t                                              m_ShaderTableEntrySize = 0;
+    std::shared_ptr<dx12lib::MappableBuffer>            m_RaygenShaderTable;
+    std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
+    std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
+
+
+
 
     // Tut 6
-    std::shared_ptr<dx12lib::Texture>               m_RayOutputResource;
-
-    std::shared_ptr<dx12lib::ShaderTableResourceView>       m_RayShaderHeap;
-    std::shared_ptr<dx12lib::UnorderedAccessView>   m_RayOutputUAV;
-    std::shared_ptr<dx12lib::ShaderResourceView>    m_TlasSRV;
+    std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
 
 
+    std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
+    std::shared_ptr<dx12lib::UnorderedAccessView>       m_RayOutputUAV;
+    std::shared_ptr<dx12lib::ShaderResourceView>        m_TlasSRV;
 
     // new helper functions
-    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
-    void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat);
+    
+    /*
+        Create the ray tracing pipeline with settings as local root signatures, 
+            ray depth, payload, etc etc.
+    */
     void CreateRayTracingPipeline(  );
-    void CreateShaderTable();
-    void CreateShaderResource( DXGI_FORMAT backBufferFormat );
 
+    /*
+        Upload shader programs and point at relative resources needed per function
+    */
+    void CreateShaderTable( );
+    
+    /*
+        Create Output image and CBV_SRV_UAV heap
+    */
+    void CreateShaderResource( DXGI_FORMAT backBufferFormat );
+    
+    /*
+        Create Accelleration structures needed for the geometry
+    */
+    void CreateAccelerationStructure();
+
+#endif
+
+    // refactored helper functions
+    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
+    void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
+    
 
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
+    // General
     std::shared_ptr<dx12lib::Device>    m_Device;
     std::shared_ptr<dx12lib::SwapChain> m_SwapChain;
     std::shared_ptr<dx12lib::GUI>       m_GUI;
@@ -144,20 +177,27 @@ private:
 
     std::shared_ptr<dx12lib::Scene> m_RayMesh;
     
-    std::shared_ptr<dx12lib::Texture>             m_PostProcessOutput;
-    std::shared_ptr<dx12lib::UnorderedAccessView> m_PostProcessOutputUAV;
-
-    std::shared_ptr<dx12lib::Texture>             m_RenderShaderResource;
-    std::shared_ptr<dx12lib::ShaderResourceView> m_RenderShaderView;
+    std::shared_ptr<dx12lib::Texture> m_DummyTexture;
 
     // Render target
     dx12lib::RenderTarget m_RenderTarget;
 
+#if RASTER_DISPLAY
     std::shared_ptr<dx12lib::RootSignature> m_DisplayRootSignature;
     std::shared_ptr<dx12lib::PipelineStateObject> m_DisplayPipelineState;
 
+    std::shared_ptr<dx12lib::Texture>            m_RenderShaderResource;
+    std::shared_ptr<dx12lib::ShaderResourceView> m_RenderShaderView;
+#endif
+
+#if POST_PROCESSOR
+    std::shared_ptr<dx12lib::Texture>             m_PostProcessOutput;
+    std::shared_ptr<dx12lib::UnorderedAccessView> m_PostProcessOutputUAV;
+
     std::shared_ptr<dx12lib::RootSignature>       m_PostProcessRootSignature;
     std::shared_ptr<dx12lib::PipelineStateObject> m_PostProcessPipelineState;
+#endif
+
 
     D3D12_VIEWPORT m_Viewport;
     D3D12_RECT m_ScissorRect;

@@ -186,19 +186,6 @@ public:
     virtual ~MakeByteAddressBuffer() {}
 };
 
-class MakeMappableBuffer : public MappableBuffer
-{
-public:
-    MakeMappableBuffer( Device& device, const D3D12_RESOURCE_DESC& desc )
-    : MappableBuffer( device, desc )
-    {}
-
-    MakeMappableBuffer( Device& device, Microsoft::WRL::ComPtr<ID3D12Resource> resoruce )
-    : MappableBuffer( device, resoruce )
-    {}
-
-    virtual ~MakeMappableBuffer() {}
-};
 
 class MakeDescriptorAllocator : public DescriptorAllocator
 {
@@ -456,7 +443,6 @@ std::shared_ptr<StructuredBuffer> Device::CreateStructuredBuffer( ComPtr<ID3D12R
 
 std::shared_ptr<MappableBuffer> dx12lib::Device::CreateMappableBuffer( size_t bufferSize)
 {
-    // Align-up to 4-bytes
     bufferSize = Math::AlignUp( bufferSize, 4 );
 
     std::shared_ptr<MappableBuffer> buffer = std::make_shared<MakeMappableBuffer>(
@@ -469,17 +455,19 @@ std::shared_ptr<AccelerationBuffer> dx12lib::Device::CreateAccelerationBuffer( s
                                                                                const D3D12_RESOURCE_FLAGS  flag,
                                                                                const D3D12_RESOURCE_STATES initState )
 {
-    // Align-up to 4-bytes
+
     bufferSize = Math::AlignUp( bufferSize, 4 );
 
-    std::shared_ptr<AccelerationBuffer> buffer = std::make_shared<MakeAccelerationBuffer>( *this, CD3DX12_RESOURCE_DESC::Buffer( bufferSize, flag ), initState );
+    std::shared_ptr<AccelerationBuffer> buffer 
+        = std::make_shared<MakeAccelerationBuffer>( *this, CD3DX12_RESOURCE_DESC::Buffer( bufferSize, flag ), initState );
 
     return buffer;
 }
 
 std::shared_ptr<IndexBuffer> Device::CreateIndexBuffer( size_t numIndicies, DXGI_FORMAT indexFormat )
 {
-    std::shared_ptr<IndexBuffer> indexBuffer = std::make_shared<MakeIndexBuffer>( *this, numIndicies, indexFormat );
+    std::shared_ptr<IndexBuffer> indexBuffer 
+        = std::make_shared<MakeIndexBuffer>( *this, numIndicies, indexFormat );
 
     return indexBuffer;
 }
@@ -496,7 +484,8 @@ std::shared_ptr<dx12lib::IndexBuffer>
 
 std::shared_ptr<VertexBuffer> Device::CreateVertexBuffer( size_t numVertices, size_t vertexStride )
 {
-    std::shared_ptr<VertexBuffer> vertexBuffer = std::make_shared<MakeVertexBuffer>( *this, numVertices, vertexStride );
+    std::shared_ptr<VertexBuffer> vertexBuffer 
+        = std::make_shared<MakeVertexBuffer>( *this, numVertices, vertexStride );
 
     return vertexBuffer;
 }
