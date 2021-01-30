@@ -38,8 +38,8 @@ ComPtr<IDxcBlob> ShaderHelper::CompileLibrary( const WCHAR* filename, const WCHA
         std::vector<char> infoLog( pError->GetBufferSize() + 1 );
         memcpy( infoLog.data(), pError->GetBufferPointer(), pError->GetBufferSize() );
         infoLog[pError->GetBufferSize()] = 0;
-
-        throw std::exception( ( std::string( "Compile error:\n" ) + std::string( infoLog.data() ) ).c_str() );
+        std::string errorStr             = std::string( "Compile error:\n" ) + std::string( infoLog.data() );
+        throw std::exception( errorStr.c_str() );
     }
 
     ComPtr<IDxcBlob> pBlob;

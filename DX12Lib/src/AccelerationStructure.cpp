@@ -104,7 +104,7 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
         // instance 1 and 2, only spheres
         for (int i = 1; i < 3; i++) {
             pInstanceDesc[i].InstanceID                  = i;
-            pInstanceDesc[i].InstanceContributionToHitGroupIndex = i + 1;
+            pInstanceDesc[i].InstanceContributionToHitGroupIndex = 2*(i + 1);
             pInstanceDesc[i].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             pInstanceDesc[i].Transform[0][0] = pInstanceDesc[i].Transform[1][1] = pInstanceDesc[i].Transform[2][2] = 1;
             pInstanceDesc[i].Transform[0][3]          = 4.0 * ( i - 1 ) + 4.0 * ( i - 2 );

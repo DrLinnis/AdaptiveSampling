@@ -276,8 +276,13 @@ static const WCHAR* kRayGenShader     = L"rayGen";
 static const WCHAR* kMissShader       = L"miss";
 static const WCHAR* kClosestHitShader = L"chs";
 static const WCHAR* kPlaneHitShader = L"planeChs";
+
 static const WCHAR* kHitGroup         = L"HitGroup";
 static const WCHAR* kPlaneHitGroup = L"PlaneHitGroup";
+
+static const WCHAR* kShadowChs      = L"shadowChs";
+static const WCHAR* kShadowMiss     = L"shadowMiss";
+static const WCHAR* kShadowHitGroup = L"ShadowHitGroup";
 
 void DummyGame::CreateRayTracingPipeline() {
     // Need 10 subobjects:
@@ -290,22 +295,27 @@ void DummyGame::CreateRayTracingPipeline() {
     //  2 for shader config (shared between all programs. 1 for the config, 1 for association)
     //  1 for pipeline config
     //  1 for the global root signature
-    std::array<D3D12_STATE_SUBOBJECT, 13> subobjects;
+    std::array<D3D12_STATE_SUBOBJECT, 16> subobjects;
     uint32_t                              index = 0;
 
     // Load 
     ComPtr<IDxcBlob> shaders =
         ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_3" );
-    const WCHAR* entryPoints[] = { kRayGenShader, kMissShader, kClosestHitShader, kPlaneHitShader };  // SIZE 3
+    const WCHAR* entryPoints[] = { kRayGenShader, kMissShader, kClosestHitShader, kPlaneHitShader, kShadowChs,  kShadowMiss };  // SIZE 3
     
-    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 4 );
+    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 6 );
     subobjects[index++] = dxilLib.stateSubobject; // 0 Library
 
-    HitProgram hitProgram( nullptr, kClosestHitShader, kHitGroup );
-    subobjects[index++] = hitProgram.subObject; // 1 Hit Group.
+        HitProgram hitProgram( nullptr, kClosestHitShader, kHitGroup );
+        subobjects[index++] = hitProgram.subObject; // 1 Hit Group.
 
     HitProgram hitProgram2( nullptr, kPlaneHitShader, kPlaneHitGroup );
     subobjects[index++] = hitProgram2.subObject;  // 1 Hit Group.
+
+        HitProgram shadowHitProgram( nullptr, kShadowChs, kShadowHitGroup );
+        subobjects[index++] = shadowHitProgram.subObject;  // 1 Hit Group.
+
+
 
     // Create the ray-gen root-signature and association
     {
@@ -330,90 +340,122 @@ void DummyGame::CreateRayTracingPipeline() {
         rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
 
         m_RayGenRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+        
+        ID3D12RootSignature* pRayInterface = m_RayGenRootSig->GetD3D12RootSignature().Get();
+
+        D3D12_STATE_SUBOBJECT rayGenSubobject = {};
+        rayGenSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+        rayGenSubobject.pDesc                 = &pRayInterface;
+
+        subobjects[index] = rayGenSubobject;  // 2 RayGen Root Sig
     }
-
-    ID3D12RootSignature* pRayInterface = m_RayGenRootSig->GetD3D12RootSignature().Get();
-
-    D3D12_STATE_SUBOBJECT rayGenSubobject = {};
-    rayGenSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-    rayGenSubobject.pDesc                 = &pRayInterface;
-
-    subobjects[index] = rayGenSubobject;  // 2 RayGen Root Sig
-
-    
 
     uint32_t          rgsRootIndex = index++;  // 2
     ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
 
-    // Create the MISS-programs root-signature
+
+        // Create the HIT-programs root-signature       SPHERE
+        {
+            CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+
+            // unable to use as this is based on the root signature, and we can't set ot local roots.
+            //rayRootParams[0].InitAsConstants( 12, 1 );
+
+            rayRootParams[0].InitAsConstantBufferView( 1 );
+
+            D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+            CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+            rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+            //rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+
+            m_SphereHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+            ID3D12RootSignature*  pHitInterface = m_SphereHitRootSig->GetD3D12RootSignature().Get();
+            D3D12_STATE_SUBOBJECT hitSubobject  = {};
+            hitSubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+            hitSubobject.pDesc                  = &pHitInterface;
+            subobjects[index]                   = hitSubobject;
+            // END HIT                                      SPHERE
+        }
+
+        // Hit associations
+        uint32_t          sprHitRootIndex    = index++;                             // 4
+        const WCHAR*      sprHitExportName[] = { kClosestHitShader };  // SIZE 2
+        ExportAssociation sprHitRootAssociation( sprHitExportName, 1, &( subobjects[sprHitRootIndex] ) );
+        subobjects[index++] = sprHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+
+    // Create the HIT-programs root-signature       PLANE
     {
-        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
+                                               D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
 
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
-
-        m_MissRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-    }
-
-    ID3D12RootSignature* pEmptyInterface = m_MissRootSig->GetD3D12RootSignature().Get();
-    D3D12_STATE_SUBOBJECT emptySubobject = {};
-    emptySubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-    emptySubobject.pDesc                 = &pEmptyInterface;
-
-    subobjects[index] = emptySubobject;  // 4 Root Sig to be shared between Miss and CHS
-    // END MISS/HITT
-    
-    // Miss associations
-    uint32_t          missRootIndex    = index++;  // 4
-    const WCHAR*      missExportName[] = { kPlaneHitShader, kMissShader }; // SIZE 2
-    ExportAssociation missRootAssociation( missExportName, 2, &( subobjects[missRootIndex] ) );
-    subobjects[index++] = missRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
-
-    // Create the HIT-programs root-signature       SPHERE
-    {
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
-        // unable to use as this is based on the root signature, and we can't set ot local roots.
-        //rayRootParams[0].InitAsConstants( 12, 1 );
-
-        rayRootParams[0].InitAsConstantBufferView( 1 );
+        rayRootParams[0].InitAsDescriptorTable( 1, &TlvlAcc );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
         rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-        //rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+        // rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
 
-        m_HitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+        m_PlaneHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+        ID3D12RootSignature*  pHitInterface = m_PlaneHitRootSig->GetD3D12RootSignature().Get();
+        D3D12_STATE_SUBOBJECT hitSubobject  = {};
+        hitSubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+        hitSubobject.pDesc                  = &pHitInterface;
+        subobjects[index]                   = hitSubobject;
+        // END HIT                                      PLANE
     }
 
-    ID3D12RootSignature*  pHitInterface = m_HitRootSig->GetD3D12RootSignature().Get();
-    D3D12_STATE_SUBOBJECT hitSubobject  = {};
-    hitSubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-    hitSubobject.pDesc                  = &pHitInterface;
-
-    subobjects[index] = hitSubobject;  
-    // END HIT                                      SPHERE
-
     // Hit associations
-    uint32_t          hitRootIndex    = index++;                             // 4
-    const WCHAR*      hitExportName[] = { kClosestHitShader };  // SIZE 2
-    ExportAssociation hitRootAssociation( hitExportName, 1, &( subobjects[hitRootIndex] ) );
-    subobjects[index++] = hitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+    uint32_t          planeHitRootIndex    = index++;                // 4
+    const WCHAR*      planeHitExportName[] = { kPlaneHitShader };  // SIZE 2
+    ExportAssociation planeHitRootAssociation( planeHitExportName, 1, &( subobjects[planeHitRootIndex] ) );
+    subobjects[index++] = planeHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+
+
+        // Create the EMPTY-programs root-signature
+        {
+            D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+            CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+            rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+
+            m_EmptyLocalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+            ID3D12RootSignature*  pEmptyInterface = m_EmptyLocalRootSig->GetD3D12RootSignature().Get();
+            D3D12_STATE_SUBOBJECT emptySubobject  = {};
+            emptySubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+            emptySubobject.pDesc                  = &pEmptyInterface;
+
+            subobjects[index] = emptySubobject;  // 4 Root Sig to be shared between Miss and CHS
+        }
+
+        // EMPTY associations
+        uint32_t          emptyRootIndex    = index++;                                   // 4
+        const WCHAR*      emptyExportName[] = { kMissShader, kShadowMiss, kShadowChs };  // SIZE 2
+        ExportAssociation emptyRootAssociation( emptyExportName, 3, &( subobjects[emptyRootIndex] ) );
+        subobjects[index++] = emptyRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+
+
 
     // Bind the payload size to the programs // UPDATED: SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
     ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * 3 );
     subobjects[index] = shaderConfig.subobject;  // 6 Shader Config
 
     uint32_t          shaderConfigIndex = index++;  // 6
-    const WCHAR*      shaderExports[]   = { kMissShader, kClosestHitShader, kPlaneHitShader, kRayGenShader };  // SIZE 3
-    ExportAssociation configAssociation( shaderExports, 4, &( subobjects[shaderConfigIndex] ) );
+    const WCHAR*      shaderExports[]   = { kMissShader, kClosestHitShader, kPlaneHitShader, kRayGenShader, kShadowMiss, kShadowChs };  // SIZE 3
+    ExportAssociation configAssociation( shaderExports, 6, &( subobjects[shaderConfigIndex] ) );
     subobjects[index++] = configAssociation.subobject;  // 7 Associate Shader Config to Miss, CHS, RGS
 
-    // Create the pipeline config
-    PipelineConfig config( 1 ); // UPDATE: SET MAX RECURSION DEPTH TO 1
-    subobjects[index++] = config.subobject;  // 8
+        // Create the pipeline config
+        PipelineConfig config( 2 ); 
+        subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
     {
@@ -422,15 +464,16 @@ void DummyGame::CreateRayTracingPipeline() {
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
         rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
 
-        m_DummyGlobalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+        m_GlobalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+        ID3D12RootSignature*  pGlobalInterface     = m_GlobalRootSig->GetD3D12RootSignature().Get();
+        D3D12_STATE_SUBOBJECT emptyGlobalSubobject = {};
+        emptyGlobalSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+        emptyGlobalSubobject.pDesc                 = &pGlobalInterface;
+
+        subobjects[index++] = emptyGlobalSubobject;  // 9
     }
-
-    ID3D12RootSignature*  pGlobalInterface      = m_DummyGlobalRootSig->GetD3D12RootSignature().Get();
-    D3D12_STATE_SUBOBJECT emptyGlobalSubobject  = {};
-    emptyGlobalSubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-    emptyGlobalSubobject.pDesc                  = &pGlobalInterface;
-
-    subobjects[index++] = emptyGlobalSubobject; // 9
+    
     // END GLOBAL
 
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
@@ -533,10 +576,10 @@ void DummyGame::CreateShaderTable()
     m_RaygenShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
     m_RaygenShaderTable->SetName( L"DXR Raygen Shader Table" );
 
-    m_MissShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
+    m_MissShaderTable = m_Device->CreateMappableBuffer( 2 * shaderBufferSize ); // 2x2 one per primary and one per shadow
     m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
 
-    m_HitShaderTable = m_Device->CreateMappableBuffer( 4 * shaderBufferSize );
+    m_HitShaderTable = m_Device->CreateMappableBuffer( 8 * shaderBufferSize ); // 4x2, one per primary and one per shadow
     m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
 
     ComPtr<ID3D12StateObjectProperties> pRtsoProps;
@@ -545,9 +588,13 @@ void DummyGame::CreateShaderTable()
     UINT64 heapUavSrvPtr = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
 
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
+
     void* pMissShdr   = pRtsoProps->GetShaderIdentifier( kMissShader );
+    void* pShadowMiss = pRtsoProps->GetShaderIdentifier( kShadowMiss );
+
     void* pHitGrpShdr = pRtsoProps->GetShaderIdentifier( kHitGroup );
     void* pPlaneHitGrpShdr = pRtsoProps->GetShaderIdentifier( kPlaneHitGroup );
+    void* pShadowHitGrp = pRtsoProps->GetShaderIdentifier( kShadowHitGroup );
 
     uint8_t* pData;
     ThrowIfFailed( m_RaygenShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
@@ -562,33 +609,63 @@ void DummyGame::CreateShaderTable()
 
     ThrowIfFailed( m_MissShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
     {
-        // Entry 1 - miss program
+        // Entry 1 - miss program PRIMARY
         memcpy( pData, pMissShdr, shaderIdSize );
+
+        memcpy( pData + shaderBufferSize, pRtsoProps->GetShaderIdentifier( kShadowMiss ), shaderIdSize );
     }
     m_MissShaderTable->Unmap();  // Unmap
 
-
+    UINT64 cbvDest;
     ThrowIfFailed( m_HitShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
     {
+        // Instance 0
+        {
+            // Geometry 1
+            {
+                // SPHERE - PRIMARY
+                memcpy( pData + 0 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
+                cbvDest = m_MissSdrCBs[0]->GetD3D12Resource()->GetGPUVirtualAddress();
+                memcpy( pData + 0 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
 
-        // Entry 2 - hit program 
-        //SPHERE
-        memcpy( pData + 0 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-        UINT64 cbvDest = m_MissSdrCBs[0]->GetD3D12Resource()->GetGPUVirtualAddress();
-        memcpy( pData + 0 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+                memcpy( pData + 1 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
+            }
+            
+            // Geometry 2
+            {
+                // PLANE - PRIMARY
+                memcpy( pData + 2 * shaderBufferSize, pPlaneHitGrpShdr, shaderIdSize ); // NOTICE PLANE
 
-        //PLANE
-        memcpy( pData + 1 * shaderBufferSize, pPlaneHitGrpShdr, shaderIdSize );
+                // NOW POINTS AT TLAS
+                UINT64 srvDest = m_TLAS->GetD3D12Resource()->GetGPUVirtualAddress();
+                memcpy( pData + 2 * shaderBufferSize + shaderIdSize, &heapUavSrvPtr, sizeof( UINT64 ) ); 
 
-        // SPHERE
-        memcpy( pData + 2 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-        cbvDest = m_MissSdrCBs[1]->GetD3D12Resource()->GetGPUVirtualAddress();
-        memcpy( pData + 2 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+                memcpy( pData + 3 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
+            }
+            
+        }
+        
+        // Instance 1
+        {
+            // SPHERE - PRIMARY
+            memcpy( pData + 4 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
+            cbvDest = m_MissSdrCBs[1]->GetD3D12Resource()->GetGPUVirtualAddress();
+            memcpy( pData + 4 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
 
-        //SPHERE
-        memcpy( pData + 3 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-        cbvDest = m_MissSdrCBs[2]->GetD3D12Resource()->GetGPUVirtualAddress();
-        memcpy( pData + 3 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+            memcpy( pData + 5 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
+        }
+        
+
+        // Instance 2
+        {
+            // SPHERE - PRIMARY
+            memcpy( pData + 6 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
+            cbvDest = m_MissSdrCBs[2]->GetD3D12Resource()->GetGPUVirtualAddress();
+            memcpy( pData + 6 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+
+            memcpy( pData + 7 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
+        }
+        
     }
     m_HitShaderTable->Unmap();  // Unmap
 }
@@ -615,13 +692,13 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    m_RaySphere = commandList->CreateSphere( 1.5f, 16, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    //m_RaySphere = commandList->CreateSphere( 1.5f, 16, DirectX::XMFLOAT3( 0, 1, 0 ) );
     //m_RaySphere = commandList->CreateCube( 1.5f, DirectX::XMFLOAT3( 0, 1, 0 ) );
     //m_RaySphere = commandList->CreateCylinder( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
     //m_RaySphere = commandList->CreateCone( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
-    //m_RaySphere = commandList->CreateTorus( 0.5, 1 / 3.0f, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
-    // m_RaySphere = commandList->CreateSimplePlane( 1, 1 );
-    // m_RaySphere = commandList->CreateSimpleTriangle();
+    m_RaySphere = commandList->CreateTorus( 1.5, 1 / 2.0f, 32, DirectX::XMFLOAT3( 0, 0, 0 ) );
+    //m_RaySphere = commandList->CreateSimplePlane( 1, 1 );
+    //m_RaySphere = commandList->CreateSimpleTriangle();
     
     m_RayPlane = commandList->CreatePlane( 20, 20, DirectX::XMFLOAT3( 0, -2, 0 ) );
     //m_RayPlane = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
@@ -704,9 +781,9 @@ void DummyGame::UnloadContent()
     m_TLAS.reset();
     
     m_RayGenRootSig.reset();
-    m_MissRootSig.reset();
-    m_HitRootSig.reset();
-    m_DummyGlobalRootSig.reset();
+    m_EmptyLocalRootSig.reset();
+    m_SphereHitRootSig.reset();
+    m_GlobalRootSig.reset();
 
     m_RayPipelineState->GetD3D12PipelineState()->Release(); // not released properly when reseting variable.
     m_RayPipelineState.reset();
@@ -844,17 +921,17 @@ void DummyGame::OnRender()
             raytraceDesc.MissShaderTable.StartAddress  = 
                 m_MissShaderTable->GetD3D12Resource()->GetGPUVirtualAddress();
             raytraceDesc.MissShaderTable.StrideInBytes = m_ShaderTableEntrySize;
-            raytraceDesc.MissShaderTable.SizeInBytes   = m_ShaderTableEntrySize;  // Only a s single miss-entry
+            raytraceDesc.MissShaderTable.SizeInBytes   = 2*m_ShaderTableEntrySize;  
 
             // Hit is the third entry in the shader-table
             raytraceDesc.HitGroupTable.StartAddress = 
                 m_HitShaderTable->GetD3D12Resource()->GetGPUVirtualAddress();
             raytraceDesc.HitGroupTable.StrideInBytes = m_ShaderTableEntrySize;
-            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize * 4;
+            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize * 8;
         }
 
         // Set global root signature
-        commandList->SetComputeRootSignature( m_DummyGlobalRootSig );
+        commandList->SetComputeRootSignature( m_GlobalRootSig );
 
         // Set pipeline and heaps for shader table
         commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );

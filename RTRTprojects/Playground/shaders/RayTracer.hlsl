@@ -50,6 +50,23 @@ struct RayPayload
     float3 color;
 };
 
+struct ShadowPayLoad
+{
+    bool hit;
+};
+
+[shader("closesthit")]
+void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    payload.hit = true;
+}
+
+[shader("miss")]
+void shadowMiss(inout ShadowPayLoad payload)
+{
+    payload.hit = false;
+}
+
 
 
 [shader("raygeneration")]
@@ -76,7 +93,7 @@ void rayGen()
         0 /*rayFlags*/, 
         0xFF, 
         0 /* ray index*/,
-        1 /* Multiplier for Contribution to hit group index*/,
+        2 /* Multiplier for Contribution to hit group index*/,
         0,
         ray,
         payload
@@ -97,29 +114,44 @@ cbuffer SphereColours : register(b1)
     float4 InstancedColour;
 }
 
-[shader("closesthit")]
+[shader("closesthit")] 
 void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
     uint instanceID = InstanceID();
     // calculate (w,u,v) barycentrics
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
-
-    const float3 A = float3(1, 0, 0);
-    const float3 B = float3(0, 1, 0);
-    const float3 C = float3(0, 0, 1);
-
-    float3 interpolatedVal = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
-#if 1
-    float3 interTexMix = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
-    payload.color = lerp(interTexMix, InstancedColour.xyz, 0.5);
-#else
-    payload.color = colourC.xyz;
-#endif
+    // mix barycentrics Coords with colour
+    payload.color = lerp(barycentrics[instanceID], InstancedColour.xyz, 0.5);
 }
 
-[shader("closesthit")]
- void planeChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+[shader("closesthit")] // THIS IS THE PLANE CLOSEST HIT:
+void planeChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
-    payload.color = float3(0, 0.8, 0.9f);
-}
+    float hitT = RayTCurrent();
+    float3 rayDirW = WorldRayDirection();
+    float3 rayOriginW = WorldRayOrigin();
 
+    // Find the world-space hit position
+    float3 posW = rayOriginW + hitT * rayDirW;
+
+    // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
+    RayDesc ray;
+    ray.Origin = posW;
+    ray.Direction = normalize(float3(0.5, 0.5, -0.5));
+    ray.TMin = 0.01;
+    ray.TMax = 100000;
+    ShadowPayLoad shadowPayload;
+    TraceRay(gRtScene, 
+        0 /*rayFlags*/, 
+        0xFF, 
+        1 /* ray index*/,
+        0, 
+        1, 
+        ray,
+        shadowPayload
+    );
+
+    float factor = shadowPayload.hit ? 0.1 : 1.0;
+    payload.color = float3(0.9f, 0.9f, 0.9f) * factor;
+
+}

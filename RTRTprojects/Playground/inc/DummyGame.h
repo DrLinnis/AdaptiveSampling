@@ -124,9 +124,10 @@ private:
     
     // Tut 4
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_HitRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_MissRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_DummyGlobalRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_SphereHitRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_PlaneHitRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_EmptyLocalRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_GlobalRootSig;
 
     std::shared_ptr<dx12lib::RT_PipelineStateObject>    m_RayPipelineState; 
     
