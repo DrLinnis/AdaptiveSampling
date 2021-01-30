@@ -67,11 +67,6 @@ DummyGame::Colour::Colour(float r, float g, float b)
     , padding(0)
 { }
 
-DummyGame::HitShaderCB::HitShaderCB( DummyGame::Colour a, DummyGame::Colour b, DummyGame::Colour c )
-    : a( a )
-    , b( b )
-    , c( c )
-{ }
 
 DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSync )
 : m_ScissorRect( CD3DX12_RECT( 0, 0, LONG_MAX, LONG_MAX ) )
@@ -89,7 +84,6 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
 , m_cam( 0, 0, -5 )
-, m_SphereHintedColours( Colour( 0, 1, 0 ), Colour( 0.2, 0.8, 0.6 ), Colour( 0.3, 0.2, 0.69 ) )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -489,14 +483,18 @@ void DummyGame::CreateAccelerationStructure()
 
 void DummyGame::CreateConstantBuffer() 
 {
-    m_MissSdrCB = m_Device->CreateMappableBuffer( sizeof( HitShaderCB ) );
-
-    void* pData;
-    ThrowIfFailed( m_MissSdrCB->Map( &pData ) );
+    for ( int i = 0; i < 3; ++i ) 
     {
-        memcpy( pData, &m_SphereHintedColours, sizeof( HitShaderCB ) );
+        m_MissSdrCBs[i] = m_Device->CreateMappableBuffer( sizeof( Colour ) );
+        void* pData;
+        ThrowIfFailed( m_MissSdrCBs[i]->Map( &pData ) );
+        {
+            memcpy( pData, &m_SphereHintedColours[i], sizeof( Colour ) );
+        }
+        m_MissSdrCBs[i]->Unmap();
     }
-    m_MissSdrCB->Unmap();
+
+    
 }
 
 void DummyGame::CreateShaderTable()
@@ -516,7 +514,7 @@ void DummyGame::CreateShaderTable()
     m_MissShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
     m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
 
-    m_HitShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
+    m_HitShaderTable = m_Device->CreateMappableBuffer( 3 * shaderBufferSize );
     m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
 
     ComPtr<ID3D12StateObjectProperties> pRtsoProps;
@@ -546,15 +544,21 @@ void DummyGame::CreateShaderTable()
     }
     m_MissShaderTable->Unmap();  // Unmap
 
-    UINT64 cbvDest = m_MissSdrCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     ThrowIfFailed( m_HitShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
     {
-        // Entry 2 - hit program
-        memcpy( pData, pHitGrpShdr, shaderIdSize );
+        for ( int i = 0; i < 3; ++i ) 
+        {
+            // Entry 2 - hit program
+            memcpy( pData + i * shaderBufferSize, pHitGrpShdr, shaderIdSize );
 
-        // Entry 2.1 Parameter Heap pointer
-        memcpy( pData + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+            
+            UINT64 cbvDest = m_MissSdrCBs[i]->GetD3D12Resource()->GetGPUVirtualAddress();
+
+            // Entry 2.1 Parameter Heap pointer
+            memcpy( pData + i * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+        }
+
     }
     m_HitShaderTable->Unmap();  // Unmap
 }
@@ -810,7 +814,7 @@ void DummyGame::OnRender()
             raytraceDesc.HitGroupTable.StartAddress = 
                 m_HitShaderTable->GetD3D12Resource()->GetGPUVirtualAddress();
             raytraceDesc.HitGroupTable.StrideInBytes = m_ShaderTableEntrySize;
-            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize;
+            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize * 3;
         }
 
         // Set global root signature

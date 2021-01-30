@@ -51,12 +51,6 @@ struct RayPayload
 };
 
 
-cbuffer SphereColours : register(b1)
-{
-    float4 colourA;
-    float4 colourB;
-    float4 colourC;
-}
 
 [shader("raygeneration")]
 void rayGen()
@@ -89,6 +83,12 @@ void miss(inout RayPayload payload)
     payload.color = float3(0.4, 0.6, 0.2);
 }
 
+
+cbuffer SphereColours : register(b1)
+{
+    float4 InstancedColour;
+}
+
 [shader("closesthit")]
 void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
@@ -103,20 +103,7 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
     float3 interpolatedVal = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
 #if 1
     float3 interTexMix = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
-    float4 sphereCol;
-    switch (instanceID)
-    {
-        case 0:
-            sphereCol = colourA;
-            break;
-        case 1:
-            sphereCol = colourB;
-            break;
-        case 2:
-            sphereCol = colourC;
-            break;
-    }
-    payload.color = lerp(interTexMix, sphereCol.xyz, 0.5);
+    payload.color = lerp(interTexMix, InstancedColour.xyz, 0.5);
 #else
     payload.color = colourC.xyz;
 #endif

@@ -45,6 +45,7 @@ void AccelerationBuffer::CreateBottomLevelAS(   Device* pDevice,
     inputs.pGeometryDescs = &geomDesc;
     inputs.Type           = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 
+
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
     pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
 
@@ -88,7 +89,7 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     {  
         for (int i = 0; i < 3; i++) {
             pInstanceDesc[i].InstanceID                  = i;
-            pInstanceDesc[i].InstanceContributionToHitGroupIndex = 0;
+            pInstanceDesc[i].InstanceContributionToHitGroupIndex = i;
             pInstanceDesc[i].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             pInstanceDesc[i].Transform[0][0] = pInstanceDesc[i].Transform[1][1] = pInstanceDesc[i].Transform[2][2] = 1;
             pInstanceDesc[i].Transform[0][3]                                                                       = 4.0 * (i - 1);

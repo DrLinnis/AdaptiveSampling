@@ -136,7 +136,7 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
     std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
-    std::shared_ptr<dx12lib::MappableBuffer> m_MissSdrCB;
+    std::shared_ptr<dx12lib::MappableBuffer> m_MissSdrCBs[3];
 
     struct Colour
     {
@@ -144,14 +144,12 @@ private:
 
         float r, g, b, padding;
     };
-    struct HitShaderCB
-    {
-        HitShaderCB( Colour a, Colour b, Colour c );
 
-        Colour a , b , c;
+    Colour m_SphereHintedColours[3] = { 
+        Colour( 0, 1, 0 ), 
+        Colour( 0.2, 0.8, 0.6 ),
+        Colour( 0.3, 0.2, 0.69 ) 
     };
-
-    HitShaderCB m_SphereHintedColours;
 
     // Tut 6
     std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
