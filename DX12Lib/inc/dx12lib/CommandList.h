@@ -249,7 +249,8 @@ public:
      * @param size The size of one side of the cube.
      * @param reverseWinding Whether to reverse the winding order of the triangles (useful for skyboxes).
      */
-    std::shared_ptr<Scene> CreateCube( float size = 1.0, bool reverseWinding = false );
+    std::shared_ptr<Scene> CreateCube( float size = 1.0, DirectX::XMFLOAT3 offset = DirectX::XMFLOAT3( 0, 0, 0 ),
+                                       bool reverseWinding = false );
 
     /**
      * Create a sphere.
@@ -258,7 +259,9 @@ public:
      * @param tessellation Determines how smooth the sphere is.
      * @param reverseWinding Whether to reverse the winding order of the triangles (useful for sydomes).
      */
-    std::shared_ptr<Scene> CreateSphere( float radius = 0.5f, uint32_t tessellation = 16, bool reversWinding = false );
+    std::shared_ptr<Scene> CreateSphere( float radius = 0.5f, uint32_t tessellation = 16,
+                                         DirectX::XMFLOAT3 offset        = DirectX::XMFLOAT3( 0, 0, 0 ),
+                                         bool              reversWinding = false );
 
     /**
      * Create a Cylinder
@@ -269,7 +272,7 @@ public:
      * @param reverseWinding Whether to reverse the winding order of the triangles.
      */
     std::shared_ptr<Scene> CreateCylinder( float radius = 0.5f, float height = 1.0f, uint32_t tessellation = 32,
-                                           bool reverseWinding = false );
+                        DirectX::XMFLOAT3 offset = DirectX::XMFLOAT3( 0, 0, 0 ), bool reverseWinding = false );
 
     /**
      * Create a cone.
@@ -280,7 +283,8 @@ public:
      * @param reverseWinding Whether to reverse the winding order of the triangles.
      */
     std::shared_ptr<Scene> CreateCone( float radius = 0.5f, float height = 1.0f, uint32_t tessellation = 32,
-                                       bool reverseWinding = false );
+                                       DirectX::XMFLOAT3 offset         = DirectX::XMFLOAT3( 0, 0, 0 ),
+                                       bool              reverseWinding = false );
 
     /**
      * Create a torus.
@@ -291,7 +295,8 @@ public:
      * @param reverseWinding Reverse the winding order of the vertices.
      */
     std::shared_ptr<Scene> CreateTorus( float radius = 0.5f, float thickness = 0.333f, uint32_t tessellation = 32,
-                                        bool reverseWinding = false );
+                                        DirectX::XMFLOAT3 offset         = DirectX::XMFLOAT3( 0, 0, 0 ),
+                                        bool              reverseWinding = false );
 
     /**
      * Create a plane.
@@ -300,7 +305,9 @@ public:
      * @param height The height of the plane.
      * @reverseWinding Whether to reverse the winding order of the plane.
      */
-    std::shared_ptr<Scene> CreatePlane( float width = 1.0f, float height = 1.0f, bool reverseWinding = false );
+    std::shared_ptr<Scene> CreatePlane( float width = 1.0f, float height = 1.0f,
+                                        DirectX::XMFLOAT3 offset = DirectX::XMFLOAT3( 0, 0, 0 ),
+                                        bool reverseWinding = false );
 
     std::shared_ptr<Scene> CreateSimplePlane( float width = 1.0, float height = 1.0 );
 
@@ -635,7 +642,7 @@ private:
     inline DirectX::XMVECTOR GetCircleTangent( size_t i, size_t tessellation ) noexcept;
     // Helper creates a triangle fan to close the end of a cylinder / cone
     void CreateCylinderCap( VertexCollection& vertices, IndexCollection& indices, size_t tessellation, float height,
-                            float radius, bool isTop );
+                            float radius, bool isTop, DirectX::XMFLOAT3 offset );
 
     // Add a resource to a list of tracked resources (ensures lifetime while command list is in-flight on a command
     // queue.

@@ -769,14 +769,16 @@ std::shared_ptr<Scene> CommandList::CreateScene( const VertexCollection& vertice
     return scene;
 }
 
-std::shared_ptr<Scene> CommandList::CreateCube( float size, bool reverseWinding )
+std::shared_ptr<Scene> CommandList::CreateCube( float size, DirectX::XMFLOAT3 p0, bool reverseWinding )
 {
     // Cube is centered at 0,0,0.
     float s = size * 0.5f;
 
     // 8 edges of cube.
-    XMFLOAT3 p[8] = { { s, s, -s }, { s, s, s },   { s, -s, s },   { s, -s, -s },
-                      { -s, s, s }, { -s, s, -s }, { -s, -s, -s }, { -s, -s, s } };
+    XMFLOAT3 p[8] = { { s + p0.x, s + p0.y, -s + p0.z }, { s + p0.x, s + p0.y, s + p0.z },
+                      { s + p0.x, -s + p0.y, s + p0.z }, { s + p0.x, -s + p0.y, -s + p0.z },
+                      { -s + p0.x, s + p0.y, s + p0.z }, { -s + p0.x, s + p0.y, -s + p0.z },
+                      { -s + p0.x, -s + p0.y, -s + p0.z }, { -s + p0.x, -s + p0.y, s + p0.z } };
     // 6 face normals
     XMFLOAT3 n[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
     // 4 unique texture coordinates
@@ -797,11 +799,12 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, bool reverseWinding 
 
     for ( uint16_t f = 0; f < 6; ++f )  // For each face of the cube.
     {
+        
         // Four vertices per face.
-        vertices.emplace_back( p[i[f * 4 + 0]], n[f], t[0] );
-        vertices.emplace_back( p[i[f * 4 + 1]], n[f], t[1] );
-        vertices.emplace_back( p[i[f * 4 + 2]], n[f], t[2] );
-        vertices.emplace_back( p[i[f * 4 + 3]], n[f], t[3] );
+        vertices.emplace_back( p[i[f * 4 + 0]] , n[f], t[0] );
+        vertices.emplace_back( p[i[f * 4 + 1]] , n[f], t[1] );
+        vertices.emplace_back( p[i[f * 4 + 2]] , n[f], t[2] );
+        vertices.emplace_back( p[i[f * 4 + 3]] , n[f], t[3] );
 
         // First triangle.
         indices.emplace_back( f * 4 + 0 );
@@ -822,7 +825,8 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, bool reverseWinding 
     return CreateScene( vertices, indices );
 }
 
-std::shared_ptr<Scene> CommandList::CreateSphere( float radius, uint32_t tessellation, bool reversWinding )
+std::shared_ptr<Scene> CommandList::CreateSphere( float radius, uint32_t tessellation,
+                                                  DirectX::XMFLOAT3 offset, bool reversWinding )
 {
 
     if ( tessellation < 3 )
@@ -861,7 +865,7 @@ std::shared_ptr<Scene> CommandList::CreateSphere( float radius, uint32_t tessell
             auto textureCoordinate = XMVectorSet( u, v, 0, 0 );
             auto position          = normal * radius;
 
-            vertices.emplace_back( position, normal, textureCoordinate );
+            vertices.emplace_back( position + XMLoadFloat3( &offset ), normal, textureCoordinate );
         }
     }
 
@@ -894,7 +898,7 @@ std::shared_ptr<Scene> CommandList::CreateSphere( float radius, uint32_t tessell
 }
 
 void CommandList::CreateCylinderCap( VertexCollection& vertices, IndexCollection& indices, size_t tessellation,
-                                     float height, float radius, bool isTop )
+                                     float height, float radius, bool isTop, DirectX::XMFLOAT3 offset )
 {
     // Create cap indices.
     for ( size_t i = 0; i < tessellation - 2; i++ )
@@ -931,12 +935,12 @@ void CommandList::CreateCylinderCap( VertexCollection& vertices, IndexCollection
         XMVECTOR textureCoordinate =
             XMVectorMultiplyAdd( XMVectorSwizzle<0, 2, 3, 3>( circleVector ), textureScale, g_XMOneHalf );
 
-        vertices.emplace_back( position, normal, textureCoordinate );
+        vertices.emplace_back( position + XMLoadFloat3( &offset ), normal, textureCoordinate );
     }
 }
 
 std::shared_ptr<Scene> CommandList::CreateCylinder( float radius, float height, uint32_t tessellation,
-                                                    bool reverseWinding )
+                                                    DirectX::XMFLOAT3 offset, bool reverseWinding )
 {
     if ( tessellation < 3 )
         throw std::out_of_range( "tessellation parameter out of range" );
@@ -961,8 +965,9 @@ std::shared_ptr<Scene> CommandList::CreateCylinder( float radius, float height, 
 
         XMVECTOR textureCoordinate = XMLoadFloat( &u );
 
-        vertices.emplace_back( XMVectorAdd( sideOffset, topOffset ), normal, textureCoordinate );
-        vertices.emplace_back( XMVectorSubtract( sideOffset, topOffset ), normal,
+        vertices.emplace_back( XMVectorAdd( sideOffset, topOffset ) + XMLoadFloat3( &offset ), normal,
+                               textureCoordinate );
+        vertices.emplace_back( XMVectorSubtract( sideOffset, topOffset ) + XMLoadFloat3( &offset ), normal,
                                XMVectorAdd( textureCoordinate, g_XMIdentityR1 ) );
 
         indices.push_back( i * 2 + 1 );
@@ -975,8 +980,8 @@ std::shared_ptr<Scene> CommandList::CreateCylinder( float radius, float height, 
     }
 
     // Create flat triangle fan caps to seal the top and bottom.
-    CreateCylinderCap( vertices, indices, tessellation, height, radius, true );
-    CreateCylinderCap( vertices, indices, tessellation, height, radius, false );
+    CreateCylinderCap( vertices, indices, tessellation, height, radius, true , offset);
+    CreateCylinderCap( vertices, indices, tessellation, height, radius, false , offset );
 
     // Build RH above
     if ( reverseWinding )
@@ -987,7 +992,8 @@ std::shared_ptr<Scene> CommandList::CreateCylinder( float radius, float height, 
     return CreateScene( vertices, indices );
 }
 
-std::shared_ptr<Scene> CommandList::CreateCone( float radius, float height, uint32_t tessellation, bool reverseWinding )
+std::shared_ptr<Scene> CommandList::CreateCone( float radius, float height, uint32_t tessellation,
+                                                DirectX::XMFLOAT3 offset, bool reverseWinding )
 {
     if ( tessellation < 3 )
         throw std::out_of_range( "tessellation parameter out of range" );
@@ -1018,8 +1024,8 @@ std::shared_ptr<Scene> CommandList::CreateCone( float radius, float height, uint
         normal          = XMVector3Normalize( normal );
 
         // Duplicate the top vertex for distinct normals
-        vertices.emplace_back( topOffset, normal, g_XMZero );
-        vertices.emplace_back( pt, normal, XMVectorAdd( textureCoordinate, g_XMIdentityR1 ) );
+        vertices.emplace_back( topOffset + XMLoadFloat3( &offset ), normal, g_XMZero );
+        vertices.emplace_back( pt + XMLoadFloat3( &offset ), normal, XMVectorAdd( textureCoordinate, g_XMIdentityR1 ) );
 
         indices.push_back( ( i * 2 + 1 ) % ( stride * 2 ) );
         indices.push_back( ( i * 2 + 3 ) % ( stride * 2 ) );
@@ -1027,7 +1033,7 @@ std::shared_ptr<Scene> CommandList::CreateCone( float radius, float height, uint
     }
 
     // Create flat triangle fan caps to seal the bottom.
-    CreateCylinderCap( vertices, indices, tessellation, height, radius, false );
+    CreateCylinderCap( vertices, indices, tessellation, height, radius, false, offset );
 
     // Build RH above
     if ( reverseWinding )
@@ -1039,7 +1045,7 @@ std::shared_ptr<Scene> CommandList::CreateCone( float radius, float height, uint
 }
 
 std::shared_ptr<Scene> CommandList::CreateTorus( float radius, float thickness, uint32_t tessellation,
-                                                 bool reverseWinding )
+                                                 DirectX::XMFLOAT3 offset, bool reverseWinding )
 {
     assert( tessellation > 3 );
 
@@ -1077,7 +1083,7 @@ std::shared_ptr<Scene> CommandList::CreateTorus( float radius, float thickness, 
             position = XMVector3Transform( position, transform );
             normal   = XMVector3TransformNormal( normal, transform );
 
-            verticies.emplace_back( position, normal, textureCoordinate );
+            verticies.emplace_back( position + XMLoadFloat3(&offset), normal, textureCoordinate );
 
             // And create indices for two triangles.
             size_t nextI = ( i + 1 ) % stride;
@@ -1101,17 +1107,17 @@ std::shared_ptr<Scene> CommandList::CreateTorus( float radius, float thickness, 
     return CreateScene( verticies, indices );
 }
 
-std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, bool reverseWinding )
+std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, XMFLOAT3 offset, bool reverseWinding )
 {
     using Vertex = VertexPositionNormalTangentBitangentTexture;
 
     // clang-format off
     // Define a plane that is aligned with the X-Z plane and the normal is facing up in the Y-axis.
     VertexCollection vertices = {
-        Vertex( XMFLOAT3( -0.5f * width, 0.5f * height, 0.0 ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
-        Vertex( XMFLOAT3( 0.5f * width, 0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
-        Vertex( XMFLOAT3( 0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
-        Vertex( XMFLOAT3( -0.5f * width, -0.5f * height, 0.0f ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
     };
     // clang-format on
     IndexCollection indices = { 1, 3, 0, 2, 3, 1 };

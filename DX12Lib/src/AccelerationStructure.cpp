@@ -97,10 +97,7 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
         pInstanceDesc[0].InstanceContributionToHitGroupIndex = 0;
         pInstanceDesc[0].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         pInstanceDesc[0].Transform[0][0]                     = 1;
-        pInstanceDesc[0].Transform[1][1] = pInstanceDesc[0].Transform[2][2] = 0;  // rotation 90 deg around x
-        pInstanceDesc[0].Transform[1][2]                                    = -1;
-        pInstanceDesc[0].Transform[2][1]                                    = 1;
-        pInstanceDesc[0].Transform[1][3]                                    = -1.5;
+        pInstanceDesc[0].Transform[0][0] = pInstanceDesc[0].Transform[1][1] = pInstanceDesc[0].Transform[2][2] = 1;
         pInstanceDesc[0].AccelerationStructure = pBlasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
         pInstanceDesc[0].InstanceMask          = 0xFF;
 

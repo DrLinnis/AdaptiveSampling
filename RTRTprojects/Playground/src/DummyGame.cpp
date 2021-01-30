@@ -2,6 +2,8 @@
 
 #include <SceneVisitor.h>
 
+#include <DirectXMath.h>
+
 #include <dx12lib/CommandList.h>
 #include <dx12lib/CommandQueue.h>
 #include <dx12lib/Device.h>
@@ -613,13 +615,17 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-
-    m_RayPlane = commandList->CreatePlane( 20, 20);
-    m_RaySphere = commandList->CreateSphere( 1.5f );
-
-    //m_RayMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
-    //m_RayMesh = commandList->CreateSimplePlane( 1, 1 );
-    //m_RayMesh = commandList->CreateSimpleTriangle();
+    m_RaySphere = commandList->CreateSphere( 1.5f, 16, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    //m_RaySphere = commandList->CreateCube( 1.5f, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    //m_RaySphere = commandList->CreateCylinder( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    //m_RaySphere = commandList->CreateCone( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    //m_RaySphere = commandList->CreateTorus( 0.5, 1 / 3.0f, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
+    // m_RaySphere = commandList->CreateSimplePlane( 1, 1 );
+    // m_RaySphere = commandList->CreateSimpleTriangle();
+    
+    m_RayPlane = commandList->CreatePlane( 20, 20, DirectX::XMFLOAT3( 0, -2, 0 ) );
+    //m_RayPlane = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+    
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
