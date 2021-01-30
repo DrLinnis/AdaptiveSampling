@@ -72,7 +72,15 @@ void rayGen()
     ray.TMax = 100000;
 
     RayPayload payload;
-    TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF, 0 /* ray index*/, 0, 0, ray, payload);
+    TraceRay(gRtScene, 
+        0 /*rayFlags*/, 
+        0xFF, 
+        0 /* ray index*/,
+        1 /* Multiplier for Contribution to hit group index*/,
+        0,
+        ray,
+        payload
+    );
     float3 col = linearToSrgb(payload.color);
     gOutput[launchIndex.xy] = float4(col, 1);
 }
@@ -108,3 +116,10 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
     payload.color = colourC.xyz;
 #endif
 }
+
+[shader("closesthit")]
+ void planeChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    payload.color = float3(0, 0.8, 0.9f);
+}
+

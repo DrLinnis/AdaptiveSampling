@@ -92,9 +92,22 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDesc;
     ThrowIfFailed( pInstanceDescBuffer->Map( (void**)&pInstanceDesc ) );
     {  
+        // instance 0 - sphere AND plane
+        pInstanceDesc[0].InstanceID                          = 0;
+        pInstanceDesc[0].InstanceContributionToHitGroupIndex = 0;
+        pInstanceDesc[0].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+        pInstanceDesc[0].Transform[0][0]                     = 1;
+        pInstanceDesc[0].Transform[1][1] = pInstanceDesc[0].Transform[2][2] = 0;  // rotation 90 deg around x
+        pInstanceDesc[0].Transform[1][2]                                    = -1;
+        pInstanceDesc[0].Transform[2][1]                                    = 1;
+        pInstanceDesc[0].Transform[1][3]                                    = -1.5;
+        pInstanceDesc[0].AccelerationStructure = pBlasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
+        pInstanceDesc[0].InstanceMask          = 0xFF;
+
+        // instance 1 and 2, only spheres
         for (int i = 1; i < 3; i++) {
             pInstanceDesc[i].InstanceID                  = i;
-            pInstanceDesc[i].InstanceContributionToHitGroupIndex = i;
+            pInstanceDesc[i].InstanceContributionToHitGroupIndex = i + 1;
             pInstanceDesc[i].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             pInstanceDesc[i].Transform[0][0] = pInstanceDesc[i].Transform[1][1] = pInstanceDesc[i].Transform[2][2] = 1;
             pInstanceDesc[i].Transform[0][3]          = 4.0 * ( i - 1 ) + 4.0 * ( i - 2 );
@@ -102,16 +115,6 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
             pInstanceDesc[i].InstanceMask             = 0xFF;
         }
 
-        pInstanceDesc[0].InstanceID                          = 0;
-        pInstanceDesc[0].InstanceContributionToHitGroupIndex = 0;
-        pInstanceDesc[0].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-        pInstanceDesc[0].Transform[0][0]                     = 1;
-        pInstanceDesc[0].Transform[1][1] = pInstanceDesc[3].Transform[2][2] = 0; // rotation 90 deg around x
-        pInstanceDesc[0].Transform[1][2]                                    = -1;
-        pInstanceDesc[0].Transform[2][1]                                    = 1;
-        pInstanceDesc[0].Transform[1][3]                                    = -1.5;
-        pInstanceDesc[0].AccelerationStructure = pBlasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
-        pInstanceDesc[0].InstanceMask          = 0xFF;
     }
     // Unmap
     pInstanceDescBuffer->Unmap();
