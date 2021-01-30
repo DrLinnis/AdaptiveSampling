@@ -33,7 +33,8 @@ public:
 protected:
     ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
                              const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
-                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv );
+                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
+                             const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
 
     virtual ~ShaderTableResourceView() = default;
 
@@ -49,8 +50,9 @@ class MakeShaderTableView : public ShaderTableResourceView
 public:
     MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource,
                          const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
-                         const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv )
-    : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv )
+                         const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
+                         const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
+    : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv, pCbv )
     {}
 
     virtual ~MakeShaderTableView() {}

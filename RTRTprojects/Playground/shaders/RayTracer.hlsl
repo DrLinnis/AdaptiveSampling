@@ -28,6 +28,13 @@
 RaytracingAccelerationStructure gRtScene : register(t0);
 RWTexture2D<float4> gOutput : register(u0);
 
+cbuffer PerFrameCameraOrigin : register(b0)
+{
+    float3 cameraOrigin;
+    
+    float padding;
+}
+
 float3 linearToSrgb(float3 c)
 {
     // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
@@ -56,7 +63,7 @@ void rayGen()
     float aspectRatio = dims.x / dims.y;
 
     RayDesc ray;
-    ray.Origin = float3(0, 0.5, -5);
+    ray.Origin = cameraOrigin;
     ray.Direction = normalize(float3(d.x * aspectRatio, -d.y, 1));
 
     ray.TMin = 0;

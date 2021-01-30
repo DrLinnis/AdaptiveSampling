@@ -39,6 +39,19 @@ class Window;  // From GameFramework.
 #define POST_PROCESSOR 0
 #define RASTER_DISPLAY 0
 
+
+struct CameraCB
+{
+    CameraCB( float x, float y, float z )
+    : x( x )
+    , y( y )
+    , z( z )
+    {}
+
+    float x, y, z;
+};
+
+
 class DummyGame
 {
 public:
@@ -121,8 +134,10 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
+    std::shared_ptr<dx12lib::MappableBuffer> m_ConstantBuffer;
 
-
+    
+    
 
     // Tut 6
     std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
@@ -217,7 +232,7 @@ private:
     float m_Pitch;
     float m_Yaw;
 
-
+    CameraCB m_cam;
 
 
     int  m_Width;

@@ -11,7 +11,8 @@ using namespace dx12lib;
 
 ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
                                                   const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
-                                                  const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv ) 
+                                                  const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
+                                                  const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
 : m_Device( device )
 , m_Resource( outputResource )
 {
@@ -29,7 +30,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     }
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    desc.NumDescriptors             = 2;
+    desc.NumDescriptors             = 3;
     desc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -37,15 +38,15 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     ThrowIfFailed( d3d12Device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_SrvUavHeap ) ) );
     m_SrvUavHeap->SetName( L"DXR Descriptor Heap" );
     
-    D3D12_CPU_DESCRIPTOR_HANDLE srvUavHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 
-    
-    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, srvUavHandle );
+    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, heapHandle );
 
-    srvUavHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
-    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, srvUavHandle );
+    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, heapHandle );
 
+    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
-
+    d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
 }

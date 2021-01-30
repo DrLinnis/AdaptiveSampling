@@ -77,6 +77,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_VSync( vSync )
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
+, m_cam( 0, 0, -5 )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -88,6 +89,8 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
     m_Window->MouseWheel += MouseWheelEvent::slot( &DummyGame::OnMouseWheel, this );
     m_Window->Resize += ResizeEvent::slot( &DummyGame::OnResize, this );
     m_Window->DPIScaleChanged += DPIScaleEvent::slot( &DummyGame::OnDPIScaleChanged, this );
+
+    
 
 }
 
@@ -291,17 +294,20 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Create the ray-gen root-signature and association
     {
-        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                          1 );
-
         CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                            0 );
 
-        const CD3DX12_DESCRIPTOR_RANGE1 tables[2] = { output, TlvlAcc };
+        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                          1 );
+
+        CD3DX12_DESCRIPTOR_RANGE1 camera( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                           2 );
+
+        const CD3DX12_DESCRIPTOR_RANGE1 tables[3] = { output, TlvlAcc, camera };
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
-        rayRootParams[0].InitAsDescriptorTable( 2, tables );
+        rayRootParams[0].InitAsDescriptorTable( 3, tables );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
@@ -441,6 +447,7 @@ void DummyGame::CreateShaderTable(  )
 
 }
 
+
 void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 {
     D3D12_RESOURCE_DESC renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1 );
@@ -449,6 +456,8 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 
     m_RayOutputResource = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     m_RayOutputResource->SetName( L"RayGen output texture" );
+
+    m_ConstantBuffer = m_Device->CreateMappableBuffer( 256 );
 
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -460,7 +469,12 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     srvDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.RaytracingAccelerationStructure.Location = m_TLAS->GetD3D12Resource()->GetGPUVirtualAddress();
 
-    m_RayShaderHeap = m_Device->CreateShaderTableView( m_RayOutputResource, &uavDesc, &srvDesc );
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.SizeInBytes                     = 256;
+    cbvDesc.BufferLocation                  = m_ConstantBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    m_RayShaderHeap = m_Device->CreateShaderTableView( m_RayOutputResource, &uavDesc, &srvDesc, &cbvDesc );
 }
 
 
@@ -659,7 +673,22 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
     // Defacto update
     {
-        
+        const float speed = 1.0;
+        m_cam.x -= speed * m_Left * e.DeltaTime;
+        m_cam.x += speed * m_Right * e.DeltaTime;
+
+        m_cam.y -= speed * m_Down * e.DeltaTime;
+        m_cam.y += speed * m_Up * e.DeltaTime;
+
+        m_cam.z -= speed * m_Backward * e.DeltaTime;
+        m_cam.z += speed * m_Forward * e.DeltaTime;
+
+        void* pData;
+        ThrowIfFailed( m_ConstantBuffer->Map( &pData ) );
+        {
+            memcpy( pData, &m_cam, sizeof( CameraCB ) );
+        }
+        m_ConstantBuffer->Unmap();
     }
 
 
