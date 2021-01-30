@@ -35,6 +35,7 @@ protected:
                              const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
                              const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                              const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
+    ShaderTableResourceView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
 
     virtual ~ShaderTableResourceView() = default;
 
@@ -53,6 +54,10 @@ public:
                          const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                          const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
     : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv, pCbv )
+    {}
+
+    MakeShaderTableView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
+    : ShaderTableResourceView( device, pCbv )
     {}
 
     virtual ~MakeShaderTableView() {}

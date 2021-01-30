@@ -78,6 +78,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
 , m_cam( 0, 0, -5 )
+, m_SphereHintedColours( Colour( 0, 0, 0 ), Colour( 0.2, 0.8, 0.6 ), Colour( 0.3, 0.2, 0.69 ) )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -278,7 +279,7 @@ void DummyGame::CreateRayTracingPipeline() {
     //  2 for shader config (shared between all programs. 1 for the config, 1 for association)
     //  1 for pipeline config
     //  1 for the global root signature
-    std::array<D3D12_STATE_SUBOBJECT, 10> subobjects;
+    std::array<D3D12_STATE_SUBOBJECT, 12> subobjects;
     uint32_t                              index = 0;
 
     // Load 
@@ -331,17 +332,17 @@ void DummyGame::CreateRayTracingPipeline() {
     ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
 
-    // Create the MISS- and HIT-programs root-signature
+    // Create the MISS-programs root-signature
     {
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
         rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
 
-        m_HitMissRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+        m_MissRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
     }
 
-    ID3D12RootSignature* pEmptyInterface = m_HitMissRootSig->GetD3D12RootSignature().Get();
+    ID3D12RootSignature* pEmptyInterface = m_MissRootSig->GetD3D12RootSignature().Get();
     D3D12_STATE_SUBOBJECT emptySubobject = {};
     emptySubobject.Type                  = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
     emptySubobject.pDesc                 = &pEmptyInterface;
@@ -349,11 +350,45 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index] = emptySubobject;  // 4 Root Sig to be shared between Miss and CHS
     // END MISS/HITT
     
-    // Miss and Hit associations
-    uint32_t          hitMissRootIndex    = index++;  // 4
-    const WCHAR*      missHitExportName[] = { kMissShader, kClosestHitShader }; // SIZE 2
-    ExportAssociation missHitRootAssociation( missHitExportName, 2, &( subobjects[hitMissRootIndex] ) );
-    subobjects[index++] = missHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+    // Miss associations
+    uint32_t          missRootIndex    = index++;  // 4
+    const WCHAR*      missExportName[] = { kMissShader }; // SIZE 2
+    ExportAssociation missRootAssociation( missExportName, 1, &( subobjects[missRootIndex] ) );
+    subobjects[index++] = missRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+
+    // Create the HIT-programs root-signature
+    {
+        /*
+        CD3DX12_DESCRIPTOR_RANGE1 camera( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
+            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+
+        const CD3DX12_DESCRIPTOR_RANGE1 tables[1] = { camera };
+
+        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+
+        rayRootParams[0].InitAsDescriptorTable( 1, tables ); */
+
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+
+        m_HitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+    }
+
+    ID3D12RootSignature*  pHitInterface = m_HitRootSig->GetD3D12RootSignature().Get();
+    D3D12_STATE_SUBOBJECT hitSubobject  = {};
+    hitSubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+    hitSubobject.pDesc                  = &pHitInterface;
+
+    subobjects[index] = hitSubobject;  // 4 Root Sig to be shared between Miss and CHS
+    // END MISS/HITT
+
+    // Hit associations
+    uint32_t          hitRootIndex    = index++;                             // 4
+    const WCHAR*      hitExportName[] = { kClosestHitShader };  // SIZE 2
+    ExportAssociation hitRootAssociation( hitExportName, 1, &( subobjects[hitRootIndex] ) );
+    subobjects[index++] = hitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
 
     // Bind the payload size to the programs // UPDATED: SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
     ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * 3 );
@@ -390,64 +425,6 @@ void DummyGame::CreateRayTracingPipeline() {
 
 }
 
-void DummyGame::CreateShaderTable(  )
-{
-    uint32_t shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-
-    m_ShaderTableEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-    m_ShaderTableEntrySize += sizeof( UINT64 ); // extra 8 bytes (64 bits) for heap pointer to viewers.
-    m_ShaderTableEntrySize = align_to( D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES, m_ShaderTableEntrySize );
-
-    uint32_t shaderBufferSize = m_ShaderTableEntrySize;
-    shaderBufferSize = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
-
-    m_RaygenShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
-    m_RaygenShaderTable->SetName( L"DXR Raygen Shader Table" );
-
-    m_MissShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
-    m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
-
-    m_HitShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
-    m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
-    
-    ComPtr<ID3D12StateObjectProperties> pRtsoProps;
-    m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
-
-    UINT64 heapUavSrvPtr = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
-
-    void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
-    void* pMissShdr   = pRtsoProps->GetShaderIdentifier( kMissShader );
-    void* pHitGrpShdr   = pRtsoProps->GetShaderIdentifier( kHitGroup );
-
-    uint8_t* pData;
-    ThrowIfFailed( m_RaygenShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
-    {
-        // Entry 0 - ray-gen program ID and descriptor data
-        memcpy( pData, pRayGenShdr, shaderIdSize );
-        
-        // Entry 0.1 Parameter Heap pointer
-        memcpy( pData + shaderIdSize, &heapUavSrvPtr, sizeof( UINT64 ) );
-    }
-    m_RaygenShaderTable->Unmap();  // Unmap
-
-    
-    ThrowIfFailed( m_MissShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
-    {
-        // Entry 1 - miss program
-        memcpy( pData, pMissShdr, shaderIdSize );
-    }
-    m_MissShaderTable->Unmap();  // Unmap
-
-    ThrowIfFailed( m_HitShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
-    {
-        // Entry 2 - hit program
-        memcpy( pData, pHitGrpShdr, shaderIdSize );
-    }
-    m_HitShaderTable->Unmap();  // Unmap
-
-}
-
-
 void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 {
     D3D12_RESOURCE_DESC renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1 );
@@ -457,7 +434,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_RayOutputResource = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     m_RayOutputResource->SetName( L"RayGen output texture" );
 
-    m_ConstantBuffer = m_Device->CreateMappableBuffer( 256 );
+    m_RayCamCB = m_Device->CreateMappableBuffer( 256 );
 
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -472,11 +449,11 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.SizeInBytes                     = 256;
-    cbvDesc.BufferLocation                  = m_ConstantBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    cbvDesc.BufferLocation                  = m_RayCamCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     m_RayShaderHeap = m_Device->CreateShaderTableView( m_RayOutputResource, &uavDesc, &srvDesc, &cbvDesc );
-}
 
+}
 
 void DummyGame::CreateAccelerationStructure() 
 {
@@ -501,7 +478,84 @@ void DummyGame::CreateAccelerationStructure()
     m_TLAS = tlasBuffers.pResult;
 }
 
+void DummyGame::CreateConstantBuffer() 
+{
+
+    
+
+    m_MissSdrCB = m_Device->CreateMappableBuffer( sizeof( HitShaderCB ) );
+
+    void* pData;
+    ThrowIfFailed( m_MissSdrCB->Map( &pData ) );
+    {
+        memcpy( pData, &m_SphereHintedColours, sizeof( HitShaderCB ) );
+    }
+    m_MissSdrCB->Unmap();
+
+}
+
+void DummyGame::CreateShaderTable()
+{
+    uint32_t shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+
+    m_ShaderTableEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+    m_ShaderTableEntrySize += sizeof( UINT64 );  // extra 8 bytes (64 bits) for heap pointer to viewers.
+    m_ShaderTableEntrySize = align_to( D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES, m_ShaderTableEntrySize );
+
+    uint32_t shaderBufferSize = m_ShaderTableEntrySize;
+    shaderBufferSize          = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
+
+    m_RaygenShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
+    m_RaygenShaderTable->SetName( L"DXR Raygen Shader Table" );
+
+    m_MissShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
+    m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
+
+    m_HitShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
+    m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
+
+    ComPtr<ID3D12StateObjectProperties> pRtsoProps;
+    m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
+
+    UINT64 heapUavSrvPtr = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
+
+    void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
+    void* pMissShdr   = pRtsoProps->GetShaderIdentifier( kMissShader );
+    void* pHitGrpShdr = pRtsoProps->GetShaderIdentifier( kHitGroup );
+
+    uint8_t* pData;
+    ThrowIfFailed( m_RaygenShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
+    {
+        // Entry 0 - ray-gen program ID and descriptor data
+        memcpy( pData, pRayGenShdr, shaderIdSize );
+
+        // Entry 0.1 Parameter Heap pointer
+        memcpy( pData + shaderIdSize, &heapUavSrvPtr, sizeof( UINT64 ) );
+    }
+    m_RaygenShaderTable->Unmap();  // Unmap
+
+    ThrowIfFailed( m_MissShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
+    {
+        // Entry 1 - miss program
+        memcpy( pData, pMissShdr, shaderIdSize );
+    }
+    m_MissShaderTable->Unmap();  // Unmap
+
+    UINT64 cbvDest = m_MissSdrCB->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    ThrowIfFailed( m_HitShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
+    {
+        // Entry 2 - hit program
+        memcpy( pData, pHitGrpShdr, shaderIdSize );
+
+        // Entry 2.1 Parameter Heap pointer
+        //memcpy( pData + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+    }
+    m_HitShaderTable->Unmap();  // Unmap
+}
+
 #endif
+
 
 bool DummyGame::LoadContent()
 {
@@ -561,6 +615,8 @@ bool DummyGame::LoadContent()
 
     CreateShaderResource( backBufferFormat );  // Tutorial 6
 
+    CreateConstantBuffer();                     // Tutorial 9
+
     CreateShaderTable();  // Tutorial 5
 
 
@@ -603,7 +659,8 @@ void DummyGame::UnloadContent()
     m_TLAS.reset();
     
     m_RayGenRootSig.reset();
-    m_HitMissRootSig.reset();
+    m_MissRootSig.reset();
+    m_HitRootSig.reset();
     m_DummyGlobalRootSig.reset();
 
     m_RayPipelineState->GetD3D12PipelineState()->Release(); // not released properly when reseting variable.
@@ -684,11 +741,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         m_cam.z += speed * m_Forward * e.DeltaTime;
 
         void* pData;
-        ThrowIfFailed( m_ConstantBuffer->Map( &pData ) );
+        ThrowIfFailed( m_RayCamCB->Map( &pData ) );
         {
             memcpy( pData, &m_cam, sizeof( CameraCB ) );
         }
-        m_ConstantBuffer->Unmap();
+        m_RayCamCB->Unmap();
     }
 
 

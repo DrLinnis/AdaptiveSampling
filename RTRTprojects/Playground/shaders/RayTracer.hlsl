@@ -94,5 +94,5 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
 
     float3 interpolatedVal = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
     payload.color = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
-
+    
 }

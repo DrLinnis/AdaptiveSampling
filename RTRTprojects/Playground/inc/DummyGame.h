@@ -123,7 +123,8 @@ private:
     
     // Tut 4
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_HitMissRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_HitRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_MissRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_DummyGlobalRootSig;
 
     std::shared_ptr<dx12lib::RT_PipelineStateObject>    m_RayPipelineState; 
@@ -134,16 +135,37 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
-    std::shared_ptr<dx12lib::MappableBuffer> m_ConstantBuffer;
+    std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
+    std::shared_ptr<dx12lib::MappableBuffer> m_MissSdrCB;
 
-    
-    
+    struct Colour
+    {
+        Colour( float r, float g, float b )
+        : r( r )
+        , g( g )
+        , b( b )
+        , padding( 0 )
+        {}
+        float r, g, b, padding;
+    };
+    struct HitShaderCB
+    {
+        HitShaderCB( Colour a, Colour b, Colour c )
+        : a( a )
+        , b( b )
+        , c( c )
+        {}
+
+        Colour a , b , c;
+    };
+
+    HitShaderCB m_SphereHintedColours;
 
     // Tut 6
     std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
 
-
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
+
     std::shared_ptr<dx12lib::UnorderedAccessView>       m_RayOutputUAV;
     std::shared_ptr<dx12lib::ShaderResourceView>        m_TlasSRV;
 
@@ -169,6 +191,11 @@ private:
         Create Accelleration structures needed for the geometry
     */
     void CreateAccelerationStructure();
+
+    /*
+        Create the constant buffer we use for sphere colouring
+    */
+    void CreateConstantBuffer();
 
 #endif
 

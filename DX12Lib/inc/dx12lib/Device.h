@@ -212,6 +212,8 @@ public:
                                                                     const D3D12_SHADER_RESOURCE_VIEW_DESC*  raySrv,
                                                                     const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
 
+    std::shared_ptr<ShaderTableResourceView> CreateShaderTableView( const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
+
 
 
     /**

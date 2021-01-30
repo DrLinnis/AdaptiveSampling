@@ -589,6 +589,14 @@ std::shared_ptr<ShaderTableResourceView>
     return unorderedAccessView;
 }
 
+std::shared_ptr<ShaderTableResourceView> Device::CreateShaderTableView( const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
+{
+    std::shared_ptr<ShaderTableResourceView> unorderedAccessView =
+        std::make_shared<MakeShaderTableView>( *this, pCbv );
+
+    return unorderedAccessView;
+}
+
 DXGI_SAMPLE_DESC Device::GetMultisampleQualityLevels( DXGI_FORMAT format, UINT numSamples,
                                                       D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags ) const
 {
