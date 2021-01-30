@@ -50,6 +50,14 @@ struct RayPayload
     float3 color;
 };
 
+
+cbuffer SphereColours : register(b1)
+{
+    float4 colourA;
+    float4 colourB;
+    float4 colourC;
+}
+
 [shader("raygeneration")]
 void rayGen()
 {
@@ -93,6 +101,23 @@ void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr
     const float3 C = float3(0, 0, 1);
 
     float3 interpolatedVal = A * barycentrics.x + B * barycentrics.y + C * barycentrics.z;
-    payload.color = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
-    
+#if 1
+    float3 interTexMix = lerp(float3(1, 1, 1) * barycentrics[instanceID], interpolatedVal, 0.3);
+    float4 sphereCol;
+    switch (instanceID)
+    {
+        case 0:
+            sphereCol = colourA;
+            break;
+        case 1:
+            sphereCol = colourB;
+            break;
+        case 2:
+            sphereCol = colourC;
+            break;
+    }
+    payload.color = lerp(interTexMix, sphereCol.xyz, 0.5);
+#else
+    payload.color = colourC.xyz;
+#endif
 }

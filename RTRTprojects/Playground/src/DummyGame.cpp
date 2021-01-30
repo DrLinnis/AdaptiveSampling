@@ -60,7 +60,18 @@ enum
 };
 }
 
+DummyGame::Colour::Colour(float r, float g, float b)
+    : r(r)
+    , g(g)
+    , b(b)
+    , padding(0)
+{ }
 
+DummyGame::HitShaderCB::HitShaderCB( DummyGame::Colour a, DummyGame::Colour b, DummyGame::Colour c )
+    : a( a )
+    , b( b )
+    , c( c )
+{ }
 
 DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSync )
 : m_ScissorRect( CD3DX12_RECT( 0, 0, LONG_MAX, LONG_MAX ) )
@@ -78,7 +89,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
 , m_cam( 0, 0, -5 )
-, m_SphereHintedColours( Colour( 0, 0, 0 ), Colour( 0.2, 0.8, 0.6 ), Colour( 0.3, 0.2, 0.69 ) )
+, m_SphereHintedColours( Colour( 0, 1, 0 ), Colour( 0.2, 0.8, 0.6 ), Colour( 0.3, 0.2, 0.69 ) )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -358,20 +369,18 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Create the HIT-programs root-signature
     {
-        /*
-        CD3DX12_DESCRIPTOR_RANGE1 camera( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-
-        const CD3DX12_DESCRIPTOR_RANGE1 tables[1] = { camera };
-
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
-        rayRootParams[0].InitAsDescriptorTable( 1, tables ); */
+        // unable to use as this is based on the root signature, and we can't set ot local roots.
+        //rayRootParams[0].InitAsConstants( 12, 1 );
+
+        rayRootParams[0].InitAsConstantBufferView( 1 );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+        //rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
 
         m_HitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
     }
@@ -480,9 +489,6 @@ void DummyGame::CreateAccelerationStructure()
 
 void DummyGame::CreateConstantBuffer() 
 {
-
-    
-
     m_MissSdrCB = m_Device->CreateMappableBuffer( sizeof( HitShaderCB ) );
 
     void* pData;
@@ -491,7 +497,6 @@ void DummyGame::CreateConstantBuffer()
         memcpy( pData, &m_SphereHintedColours, sizeof( HitShaderCB ) );
     }
     m_MissSdrCB->Unmap();
-
 }
 
 void DummyGame::CreateShaderTable()
@@ -549,7 +554,7 @@ void DummyGame::CreateShaderTable()
         memcpy( pData, pHitGrpShdr, shaderIdSize );
 
         // Entry 2.1 Parameter Heap pointer
-        //memcpy( pData + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+        memcpy( pData + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
     }
     m_HitShaderTable->Unmap();  // Unmap
 }

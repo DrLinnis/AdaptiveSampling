@@ -140,21 +140,13 @@ private:
 
     struct Colour
     {
-        Colour( float r, float g, float b )
-        : r( r )
-        , g( g )
-        , b( b )
-        , padding( 0 )
-        {}
+        Colour( float r, float g, float b );
+
         float r, g, b, padding;
     };
     struct HitShaderCB
     {
-        HitShaderCB( Colour a, Colour b, Colour c )
-        : a( a )
-        , b( b )
-        , c( c )
-        {}
+        HitShaderCB( Colour a, Colour b, Colour c );
 
         Colour a , b , c;
     };
