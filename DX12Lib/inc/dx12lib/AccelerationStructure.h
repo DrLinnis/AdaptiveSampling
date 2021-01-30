@@ -28,16 +28,14 @@ struct AccelerationStructure
 class AccelerationBuffer : public Resource
 {
 public:
-    static void CreateTopLevelAS( dx12lib::Device*             pDevice,
-                                    dx12lib::CommandList*        pCommandList,
-                                    dx12lib::AccelerationBuffer* pBottomLevelAS,
-                                    uint64_t* pTlasSize, AccelerationStructure* pDes );
+    static void CreateBottomLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
+                                     dx12lib::VertexBuffer* pVertexBuffer[], dx12lib::IndexBuffer* pIndexBuffer[],
+                                     size_t geometryCount, AccelerationStructure* pDes );
 
-    static void CreateBottomLevelAS( dx12lib::Device*       pDevice,
-                                    dx12lib::CommandList*  pCommandList,
-                                    dx12lib::VertexBuffer* pVertexBuffer,
-                                    dx12lib::IndexBuffer*  pIndexBuffer,
-                                    AccelerationStructure* pDes );
+    static void CreateTopLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList, size_t nbrBlas,
+                                  dx12lib::AccelerationBuffer* pBlasList[], uint64_t* pTlasSize,
+                                  AccelerationStructure* pDes );
+
 
 protected:
     AccelerationBuffer( Device& device, 

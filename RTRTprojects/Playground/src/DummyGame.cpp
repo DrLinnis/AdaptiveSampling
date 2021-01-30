@@ -463,21 +463,34 @@ void DummyGame::CreateAccelerationStructure()
     auto& commandQueueDirect = m_Device->GetCommandQueue( D3D12_COMMAND_LIST_TYPE_DIRECT );
     auto  commandList        = commandQueueDirect.GetCommandList();
 
-    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_RayMesh->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
-    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_RayMesh->GetRootNode()->GetMesh()->GetIndexBuffer();
+    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_RaySphere->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
+    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_RaySphere->GetRootNode()->GetMesh()->GetIndexBuffer();
+
+    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer2 = m_RayPlane->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
+    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer2  = m_RayPlane->GetRootNode()->GetMesh()->GetIndexBuffer();
+
+    dx12lib::VertexBuffer* geometriesVb[] = { pVertexBuffer.get(), pVertexBuffer2.get() };
+    dx12lib::IndexBuffer*  geometriesIb[] = { pIndexBuffer.get(), pIndexBuffer2.get() };
 
     AccelerationStructure blasBuffers = {};
     AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
-        pVertexBuffer.get(), pIndexBuffer.get(), &blasBuffers );
+        geometriesVb, geometriesIb, 2, &blasBuffers );
+
+
+    AccelerationStructure blasBuffers2 = {};
+    AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
+        geometriesVb, geometriesIb, 1, &blasBuffers2 );
+
+    dx12lib::AccelerationBuffer* blasList[] = { blasBuffers2.pResult.get(), blasBuffers.pResult.get() };
 
     AccelerationStructure tlasBuffers = {};
-    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 
-        blasBuffers.pResult.get(), &mTlasSize, &tlasBuffers );
+    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, &mTlasSize, &tlasBuffers );
 
     commandQueueDirect.ExecuteCommandList( commandList );
     commandQueueDirect.Flush();
 
-    m_BLAS = blasBuffers.pResult;
+    m_BLAS_plane  = blasBuffers2.pResult;
+    m_BLAS_sphere = blasBuffers.pResult;
     m_TLAS = tlasBuffers.pResult;
 }
 
@@ -583,12 +596,13 @@ bool DummyGame::LoadContent()
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
 
-    // Create a Cube mesh
-    m_Plane = commandList->CreatePlane( 2, 2);
-
+    
     // DISPLAY MESHES IN RAY TRACING
+
+    m_RayPlane = commandList->CreatePlane( 20, 20);
+    m_RaySphere = commandList->CreateSphere( 1.5f );
+
     //m_RayMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
-    m_RayMesh = commandList->CreateSphere( 1.5f );
     //m_RayMesh = commandList->CreateSimplePlane( 1, 1 );
     //m_RayMesh = commandList->CreateSimpleTriangle();
 
@@ -657,14 +671,15 @@ void DummyGame::OnDPIScaleChanged( DPIScaleEventArgs& e )
 
 void DummyGame::UnloadContent()
 {
-    m_Plane.reset();
-    m_RayMesh.reset();
+    m_RayPlane.reset();
+    m_RaySphere.reset();
     m_DummyTexture.reset();
 
     // ray tracing 
 #if RAY_TRACER
 
-    m_BLAS.reset();
+    m_BLAS_plane.reset();
+    m_BLAS_sphere.reset();
     m_TLAS.reset();
     
     m_RayGenRootSig.reset();

@@ -117,7 +117,8 @@ private:
     // Tut 3
     std::shared_ptr<dx12lib::AccelerationBuffer> m_TLAS;
 
-    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
+    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_sphere;
+    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_plane;
 
     uint64_t mTlasSize = 0;
     
@@ -205,9 +206,8 @@ private:
     std::shared_ptr<Window> m_Window;
 
     // Some geometry to render.
-    std::shared_ptr<dx12lib::Scene> m_Plane;
-
-    std::shared_ptr<dx12lib::Scene> m_RayMesh;
+    std::shared_ptr<dx12lib::Scene> m_RayPlane;
+    std::shared_ptr<dx12lib::Scene> m_RaySphere;
     
     std::shared_ptr<dx12lib::Texture> m_DummyTexture;
 
