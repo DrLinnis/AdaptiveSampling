@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <dx12lib/RenderTarget.h>
+#include <dx12lib/AccelerationStructure.h>
 
 #include <DirectXMath.h>
 
@@ -114,15 +115,12 @@ protected:
 private:
     // Added tutorial member:
 #if RAY_TRACER
-    // Tut 3
-    std::shared_ptr<dx12lib::AccelerationBuffer> m_TLAS;
-
+    
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_sphere;
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_plane;
 
     uint64_t mTlasSize = 0;
     
-    // Tut 4
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_SphereHitRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_PlaneHitRootSig;
@@ -131,7 +129,8 @@ private:
 
     std::shared_ptr<dx12lib::RT_PipelineStateObject>    m_RayPipelineState; 
     
-    // Tut 5
+    std::shared_ptr<dx12lib::MappableBuffer>            m_InstanceDescBuffer;
+
     size_t                                              m_ShaderTableEntrySize = 0;
     std::shared_ptr<dx12lib::MappableBuffer>            m_RaygenShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
@@ -139,6 +138,8 @@ private:
 
     std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_MissSdrCBs[3];
+
+    dx12lib::AccelerationStructure m_TlasBuffers = {};
 
     struct Colour
     {

@@ -34,7 +34,7 @@ public:
 
     static void CreateTopLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList, size_t nbrBlas,
                                   dx12lib::AccelerationBuffer* pBlasList[], uint64_t* pTlasSize,
-                                  AccelerationStructure* pDes );
+                                  AccelerationStructure* pDes, dx12lib::MappableBuffer* pInstanceDescBuffer, bool update = false );
 
 
 protected:

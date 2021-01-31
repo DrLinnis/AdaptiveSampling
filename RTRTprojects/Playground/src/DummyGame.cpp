@@ -499,7 +499,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc          = {};
     srvDesc.ViewDimension                            = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
     srvDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.RaytracingAccelerationStructure.Location = m_TLAS->GetD3D12Resource()->GetGPUVirtualAddress();
+    srvDesc.RaytracingAccelerationStructure.Location = m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
 
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
@@ -512,6 +512,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 
 void DummyGame::CreateAccelerationStructure() 
 {
+
     auto& commandQueueDirect = m_Device->GetCommandQueue( D3D12_COMMAND_LIST_TYPE_DIRECT );
     auto  commandList        = commandQueueDirect.GetCommandList();
 
@@ -526,24 +527,59 @@ void DummyGame::CreateAccelerationStructure()
 
     AccelerationStructure blasBuffers = {};
     AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
-        geometriesVb, geometriesIb, 2, &blasBuffers );
+        geometriesVb, geometriesIb, 2, &blasBuffers 
+    );
 
 
     AccelerationStructure blasBuffers2 = {};
     AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
-        geometriesVb, geometriesIb, 1, &blasBuffers2 );
+        geometriesVb, geometriesIb, 1, &blasBuffers2 
+    );
 
     dx12lib::AccelerationBuffer* blasList[] = { blasBuffers2.pResult.get(), blasBuffers.pResult.get() };
 
-    AccelerationStructure tlasBuffers = {};
-    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, &mTlasSize, &tlasBuffers );
+    {
+
+        m_InstanceDescBuffer = m_Device->CreateMappableBuffer( 3 * sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
+        m_InstanceDescBuffer->SetName( L"DXR TLAS Instance Description" );
+
+        D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
+        ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
+        {
+            // instance 0 - sphere AND plane
+            pInstDesc[0].InstanceID                              = 0;
+            pInstDesc[0].InstanceContributionToHitGroupIndex     = 0;
+            pInstDesc[0].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            pInstDesc[0].Transform[0][0]                         = 1;
+            pInstDesc[0].Transform[0][0] = pInstDesc[0].Transform[1][1] = pInstDesc[0].Transform[2][2] = 1;
+            pInstDesc[0].AccelerationStructure = blasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
+            pInstDesc[0].InstanceMask          = 0xFF;
+
+            // instance 1 and 2, only spheres
+            for ( int i = 1; i < 3; i++ )
+            {
+                pInstDesc[i].InstanceID                              = i;
+                pInstDesc[i].InstanceContributionToHitGroupIndex = 2 * ( i + 1 );
+                pInstDesc[i].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+                pInstDesc[i].Transform[0][0] = pInstDesc[i].Transform[1][1] = pInstDesc[i].Transform[2][2] = 1;
+                pInstDesc[i].Transform[0][3]           = 4.0 * ( i - 1 ) + 4.0 * ( i - 2 );
+                pInstDesc[i].AccelerationStructure = blasList[0]->GetD3D12Resource()->GetGPUVirtualAddress();
+                pInstDesc[i].InstanceMask              = 0xFF;
+            }
+        }
+        m_InstanceDescBuffer->Unmap();
+
+    }
+
+    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, 
+        &mTlasSize, &m_TlasBuffers, m_InstanceDescBuffer.get() 
+    );
 
     commandQueueDirect.ExecuteCommandList( commandList );
     commandQueueDirect.Flush();
 
     m_BLAS_plane  = blasBuffers2.pResult;
     m_BLAS_sphere = blasBuffers.pResult;
-    m_TLAS = tlasBuffers.pResult;
 }
 
 void DummyGame::CreateConstantBuffer() 
@@ -637,7 +673,7 @@ void DummyGame::CreateShaderTable()
                 memcpy( pData + 2 * shaderBufferSize, pPlaneHitGrpShdr, shaderIdSize ); // NOTICE PLANE
 
                 // NOW POINTS AT TLAS
-                UINT64 srvDest = m_TLAS->GetD3D12Resource()->GetGPUVirtualAddress();
+                UINT64 srvDest = m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
                 memcpy( pData + 2 * shaderBufferSize + shaderIdSize, &heapUavSrvPtr, sizeof( UINT64 ) ); 
 
                 memcpy( pData + 3 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
@@ -778,7 +814,9 @@ void DummyGame::UnloadContent()
 
     m_BLAS_plane.reset();
     m_BLAS_sphere.reset();
-    m_TLAS.reset();
+    m_TlasBuffers.pScratch.reset();
+    m_TlasBuffers.pResult.reset();
+    m_TlasBuffers.pInstanceDesc.reset();
     
     m_RayGenRootSig.reset();
     m_EmptyLocalRootSig.reset();
@@ -868,6 +906,21 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             memcpy( pData, &m_cam, sizeof( CameraCB ) );
         }
         m_RayCamCB->Unmap();
+
+        D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
+        ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
+        {
+            pInstDesc[1].Transform[1][1] = pInstDesc[1].Transform[2][2] = std::cos( theta );
+            pInstDesc[1].Transform[1][2]                                = -std::sin( theta );
+            pInstDesc[1].Transform[2][1]                                = std::sin( theta );
+
+            pInstDesc[2].Transform[0][0] = pInstDesc[2].Transform[1][1] = std::cos( theta );
+            pInstDesc[2].Transform[0][1]                                = -std::sin( theta );
+            pInstDesc[2].Transform[1][0]                                = std::sin( theta );
+
+        }
+        m_InstanceDescBuffer->Unmap();
+
     }
 
 
@@ -903,6 +956,12 @@ void DummyGame::OnRender()
 #if RAY_TRACER
     {
         commandList->TransitionBarrier( m_RayOutputResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+
+        dx12lib::AccelerationBuffer* blasList[] = { m_BLAS_plane.get(), m_BLAS_sphere.get() };
+
+        AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, &mTlasSize,
+                                              &m_TlasBuffers, m_InstanceDescBuffer.get(), true );
+
         /*
             Here we declare where the hitshader is, where the miss shader is, and where the raygen shader
         */

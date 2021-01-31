@@ -81,47 +81,17 @@ void AccelerationBuffer::CreateBottomLevelAS(Device* pDevice,
 }
 
 void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommandList, size_t nbrBlas,
-    dx12lib::AccelerationBuffer* pBlasList[],
+    AccelerationBuffer* pBlasList[],
     uint64_t* pTlasSize,
-    AccelerationStructure* pDes)
+    AccelerationStructure* pDes,
+    MappableBuffer* pInstanceDescBuffer, 
+    bool update )
 {
 
-    std::shared_ptr<MappableBuffer> pInstanceDescBuffer = pDevice->CreateMappableBuffer( 3 * sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
-    pInstanceDescBuffer->SetName( L"DXR TLAS Instance Description" );
-
-    D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDesc;
-    ThrowIfFailed( pInstanceDescBuffer->Map( (void**)&pInstanceDesc ) );
-    {  
-        // instance 0 - sphere AND plane
-        pInstanceDesc[0].InstanceID                          = 0;
-        pInstanceDesc[0].InstanceContributionToHitGroupIndex = 0;
-        pInstanceDesc[0].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-        pInstanceDesc[0].Transform[0][0]                     = 1;
-        pInstanceDesc[0].Transform[0][0] = pInstanceDesc[0].Transform[1][1] = pInstanceDesc[0].Transform[2][2] = 1;
-        pInstanceDesc[0].AccelerationStructure = pBlasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
-        pInstanceDesc[0].InstanceMask          = 0xFF;
-
-        // instance 1 and 2, only spheres
-        for (int i = 1; i < 3; i++) {
-            pInstanceDesc[i].InstanceID                  = i;
-            pInstanceDesc[i].InstanceContributionToHitGroupIndex = 2*(i + 1);
-            pInstanceDesc[i].Flags                               = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            pInstanceDesc[i].Transform[0][0] = pInstanceDesc[i].Transform[1][1] = pInstanceDesc[i].Transform[2][2] = 1;
-            pInstanceDesc[i].Transform[0][3]          = 4.0 * ( i - 1 ) + 4.0 * ( i - 2 );
-            pInstanceDesc[i].AccelerationStructure = pBlasList[0]->GetD3D12Resource()->GetGPUVirtualAddress();
-            pInstanceDesc[i].InstanceMask             = 0xFF;
-        }
-
-    }
-    // Unmap
-    pInstanceDescBuffer->Unmap();
-    
-    
-    
     // First, get the size of the TLAS buffers and create them
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.DescsLayout  = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    inputs.Flags    = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+    inputs.Flags                                                =  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
     inputs.NumDescs = 3;
     inputs.Type     = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     inputs.InstanceDescs = pInstanceDescBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
@@ -130,35 +100,34 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
 
 
-    *pTlasSize = info.ResultDataMaxSizeInBytes;
+    if (update) {
+        pCommandList->UAVBarrier( pDes->pResult );
+    } else {
+        pDes->pScratch = pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS 
+        );
+        pDes->pScratch->SetName( L"DXR TLAS Scratch" );
 
+        pDes->pResult = pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 
+        );
+        pDes->pResult->SetName( L"DXR TLAS" );
 
-    std::shared_ptr<AccelerationBuffer> pScratch =
-        pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
-    pScratch->SetName( L"DXR TLAS Scratch" );
-
-    pCommandList->UAVBarrier( pScratch );
-
-    std::shared_ptr<AccelerationBuffer> pResult =
-        pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                                           D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
-    pResult->SetName( L"DXR TLAS" );
-
-    pCommandList->UAVBarrier( pResult );
-
-    
-
+        *pTlasSize = info.ResultDataMaxSizeInBytes;
+    }
+        
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
     asDesc.Inputs                                             = inputs;
-    asDesc.DestAccelerationStructureData    = pResult->GetD3D12Resource()->GetGPUVirtualAddress();
-    asDesc.ScratchAccelerationStructureData = pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.DestAccelerationStructureData    = pDes->pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData = pDes->pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    if (update) {
+        asDesc.Inputs.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+        asDesc.SourceAccelerationStructureData = pDes->pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    }
 
     pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
 
-    pCommandList->UAVBarrier( pResult );
+    pCommandList->UAVBarrier( pDes->pResult );
 
-    pDes->pResult  = pResult;
-    pDes->pScratch = pScratch;
-    pDes->pInstanceDesc = pInstanceDescBuffer;
 }
