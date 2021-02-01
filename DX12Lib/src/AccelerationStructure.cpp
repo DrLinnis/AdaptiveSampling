@@ -8,39 +8,43 @@
 #include "dx12lib/Buffer.h"
 #include "dx12lib/CommandList.h"
 #include "dx12lib/MappableBuffer.h"
+#include "dx12lib/Scene.h"
+#include <dx12lib/Mesh.h>
 
 using namespace dx12lib;
 
 
 void AccelerationBuffer::CreateBottomLevelAS(Device* pDevice,
-    CommandList* pCommandList,
-    VertexBuffer* pVertexBuffer[],
-    IndexBuffer* pIndexBuffer[],
-    size_t geometryCount,
-    AccelerationStructure* pDes) 
+    CommandList* pCommandList, Scene* pScene, AccelerationStructure* pDes) 
 {
+    int idx           = 0;
+    int geometryCount = pScene->m_Meshes.size();
+
     // Get prebuild infos
     std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geomDesc;
     geomDesc.resize( geometryCount );
-    for (int i = 0; i < geometryCount; ++i) {
-        geomDesc[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+
+    for (std::shared_ptr<Mesh> m : pScene->m_Meshes) {
+        geomDesc[idx].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
         // NOTE: As a vertex can contain more than just the XYZ position it thus has stride defined seperatly.
+        
+        geomDesc[idx].Triangles.VertexBuffer.StartAddress =
+            m->GetVertexBuffer( 0 )->GetD3D12Resource()->GetGPUVirtualAddress();
+        geomDesc[idx].Triangles.VertexBuffer.StrideInBytes = m->GetVertexBuffer( 0 )->GetVertexStride();
+        geomDesc[idx].Triangles.VertexFormat               = DXGI_FORMAT_R32G32B32_FLOAT;  // XYZ per vertex.
+        geomDesc[idx].Triangles.VertexCount                = m->GetVertexBuffer( 0 )->GetNumVertices();
 
-        geomDesc[i].Triangles.VertexBuffer.StartAddress = pVertexBuffer[i]->GetD3D12Resource()->GetGPUVirtualAddress();
-        geomDesc[i].Triangles.VertexBuffer.StrideInBytes = pVertexBuffer[i]->GetVertexStride();
-        geomDesc[i].Triangles.VertexFormat               = DXGI_FORMAT_R32G32B32_FLOAT;  // XYZ per vertex.
-        geomDesc[i].Triangles.VertexCount                = pVertexBuffer[i]->GetNumVertices();
+        geomDesc[idx].Triangles.IndexBuffer = m->GetIndexBuffer()->GetD3D12Resource()->GetGPUVirtualAddress();
+        geomDesc[idx].Triangles.IndexCount  = m->GetIndexBuffer()->GetNumIndicies();
+        geomDesc[idx].Triangles.IndexFormat = m->GetIndexBuffer()->GetIndexFormat();
 
-        geomDesc[i].Triangles.IndexBuffer = pIndexBuffer[i]->GetD3D12Resource()->GetGPUVirtualAddress();
-        geomDesc[i].Triangles.IndexCount  = pIndexBuffer[i]->GetNumIndicies();
-        geomDesc[i].Triangles.IndexFormat = pIndexBuffer[i]->GetIndexFormat();
-
-        geomDesc[i].Triangles.Transform3x4 = 0;
+        geomDesc[idx].Triangles.Transform3x4 = 0;
 
         // number of bytes in buffer divided by bytes of a vertex
-        geomDesc[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        geomDesc[idx].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+
+        ++idx;
     }
-    
 
     // Get the size requirements for the scratch and AS buffers
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
@@ -54,29 +58,27 @@ void AccelerationBuffer::CreateBottomLevelAS(Device* pDevice,
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
     pDevice->GetRaytracingAccelerationStructurePrebuildInfo( &inputs, &info );
 
-    std::shared_ptr<AccelerationBuffer> pScratch =
+    pDes->pScratch =
         pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
-    pScratch->SetName( L"DXR BLAS Scratch" );
-    pCommandList->UAVBarrier( pScratch );
+    pDes->pScratch->SetName( L"DXR BLAS Scratch" );
+    pCommandList->UAVBarrier( pDes->pScratch );
 
-    std::shared_ptr<AccelerationBuffer> pResult =
+    pDes->pResult =
         pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
                                            D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE );
-    pResult->SetName( L"DXR BLAS" );
-    pCommandList->UAVBarrier( pResult );
+    pDes->pResult->SetName( L"DXR BLAS" );
+    pCommandList->UAVBarrier( pDes->pResult );
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
     asDesc.Inputs                                             = inputs;
-    asDesc.DestAccelerationStructureData    = pResult->GetD3D12Resource()->GetGPUVirtualAddress();
-    asDesc.ScratchAccelerationStructureData = pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.DestAccelerationStructureData                      = pDes->pResult->GetD3D12Resource()->GetGPUVirtualAddress();
+    asDesc.ScratchAccelerationStructureData = pDes->pScratch->GetD3D12Resource()->GetGPUVirtualAddress();
 
     pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
 
-    pCommandList->UAVBarrier( pResult, true );
+    pCommandList->UAVBarrier( pDes->pResult, true );
 
-    pDes->pResult = pResult;
-    pDes->pScratch = pScratch;
 
 }
 
@@ -91,9 +93,9 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     // First, get the size of the TLAS buffers and create them
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.DescsLayout  = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    inputs.Flags                                                =  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-    inputs.NumDescs = 3;
-    inputs.Type     = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+    inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+    inputs.NumDescs = 1;
+    inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     inputs.InstanceDescs = pInstanceDescBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info;
@@ -128,6 +130,6 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
 
     pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
 
-    pCommandList->UAVBarrier( pDes->pResult );
+    pCommandList->UAVBarrier( pDes->pResult, true);
 
 }

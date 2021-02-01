@@ -1,40 +1,24 @@
-/***************************************************************************
-# Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-#  * Neither the name of NVIDIA CORPORATION nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-***************************************************************************/
+
+// SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
+
+// UAV
 RWTexture2D<float4> gOutput : register(u0);
 
+
+// Constant buffers
 cbuffer PerFrameCameraOrigin : register(b0)
 {
-    float3 cameraOrigin;
+    float4 cameraOrigin;
+    float4 cameraLookAt;
+    float4 cameraLookUp;
+    float2 cameraWinSize;
     
-    float padding;
+    float2 _padding;
 }
 
+
+// Should I ?
 float3 linearToSrgb(float3 c)
 {
     // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
@@ -45,6 +29,7 @@ float3 linearToSrgb(float3 c)
     return srgb;
 }
 
+// PAYLOADS
 struct RayPayload
 {
     float3 color;
@@ -54,19 +39,6 @@ struct ShadowPayLoad
 {
     bool hit;
 };
-
-[shader("closesthit")]
-void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
-{
-    payload.hit = true;
-}
-
-[shader("miss")]
-void shadowMiss(inout ShadowPayLoad payload)
-{
-    payload.hit = false;
-}
-
 
 
 [shader("raygeneration")]
@@ -78,13 +50,23 @@ void rayGen()
     float2 crd = float2(launchIndex.xy);
     float2 dims = float2(launchDim.xy);
 
-    float2 d = ((crd / dims) * 2.f - 1.f);
+    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
     float aspectRatio = dims.x / dims.y;
 
     RayDesc ray;
     ray.Origin = cameraOrigin;
-    ray.Direction = normalize(float3(d.x * aspectRatio, -d.y, 1));
+    
+    float focus_dist = length(cameraOrigin - cameraLookAt);
+    float3 w = normalize(cameraOrigin - cameraLookAt);
+    float3 u = normalize(cross(cameraLookUp.xyz, w));
+    float3 v = cross(w, u);
+    
+    float3 horizontal = focus_dist * cameraWinSize.x * u;
+    float3 vertical = focus_dist * cameraWinSize.y * v;
+    
 
+    ray.Direction = -normalize(cameraLookAt + d.x * horizontal + d.y * vertical - cameraOrigin.xyz);
+    
     ray.TMin = 0;
     ray.TMax = 100000;
 
@@ -102,56 +84,117 @@ void rayGen()
     gOutput[launchIndex.xy] = float4(col, 1);
 }
 
+
+// Shadow rays
+[shader("closesthit")]
+void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    payload.hit = true;
+}
+
 [shader("miss")]
-void miss(inout RayPayload payload)
+void shadowMiss(inout ShadowPayLoad payload)
 {
-    payload.color = float3(0.4, 0.6, 0.2);
+    payload.hit = false;
 }
 
 
-cbuffer SphereColours : register(b1)
-{
-    float4 InstancedColour;
-}
-
+// Standard rays
 [shader("closesthit")] 
-void chs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
-{
-    uint instanceID = InstanceID();
-    // calculate (w,u,v) barycentrics
-    float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
-    // mix barycentrics Coords with colour
-    payload.color = lerp(barycentrics[instanceID], InstancedColour.xyz, 0.5);
-}
-
-[shader("closesthit")] // THIS IS THE PLANE CLOSEST HIT:
-void planeChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
     float hitT = RayTCurrent();
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
 
+    //instance
+    uint instanceID = InstanceID();
+    
+    // (w,u,v)
+    float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
+    
     // Find the world-space hit position
     float3 posW = rayOriginW + hitT * rayDirW;
 
     // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
+#if 0
     RayDesc ray;
     ray.Origin = posW;
     ray.Direction = normalize(float3(0.5, 0.5, -0.5));
     ray.TMin = 0.01;
     ray.TMax = 100000;
     ShadowPayLoad shadowPayload;
-    TraceRay(gRtScene, 
-        0 /*rayFlags*/, 
-        0xFF, 
+    TraceRay(gRtScene,
+        0 /*rayFlags*/,
+        0xFF,
         1 /* ray index*/,
-        0, 
-        1, 
+        0,
+        1,
         ray,
         shadowPayload
     );
-
     float factor = shadowPayload.hit ? 0.1 : 1.0;
     payload.color = float3(0.9f, 0.9f, 0.9f) * factor;
+#elif 0
+    const float3 arr[25] = {
+        float3( 0.8308, 0.5853, 0.5497)
+        , float3( 0.9172, 0.2858, 0.7572)
+        , float3( 0.7537, 0.3804, 0.5678)
+        , float3( 0.0759, 0.0540, 0.5308)
+        , float3( 0.7792, 0.9340, 0.1299)
+        , float3( 0.5688, 0.4694, 0.0119)
+        , float3( 0.3371, 0.1622, 0.7943)
+        , float3( 0.3112, 0.5285, 0.1656)
+        , float3( 0.6020, 0.2630, 0.6541)
+        , float3( 0.6892, 0.7482, 0.4505)
+        , float3( 0.0838, 0.2290, 0.9133)
+        , float3( 0.1524, 0.8258, 0.5383)
+        , float3( 0.9961, 0.0782, 0.4427)
+        , float3( 0.1067, 0.9619, 0.0046)
+        , float3( 0.7749, 0.8173, 0.8687)
+        , float3( 0.0844, 0.3998, 0.2599)
+        , float3( 0.8001, 0.4314, 0.9106)
+        , float3( 0.1818, 0.2638, 0.1455)
+        , float3( 0.1361, 0.8693, 0.5797)
+        , float3( 0.5499, 0.1450, 0.8530)
+        , float3( 0.6221, 0.3510, 0.5132)
+        , float3( 0.4018, 0.0760, 0.2399)
+        , float3( 0.1233, 0.1839, 0.2400)
+        , float3( 0.4173, 0.0497, 0.9027)
+        , float3( 0.9448, 0.4909, 0.4893)
+    };
+    
+    payload.color = arr[instanceID];
+#else
+    RayDesc ray;
+    ray.Origin = posW;
+    ray.Direction = normalize(float3(0.5, 0.5, -0.5));
+    ray.TMin = 0.01;
+    ray.TMax = 100000;
+    ShadowPayLoad shadowPayload;
+    TraceRay(gRtScene,
+        0 /*rayFlags*/,
+        0xFF,
+        1 /* ray index*/,
+        0,
+        1,
+        ray,
+        shadowPayload
+    );
+    float factor = shadowPayload.hit ? 0.0 : 1.0;
+    
+    const float3 a = float3(1, 0, 0);
+    const float3 b = float3(0, 1, 0);
+    const float3 c = float3(0, 0, 1);
+    if (!shadowPayload.hit)
+        payload.color = barycentrics.x * a + barycentrics.y * b + barycentrics.z * c;
+    else
+        payload.color = 0;
+#endif
+}
 
+[shader("miss")]
+void standardMiss(inout RayPayload payload)
+{
+    payload.color = float3(0.4, 0.6, 0.2);
 }

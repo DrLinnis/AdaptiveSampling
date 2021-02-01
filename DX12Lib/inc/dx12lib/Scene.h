@@ -51,12 +51,16 @@ class SceneNode;
 class Mesh;
 class Material;
 class Visitor;
+class AccelerationStructure;
 
 class Scene
 {
 public:
     Scene()  = default;
     ~Scene() = default;
+
+    void BuildBottomLevelAccelerationStructure( dx12lib::Device* pDevice, 
+        dx12lib::CommandList* pCommandList, AccelerationStructure* pDes );
 
     void SetRootNode( std::shared_ptr<SceneNode> node )
     {
@@ -82,6 +86,7 @@ public:
 
 protected:
     friend class CommandList;
+    friend class AccelerationBuffer;
 
     /**
      * Load a scene from a file on disc.

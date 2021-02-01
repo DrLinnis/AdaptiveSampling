@@ -40,16 +40,24 @@ class Window;  // From GameFramework.
 #define POST_PROCESSOR 0
 #define RASTER_DISPLAY 0
 
+#define UPDATE_TRANSFORMS 0
+
 
 struct CameraCB
 {
-    CameraCB( float x, float y, float z )
-    : x( x )
-    , y( y )
-    , z( z )
+    CameraCB( DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 lookat, DirectX::XMFLOAT2 winSize )
+    : pos( pos.x, pos.y, pos.z, 0 )
+    , lookAt( lookat.x, lookat.y, lookat.z, 0 )
+    , lookUp( 0, 1, 0, 0 )
+    , windowSize( winSize.x, winSize.y)
     {}
 
-    float x, y, z;
+    DirectX::XMFLOAT4 pos;
+    DirectX::XMFLOAT4 lookAt;
+    DirectX::XMFLOAT4 lookUp;
+    DirectX::XMFLOAT2 windowSize;
+
+    DirectX::XMFLOAT2 _padding;
 };
 
 
@@ -116,8 +124,7 @@ private:
     // Added tutorial member:
 #if RAY_TRACER
     
-    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_sphere;
-    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS_plane;
+    std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
     uint64_t mTlasSize = 0;
     
@@ -196,6 +203,7 @@ private:
     void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
     void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
     
+    void UpdateCamera( float moveVertically, float moveUp, float moveForward );
 
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -208,7 +216,7 @@ private:
     std::shared_ptr<Window> m_Window;
 
     // Some geometry to render.
-    std::shared_ptr<dx12lib::Scene> m_RayPlane;
+    std::shared_ptr<dx12lib::Scene> m_RaySceneMesh;
     std::shared_ptr<dx12lib::Scene> m_RaySphere;
     
     std::shared_ptr<dx12lib::Texture> m_DummyTexture;
@@ -237,7 +245,7 @@ private:
     D3D12_RECT m_ScissorRect;
 
     float lookat_dist = 10.0;
-    float speed       = 2.0f;
+    float speed       = 100.0f;
     double theta       = 0;
 
     // Camera controller

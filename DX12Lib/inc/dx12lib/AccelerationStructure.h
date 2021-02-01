@@ -17,6 +17,7 @@ class IndexBuffer;
 class Buffer;
 class MappableBuffer;
 class AccelerationBuffer;
+class Scene;
 
 struct AccelerationStructure
 {
@@ -29,8 +30,7 @@ class AccelerationBuffer : public Resource
 {
 public:
     static void CreateBottomLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
-                                     dx12lib::VertexBuffer* pVertexBuffer[], dx12lib::IndexBuffer* pIndexBuffer[],
-                                     size_t geometryCount, AccelerationStructure* pDes );
+                                     dx12lib::Scene* pScene, AccelerationStructure* pDes );
 
     static void CreateTopLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList, size_t nbrBlas,
                                   dx12lib::AccelerationBuffer* pBlasList[], uint64_t* pTlasSize,

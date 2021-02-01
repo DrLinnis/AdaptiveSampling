@@ -10,6 +10,7 @@
 #include <dx12lib/Texture.h>
 #include <dx12lib/VertexTypes.h>
 #include <dx12lib/Visitor.h>
+#include <dx12lib/AccelerationStructure.h>
 
 using namespace dx12lib;
 
@@ -150,6 +151,8 @@ void Scene::ImportScene( CommandList& commandList, const aiScene& scene, std::fi
     {
         ImportMesh( commandList, *( scene.mMeshes[i] ) );
     }
+
+
 
     // Import the root node.
     m_RootNode = ImportSceneNode( commandList, nullptr, scene.mRootNode );
@@ -429,4 +432,11 @@ DirectX::BoundingBox Scene::GetAABB() const
     }
 
     return aabb;
+}
+
+/* GET NEW FUNCTIONS */
+void Scene::BuildBottomLevelAccelerationStructure( dx12lib::Device* pDevice,
+    dx12lib::CommandList* pCommandList, AccelerationStructure* pDes )
+{
+    AccelerationBuffer::CreateBottomLevelAS( pDevice, pCommandList, this, pDes );
 }

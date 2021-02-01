@@ -1,6 +1,5 @@
 #include <DummyGame.h>
 
-#include <SceneVisitor.h>
 
 #include <DirectXMath.h>
 
@@ -85,7 +84,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_VSync( vSync )
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
-, m_cam( 0, 0, -5 )
+, m_cam( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -500, 100, 0 ), XMFLOAT2( width / (float)height, 1 ) )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -273,12 +272,10 @@ void DummyGame::CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler,
 #if RAY_TRACER
 
 static const WCHAR* kRayGenShader     = L"rayGen";
-static const WCHAR* kMissShader       = L"miss";
-static const WCHAR* kClosestHitShader = L"chs";
-static const WCHAR* kPlaneHitShader = L"planeChs";
 
-static const WCHAR* kHitGroup         = L"HitGroup";
-static const WCHAR* kPlaneHitGroup = L"PlaneHitGroup";
+static const WCHAR* kStandardChs        = L"standardChs";
+static const WCHAR* kStandardMiss       = L"standardMiss";
+static const WCHAR* kStandardHitGroup   = L"standardHitGroup";
 
 static const WCHAR* kShadowChs      = L"shadowChs";
 static const WCHAR* kShadowMiss     = L"shadowMiss";
@@ -301,19 +298,18 @@ void DummyGame::CreateRayTracingPipeline() {
     // Load 
     ComPtr<IDxcBlob> shaders =
         ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_3" );
-    const WCHAR* entryPoints[] = { kRayGenShader, kMissShader, kClosestHitShader, kPlaneHitShader, kShadowChs,  kShadowMiss };  // SIZE 3
+    const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs, kShadowChs,
+                                   kShadowMiss };  // SIZE 5
     
-    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 6 );
-    subobjects[index++] = dxilLib.stateSubobject; // 0 Library
+    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 5 );
+    subobjects[index++] = dxilLib.stateSubobject; 
 
-        HitProgram hitProgram( nullptr, kClosestHitShader, kHitGroup );
-        subobjects[index++] = hitProgram.subObject; // 1 Hit Group.
+    // Normal Hit Group and Shadow Hit Group
+    HitProgram hitProgram( nullptr, kStandardChs, kStandardHitGroup );
+    subobjects[index++] = hitProgram.subObject; 
 
-    HitProgram hitProgram2( nullptr, kPlaneHitShader, kPlaneHitGroup );
-    subobjects[index++] = hitProgram2.subObject;  // 1 Hit Group.
-
-        HitProgram shadowHitProgram( nullptr, kShadowChs, kShadowHitGroup );
-        subobjects[index++] = shadowHitProgram.subObject;  // 1 Hit Group.
+    HitProgram shadowHitProgram( nullptr, kShadowChs, kShadowHitGroup );
+    subobjects[index++] = shadowHitProgram.subObject;  
 
 
 
@@ -356,38 +352,7 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
 
 
-        // Create the HIT-programs root-signature       SPHERE
-        {
-            CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-
-            // unable to use as this is based on the root signature, and we can't set ot local roots.
-            //rayRootParams[0].InitAsConstants( 12, 1 );
-
-            rayRootParams[0].InitAsConstantBufferView( 1 );
-
-            D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-            CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-            rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-            //rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
-
-            m_SphereHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-
-            ID3D12RootSignature*  pHitInterface = m_SphereHitRootSig->GetD3D12RootSignature().Get();
-            D3D12_STATE_SUBOBJECT hitSubobject  = {};
-            hitSubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-            hitSubobject.pDesc                  = &pHitInterface;
-            subobjects[index]                   = hitSubobject;
-            // END HIT                                      SPHERE
-        }
-
-        // Hit associations
-        uint32_t          sprHitRootIndex    = index++;                             // 4
-        const WCHAR*      sprHitExportName[] = { kClosestHitShader };  // SIZE 2
-        ExportAssociation sprHitRootAssociation( sprHitExportName, 1, &( subobjects[sprHitRootIndex] ) );
-        subobjects[index++] = sprHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
-
-    // Create the HIT-programs root-signature       PLANE
+    // Create the HIT-programs root-signature      
     {
         CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
                                                D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
@@ -400,7 +365,6 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
         rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-        // rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
 
         m_PlaneHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -414,7 +378,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Hit associations
     uint32_t          planeHitRootIndex    = index++;                // 4
-    const WCHAR*      planeHitExportName[] = { kPlaneHitShader };  // SIZE 2
+    const WCHAR*      planeHitExportName[] = { kStandardChs };  
     ExportAssociation planeHitRootAssociation( planeHitExportName, 1, &( subobjects[planeHitRootIndex] ) );
     subobjects[index++] = planeHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
 
@@ -433,25 +397,25 @@ void DummyGame::CreateRayTracingPipeline() {
             emptySubobject.Type                   = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
             emptySubobject.pDesc                  = &pEmptyInterface;
 
-            subobjects[index] = emptySubobject;  // 4 Root Sig to be shared between Miss and CHS
+            subobjects[index] = emptySubobject;
         }
 
         // EMPTY associations
-        uint32_t          emptyRootIndex    = index++;                                   // 4
-        const WCHAR*      emptyExportName[] = { kMissShader, kShadowMiss, kShadowChs };  // SIZE 2
+        uint32_t          emptyRootIndex    = index++;   
+        const WCHAR*      emptyExportName[] = { kStandardMiss, kShadowMiss, kShadowChs };  
         ExportAssociation emptyRootAssociation( emptyExportName, 3, &( subobjects[emptyRootIndex] ) );
-        subobjects[index++] = emptyRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
+        subobjects[index++] = emptyRootAssociation.subobject;
 
 
 
-    // Bind the payload size to the programs // UPDATED: SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
+    // Bind the payload size to the programs, SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
     ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * 3 );
-    subobjects[index] = shaderConfig.subobject;  // 6 Shader Config
+    subobjects[index] = shaderConfig.subobject;
 
-    uint32_t          shaderConfigIndex = index++;  // 6
-    const WCHAR*      shaderExports[]   = { kMissShader, kClosestHitShader, kPlaneHitShader, kRayGenShader, kShadowMiss, kShadowChs };  // SIZE 3
-    ExportAssociation configAssociation( shaderExports, 6, &( subobjects[shaderConfigIndex] ) );
-    subobjects[index++] = configAssociation.subobject;  // 7 Associate Shader Config to Miss, CHS, RGS
+    uint32_t          shaderConfigIndex = index++;  
+    const WCHAR*      shaderExports[]   = { kStandardMiss, kStandardChs, kRayGenShader, kShadowMiss, kShadowChs }; 
+    ExportAssociation configAssociation( shaderExports, 5, &( subobjects[shaderConfigIndex] ) );
+    subobjects[index++] = configAssociation.subobject;  
 
         // Create the pipeline config
         PipelineConfig config( 2 ); 
@@ -516,31 +480,12 @@ void DummyGame::CreateAccelerationStructure()
     auto& commandQueueDirect = m_Device->GetCommandQueue( D3D12_COMMAND_LIST_TYPE_DIRECT );
     auto  commandList        = commandQueueDirect.GetCommandList();
 
-    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer = m_RaySphere->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
-    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer  = m_RaySphere->GetRootNode()->GetMesh()->GetIndexBuffer();
-
-    std::shared_ptr<dx12lib::VertexBuffer> pVertexBuffer2 = m_RayPlane->GetRootNode()->GetMesh()->GetVertexBuffer( 0 );
-    std::shared_ptr<dx12lib::IndexBuffer>  pIndexBuffer2  = m_RayPlane->GetRootNode()->GetMesh()->GetIndexBuffer();
-
-    dx12lib::VertexBuffer* geometriesVb[] = { pVertexBuffer.get(), pVertexBuffer2.get() };
-    dx12lib::IndexBuffer*  geometriesIb[] = { pIndexBuffer.get(), pIndexBuffer2.get() };
-
     AccelerationStructure blasBuffers = {};
-    AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
-        geometriesVb, geometriesIb, 2, &blasBuffers 
-    );
+    m_RaySceneMesh->BuildBottomLevelAccelerationStructure( m_Device.get(), commandList.get(), &blasBuffers );
 
-
-    AccelerationStructure blasBuffers2 = {};
-    AccelerationBuffer::CreateBottomLevelAS( m_Device.get(), commandList.get(), 
-        geometriesVb, geometriesIb, 1, &blasBuffers2 
-    );
-
-    dx12lib::AccelerationBuffer* blasList[] = { blasBuffers2.pResult.get(), blasBuffers.pResult.get() };
-
+    // Create instances
     {
-
-        m_InstanceDescBuffer = m_Device->CreateMappableBuffer( 3 * sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
+        m_InstanceDescBuffer = m_Device->CreateMappableBuffer( sizeof( D3D12_RAYTRACING_INSTANCE_DESC ) );
         m_InstanceDescBuffer->SetName( L"DXR TLAS Instance Description" );
 
         D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
@@ -550,36 +495,24 @@ void DummyGame::CreateAccelerationStructure()
             pInstDesc[0].InstanceID                              = 0;
             pInstDesc[0].InstanceContributionToHitGroupIndex     = 0;
             pInstDesc[0].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            pInstDesc[0].Transform[0][0]                         = 1;
             pInstDesc[0].Transform[0][0] = pInstDesc[0].Transform[1][1] = pInstDesc[0].Transform[2][2] = 1;
-            pInstDesc[0].AccelerationStructure = blasList[1]->GetD3D12Resource()->GetGPUVirtualAddress();
+            pInstDesc[0].AccelerationStructure = blasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
             pInstDesc[0].InstanceMask          = 0xFF;
-
-            // instance 1 and 2, only spheres
-            for ( int i = 1; i < 3; i++ )
-            {
-                pInstDesc[i].InstanceID                              = i;
-                pInstDesc[i].InstanceContributionToHitGroupIndex = 2 * ( i + 1 );
-                pInstDesc[i].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-                pInstDesc[i].Transform[0][0] = pInstDesc[i].Transform[1][1] = pInstDesc[i].Transform[2][2] = 1;
-                pInstDesc[i].Transform[0][3]           = 4.0 * ( i - 1 ) + 4.0 * ( i - 2 );
-                pInstDesc[i].AccelerationStructure = blasList[0]->GetD3D12Resource()->GetGPUVirtualAddress();
-                pInstDesc[i].InstanceMask              = 0xFF;
-            }
         }
         m_InstanceDescBuffer->Unmap();
 
     }
 
-    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, 
+
+    AccelerationBuffer* pBuffer[] = { blasBuffers.pResult.get() };
+    AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 1, pBuffer, 
         &mTlasSize, &m_TlasBuffers, m_InstanceDescBuffer.get() 
     );
 
     commandQueueDirect.ExecuteCommandList( commandList );
     commandQueueDirect.Flush();
 
-    m_BLAS_plane  = blasBuffers2.pResult;
-    m_BLAS_sphere = blasBuffers.pResult;
+    m_BLAS = blasBuffers.pResult;
 }
 
 void DummyGame::CreateConstantBuffer() 
@@ -608,28 +541,34 @@ void DummyGame::CreateShaderTable()
 
     uint32_t shaderBufferSize = m_ShaderTableEntrySize;
     shaderBufferSize          = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
+    uint32_t perInstShaderBuffSize = 2 * shaderBufferSize;
 
     m_RaygenShaderTable = m_Device->CreateMappableBuffer( shaderBufferSize );
     m_RaygenShaderTable->SetName( L"DXR Raygen Shader Table" );
 
-    m_MissShaderTable = m_Device->CreateMappableBuffer( 2 * shaderBufferSize ); // 2x2 one per primary and one per shadow
+    m_MissShaderTable =
+        m_Device->CreateMappableBuffer( perInstShaderBuffSize );  // 2, one per primary and one per shadow
     m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
 
-    m_HitShaderTable = m_Device->CreateMappableBuffer( 8 * shaderBufferSize ); // 4x2, one per primary and one per shadow
+    m_HitShaderTable =
+        m_Device->CreateMappableBuffer( 25*perInstShaderBuffSize );  // 25, one per primary and one per shadow
     m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
 
     ComPtr<ID3D12StateObjectProperties> pRtsoProps;
     m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
 
     UINT64 heapUavSrvPtr = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
+    UINT64 cbvDest = cbvDest = m_MissSdrCBs[0]->GetD3D12Resource()->GetGPUVirtualAddress();
 
+    // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
 
-    void* pMissShdr   = pRtsoProps->GetShaderIdentifier( kMissShader );
+    // miss for regular and shadow
+    void* pStandardMiss   = pRtsoProps->GetShaderIdentifier( kStandardMiss );
     void* pShadowMiss = pRtsoProps->GetShaderIdentifier( kShadowMiss );
 
-    void* pHitGrpShdr = pRtsoProps->GetShaderIdentifier( kHitGroup );
-    void* pPlaneHitGrpShdr = pRtsoProps->GetShaderIdentifier( kPlaneHitGroup );
+    // hit for regular and shadow
+    void* pStandardHitGrp = pRtsoProps->GetShaderIdentifier( kStandardHitGroup );
     void* pShadowHitGrp = pRtsoProps->GetShaderIdentifier( kShadowHitGroup );
 
     uint8_t* pData;
@@ -646,60 +585,24 @@ void DummyGame::CreateShaderTable()
     ThrowIfFailed( m_MissShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
     {
         // Entry 1 - miss program PRIMARY
-        memcpy( pData, pMissShdr, shaderIdSize );
+        memcpy( pData, pStandardMiss, shaderIdSize );
 
-        memcpy( pData + shaderBufferSize, pRtsoProps->GetShaderIdentifier( kShadowMiss ), shaderIdSize );
+        memcpy( pData + shaderBufferSize, pShadowMiss, shaderIdSize );
     }
     m_MissShaderTable->Unmap();  // Unmap
 
-    UINT64 cbvDest;
+
     ThrowIfFailed( m_HitShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
     {
-        // Instance 0
-        {
-            // Geometry 1
-            {
-                // SPHERE - PRIMARY
-                memcpy( pData + 0 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-                cbvDest = m_MissSdrCBs[0]->GetD3D12Resource()->GetGPUVirtualAddress();
-                memcpy( pData + 0 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
+        // Instance 0, geometry I
+        for (int i = 0; i < 25; ++i) {
+            // Primary
+            memcpy( pData + ( 2 * i + 0 ) * shaderBufferSize, pStandardHitGrp, shaderIdSize );  // regular closest hit
+            memcpy( pData + ( 2 * i + 0 ) * shaderBufferSize + shaderIdSize, &cbvDest,
+                    sizeof( UINT64 ) );  // point to TLAS SRV
 
-                memcpy( pData + 1 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
-            }
-            
-            // Geometry 2
-            {
-                // PLANE - PRIMARY
-                memcpy( pData + 2 * shaderBufferSize, pPlaneHitGrpShdr, shaderIdSize ); // NOTICE PLANE
-
-                // NOW POINTS AT TLAS
-                UINT64 srvDest = m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
-                memcpy( pData + 2 * shaderBufferSize + shaderIdSize, &heapUavSrvPtr, sizeof( UINT64 ) ); 
-
-                memcpy( pData + 3 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
-            }
-            
-        }
-        
-        // Instance 1
-        {
-            // SPHERE - PRIMARY
-            memcpy( pData + 4 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-            cbvDest = m_MissSdrCBs[1]->GetD3D12Resource()->GetGPUVirtualAddress();
-            memcpy( pData + 4 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
-
-            memcpy( pData + 5 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
-        }
-        
-
-        // Instance 2
-        {
-            // SPHERE - PRIMARY
-            memcpy( pData + 6 * shaderBufferSize, pHitGrpShdr, shaderIdSize );
-            cbvDest = m_MissSdrCBs[2]->GetD3D12Resource()->GetGPUVirtualAddress();
-            memcpy( pData + 6 * shaderBufferSize + shaderIdSize, &cbvDest, sizeof( UINT64 ) );
-
-            memcpy( pData + 7 * shaderBufferSize, pShadowHitGrp, shaderIdSize );
+            // Shadow - secondary
+            memcpy( pData + ( 2 * i + 1 ) * shaderBufferSize, pShadowHitGrp, shaderIdSize );  // shadow hit
         }
         
     }
@@ -728,17 +631,10 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    //m_RaySphere = commandList->CreateSphere( 1.5f, 16, DirectX::XMFLOAT3( 0, 1, 0 ) );
-    //m_RaySphere = commandList->CreateCube( 1.5f, DirectX::XMFLOAT3( 0, 1, 0 ) );
-    //m_RaySphere = commandList->CreateCylinder( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
-    //m_RaySphere = commandList->CreateCone( 0.5, 1.0, 32, DirectX::XMFLOAT3( 0, 1, 0 ) );
     m_RaySphere = commandList->CreateTorus( 1.5, 1 / 2.0f, 32, DirectX::XMFLOAT3( 0, 0, 0 ) );
-    //m_RaySphere = commandList->CreateSimplePlane( 1, 1 );
-    //m_RaySphere = commandList->CreateSimpleTriangle();
-    
-    m_RayPlane = commandList->CreatePlane( 20, 20, DirectX::XMFLOAT3( 0, -2, 0 ) );
-    //m_RayPlane = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
-    
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+
+
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -805,15 +701,14 @@ void DummyGame::OnDPIScaleChanged( DPIScaleEventArgs& e )
 
 void DummyGame::UnloadContent()
 {
-    m_RayPlane.reset();
+    m_RaySceneMesh.reset();
     m_RaySphere.reset();
     m_DummyTexture.reset();
 
     // ray tracing 
 #if RAY_TRACER
 
-    m_BLAS_plane.reset();
-    m_BLAS_sphere.reset();
+    m_BLAS.reset();
     m_TlasBuffers.pScratch.reset();
     m_TlasBuffers.pResult.reset();
     m_TlasBuffers.pInstanceDesc.reset();
@@ -865,6 +760,29 @@ void DummyGame::UnloadContent()
 
 static double g_FPS = 0.0;
 
+XMFLOAT3 CalculateDirectionVector(float yaw, float pitch) {
+    float dx = std::cos( Math::Radians( yaw ) ) * std::cos( Math::Radians( pitch ) );
+    float dy = std::sin( Math::Radians( pitch ) );
+    float dz = std::sin( Math::Radians( yaw ) ) * std::cos( Math::Radians( pitch ) );
+    return XMFLOAT3( dx, dy, dz );
+}
+
+void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward )
+{
+    XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
+    XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
+
+    m_cam.pos.x += moveForward * forward.x;
+    m_cam.pos.y += moveForward * forward.y;
+    m_cam.pos.z += moveForward * forward.z;
+
+    m_cam.pos.x += moveVertically * right.x;
+    m_cam.pos.y += moveVertically * right.y;
+    m_cam.pos.z += moveVertically * right.z;
+
+    m_cam.pos.y += moveUp;
+}
+
 void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
@@ -890,15 +808,21 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
     // Defacto update
     {
-        const float speed = 1.0;
-        m_cam.x -= speed * m_Left * e.DeltaTime;
-        m_cam.x += speed * m_Right * e.DeltaTime;
+        const float cam_dist = 1.0;
+        XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
 
-        m_cam.y -= speed * m_Down * e.DeltaTime;
-        m_cam.y += speed * m_Up * e.DeltaTime;
+        UpdateCamera( 
+            ( m_Left - m_Right ) * speed * e.DeltaTime, 
+            ( m_Up - m_Down ) * speed * e.DeltaTime,
+            ( m_Backward - m_Forward ) * speed * e.DeltaTime 
+        );
 
-        m_cam.z -= speed * m_Backward * e.DeltaTime;
-        m_cam.z += speed * m_Forward * e.DeltaTime;
+        m_cam.lookAt = XMFLOAT4( 
+            m_cam.pos.x + cam_dist * camDir.x, 
+            m_cam.pos.y + cam_dist * camDir.y,
+            m_cam.pos.z + cam_dist * camDir.z,
+            0 
+        );
 
         void* pData;
         ThrowIfFailed( m_RayCamCB->Map( &pData ) );
@@ -907,6 +831,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         }
         m_RayCamCB->Unmap();
 
+#if UPDATE_TRANSFORMS
         D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
         ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
         {
@@ -920,7 +845,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         }
         m_InstanceDescBuffer->Unmap();
-
+#endif
     }
 
 
@@ -957,11 +882,12 @@ void DummyGame::OnRender()
     {
         commandList->TransitionBarrier( m_RayOutputResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
 
+#if UPDATE_TRANSFORMS
         dx12lib::AccelerationBuffer* blasList[] = { m_BLAS_plane.get(), m_BLAS_sphere.get() };
 
         AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, &mTlasSize,
                                               &m_TlasBuffers, m_InstanceDescBuffer.get(), true );
-
+#endif
         /*
             Here we declare where the hitshader is, where the miss shader is, and where the raygen shader
         */
@@ -986,7 +912,7 @@ void DummyGame::OnRender()
             raytraceDesc.HitGroupTable.StartAddress = 
                 m_HitShaderTable->GetD3D12Resource()->GetGPUVirtualAddress();
             raytraceDesc.HitGroupTable.StrideInBytes = m_ShaderTableEntrySize;
-            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize * 8;
+            raytraceDesc.HitGroupTable.SizeInBytes   = m_ShaderTableEntrySize * 25;
         }
 
         // Set global root signature
@@ -1142,6 +1068,9 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
         case KeyCode::Space:
             m_Up = 1.0f;
             break;
+        case KeyCode::ControlKey:
+            speed = 300.0f;
+            break;
         }
     }
 }
@@ -1181,6 +1110,9 @@ void DummyGame::OnKeyReleased( KeyEventArgs& e )
         case KeyCode::Space:
             m_Up = 0.0f;
             break;
+        case KeyCode::ControlKey:
+            speed = 100.0f;
+            break;
         }
     }
 }
@@ -1194,7 +1126,7 @@ void DummyGame::OnMouseMoved( MouseMotionEventArgs& e )
         {
             m_Pitch -= e.RelY * mouseSpeed;
 
-            m_Pitch = std::clamp( m_Pitch, -90.0f, 90.0f );
+            m_Pitch = std::clamp( m_Pitch, -89.0f, 89.0f );
 
             m_Yaw -= e.RelX * mouseSpeed;
         }
