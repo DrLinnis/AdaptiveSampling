@@ -315,13 +315,13 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Create the ray-gen root-signature and association
     {
-        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                           0 );
-
         CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                          1 );
+                                          0 );
 
         CD3DX12_DESCRIPTOR_RANGE1 camera( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                           1 );
+
+        CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                            2 );
 
         const CD3DX12_DESCRIPTOR_RANGE1 tables[3] = { output, TlvlAcc, camera };
@@ -355,12 +355,6 @@ void DummyGame::CreateRayTracingPipeline() {
     // Create the HIT-programs root-signature      
     {
         CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
-            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-
-        CD3DX12_DESCRIPTOR_RANGE1 IdxBuff( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 
-            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 1 );
-
-        CD3DX12_DESCRIPTOR_RANGE1 VertBuff( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 
             D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 2 );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};

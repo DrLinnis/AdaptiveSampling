@@ -169,9 +169,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     
     float factor = shadowPayload.hit ? 0.1 : 1.0;
     
-    const float3 a = float3(1, 0, 0);
-    const float3 b = float3(0, 1, 0);
-    const float3 c = float3(0, 0, 1);
+    const float3 a = float3(1, 0.5, 0.5);
+    const float3 b = float3(0.3, 0.8, 0.3);
+    const float3 c = float3(0.1, 0.1, 1);
     float3 albedo = barycentrics.x * a + barycentrics.y * b + barycentrics.z * c;
 
     payload.color = albedo * factor;

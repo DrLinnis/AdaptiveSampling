@@ -40,15 +40,16 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     
     D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 
-    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, heapHandle );
-
-    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
-
     d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, heapHandle );
 
     heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
     d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
+
+    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+
+    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, heapHandle );
+
 }
 
 
