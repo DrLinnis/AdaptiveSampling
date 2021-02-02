@@ -297,7 +297,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Load 
     ComPtr<IDxcBlob> shaders =
-        ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_3" );
+        ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_5" );
     const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs, kShadowChs,
                                    kShadowMiss };  // SIZE 5
     

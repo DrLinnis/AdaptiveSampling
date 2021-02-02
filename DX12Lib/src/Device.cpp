@@ -322,7 +322,8 @@ Device::Device( bool DXRsupport, std::shared_ptr<Adapter> adapter )
             D3D12_FEATURE_DATA_D3D12_OPTIONS5 features5;
             HRESULT hr = m_d3d12Device->CheckFeatureSupport( D3D12_FEATURE_D3D12_OPTIONS5, &features5,
                                                        sizeof( D3D12_FEATURE_DATA_D3D12_OPTIONS5 ) );
-            if ( FAILED( hr ) || features5.RaytracingTier == D3D12_RAYTRACING_TIER_NOT_SUPPORTED )
+            if ( FAILED( hr ) || features5.RaytracingTier == D3D12_RAYTRACING_TIER_NOT_SUPPORTED ||
+                 features5.RaytracingTier == D3D12_RAYTRACING_TIER_1_0 )
             {
                 throw std::exception( "Raytracing is not supported on this device." \
                     "Make sure your GPU supports DXR (such as Nvidia's Volta or Turing RTX) " \

@@ -7,6 +7,8 @@
 
 #include <dxcapi.h>
 
+#include <iostream>
+
 using namespace dx12lib;
 using namespace Microsoft::WRL;
 
@@ -39,7 +41,9 @@ ComPtr<IDxcBlob> ShaderHelper::CompileLibrary( const WCHAR* filename, const WCHA
         memcpy( infoLog.data(), pError->GetBufferPointer(), pError->GetBufferSize() );
         infoLog[pError->GetBufferSize()] = 0;
         std::string errorStr             = std::string( "Compile error:\n" ) + std::string( infoLog.data() );
-        throw std::exception( errorStr.c_str() );
+        const char* msg                  = errorStr.c_str();
+        std::cout << msg << std::endl;
+        throw std::exception( msg );
     }
 
     ComPtr<IDxcBlob> pBlob;
