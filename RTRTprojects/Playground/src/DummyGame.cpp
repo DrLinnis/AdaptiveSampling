@@ -119,156 +119,6 @@ uint32_t DummyGame::Run()
     return retCode;
 }
 
-void DummyGame::CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat )
-{
-#if POST_PROCESSOR
-    // Create an off-screen render for the compute shader
-    {
-        D3D12_RESOURCE_DESC stagingDesc = m_RenderShaderResource->GetD3D12ResourceDesc();
-        stagingDesc.Format              = backBufferFormat;
-        stagingDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;  // try or eq else
-
-        m_PostProcessOutput = m_Device->CreateTexture( stagingDesc );
-        m_PostProcessOutput->SetName( L"Post Processing Render Buffer" );
-
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-        uavDesc.Format                           = Texture::GetUAVCompatableFormat( stagingDesc.Format );
-        uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
-        uavDesc.Texture2DArray.MipSlice          = 0;
-
-        m_PostProcessOutputUAV = m_Device->CreateUnorderedAccessView( m_PostProcessOutput, nullptr, &uavDesc );
-    }
-
-    // Load compute shader
-    ComPtr<ID3DBlob> cs;
-    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/PostProcess.cso", &cs ) );
-
-    { 
-        // Create root signature
-        CD3DX12_DESCRIPTOR_RANGE1 output( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0,
-                                          D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
-
-        CD3DX12_ROOT_PARAMETER1 rootParameters[PostProcessingRootParameters::NumRootParameters];
-        // Division by 4 becase sizeof gives in number of bytes, not 32 bits.
-        rootParameters[PostProcessingRootParameters::Output].InitAsDescriptorTable( 1, &output );
-        rootParameters[PostProcessingRootParameters::Input].InitAsShaderResourceView( 0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                                                                                      D3D12_SHADER_VISIBILITY_ALL );
-
-        // Allow input layout and deny unnecessary access to certain pipeline stages.
-        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                                                        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( PostProcessingRootParameters::NumRootParameters, rootParameters, 0, sampler,
-                                           rootSignatureFlags );
-
-        
-        m_PostProcessRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-    }
-
-
-    // Create Pipeline State Object (PSO) for compute shader
-    struct RayPipelineState
-    {
-        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-        CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
-    } rayPipelineStateStream;
-
-    rayPipelineStateStream.pRootSignature = m_PostProcessRootSignature->GetD3D12RootSignature().Get();
-    rayPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( cs.Get() );
-
-    m_PostProcessPipelineState = m_Device->CreatePipelineStateObject( rayPipelineStateStream );
-#endif
-}
-
-void DummyGame::CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat )
-{
-#if RASTER_DISPLAY
-    {
-        // Create a colour descriptor with appropriate size
-        auto colorDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1 );
-
-        // Create an off-screen render target with a single color buffer.
-        colorDesc.Flags        = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-        m_RenderShaderResource = m_Device->CreateTexture( colorDesc );
-        m_RenderShaderResource->SetName( L"Display Render Target" );
-
-        m_RenderShaderView = m_Device->CreateShaderResourceView( m_RenderShaderResource );
-    }
-
-
-    // Load the shaders.
-    ComPtr<ID3DBlob> vs;
-    ComPtr<ID3DBlob> ps;
-    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Vertex.cso", &vs ) );
-    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Pixel.cso", &ps ) );
-
-    // Allow input layout and deny unnecessary access to certain pipeline stages.
-    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-                                                    D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-    CD3DX12_DESCRIPTOR_RANGE1 descriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0 );
-
-    CD3DX12_ROOT_PARAMETER1 rootParameters[DisplayRootParameters::NumRootParameters];
-    rootParameters[DisplayRootParameters::Textures].InitAsDescriptorTable( 1, &descriptorRange,
-                                                                           D3D12_SHADER_VISIBILITY_PIXEL );
-
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-    rootSignatureDescription.Init_1_1( DisplayRootParameters::NumRootParameters, rootParameters, 1, sampler,
-                                       rootSignatureFlags );
-
-    m_DisplayRootSignature = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-
-    // Setup the HDR pipeline state.
-    struct DisplayPipelineStateStream
-    {
-        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE        pRootSignature;
-        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT          InputLayout;
-        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY    PrimitiveTopologyType;
-        CD3DX12_PIPELINE_STATE_STREAM_VS                    VS;
-        CD3DX12_PIPELINE_STATE_STREAM_PS                    PS;
-        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-        CD3DX12_PIPELINE_STATE_STREAM_SAMPLE_DESC           SampleDesc;
-    } displayPipelineStateStream;
-
-    DXGI_SAMPLE_DESC sampleDesc = m_Device->GetMultisampleQualityLevels( backBufferFormat );
-
-    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-    rtvFormats.NumRenderTargets      = 1;
-    rtvFormats.RTFormats[0]          = backBufferFormat;
-
-    displayPipelineStateStream.pRootSignature        = m_DisplayRootSignature->GetD3D12RootSignature().Get();
-    displayPipelineStateStream.InputLayout           = VertexPositionNormalTangentBitangentTexture::InputLayout;
-    displayPipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    displayPipelineStateStream.VS                    = CD3DX12_SHADER_BYTECODE( vs.Get() );
-    displayPipelineStateStream.PS                    = CD3DX12_SHADER_BYTECODE( ps.Get() );
-
-    displayPipelineStateStream.RTVFormats = rtvFormats;
-    displayPipelineStateStream.SampleDesc = sampleDesc;
-
-    m_DisplayPipelineState = m_Device->CreatePipelineStateObject( displayPipelineStateStream );
-
-    auto renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1, sampleDesc.Count,
-                                                    sampleDesc.Quality, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET );
-
-    // Create render target image
-    D3D12_CLEAR_VALUE colorClearValue;
-    colorClearValue.Format = renderDesc.Format;
-    std::memcpy( colorClearValue.Color, this->clearColor, sizeof( float ) * 4 );
-
-    // render target
-    auto renderedImage = m_Device->CreateTexture( renderDesc, &colorClearValue );
-    renderedImage->SetName( L"Color Render Target" );
-
-    // Attach the textures to the render target.
-    m_RenderTarget.AttachTexture( AttachmentPoint::Color0, renderedImage );
-#endif
-}
-
 #if RAY_TRACER
 
 static const WCHAR* kRayGenShader     = L"rayGen";
@@ -635,7 +485,6 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
 
 
-
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     backBufferFormat = Texture::GetUAVCompatableFormat( backBufferFormat );
@@ -645,16 +494,6 @@ bool DummyGame::LoadContent()
 
     CD3DX12_STATIC_SAMPLER_DESC pointClampSampler( 0, D3D12_FILTER_MIN_MAG_MIP_POINT,
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP );
-
-    //Post Processing Compute Shader
-#if POST_PROCESSOR
-    CreatePostProcessor( &pointClampSampler, backBufferFormat );
-#endif
-
-    // Display Pipeline
-#if RASTER_DISPLAY
-    CreateDisplayPipeline( &pointClampSampler, backBufferFormat );
-#endif 
 
 
     // Make sure the command queue is finished loading resources before rendering the first frame.
@@ -930,80 +769,13 @@ void DummyGame::OnRender()
     #endif
     
     
-    /*
-       Post process compute shader execute and transfer staging resource to display.
-    */
-#if POST_PROCESSOR
-    {
-        commandList->SetPipelineState( m_PostProcessPipelineState );
-        commandList->SetComputeRootSignature( m_PostProcessRootSignature );
-
-        // set uniforms
-        {
-            commandList->SetUnorderedAccessView( PostProcessingRootParameters::Output, 0,
-                                                 m_PostProcessOutputUAV );
-        }
-
-        commandList->Dispatch( Math::DivideByMultiple( m_Width, 16 ), Math::DivideByMultiple( m_Height, 9 ), 1 );
-
-        commandList->UAVBarrier( m_PostProcessOutput );
-
-        if ( m_RenderShaderResource->GetD3D12Resource() != m_PostProcessOutput->GetD3D12Resource() )
-        {
-            //commandList->CopyResource( m_RenderShaderResource, m_StagingResource );
-        }
-    }
-#endif
-    
-
-    /*
-        Display Pipeline render!
-    */
-#if RASTER_DISPLAY 
-    
-    // Clear the render targets.
-    // commandList->ClearTexture( m_RenderTarget.GetTexture( AttachmentPoint::Color0 ), clearColor ); 
-
-    // Create a scene visitor that is used to perform the actual rendering of the meshes in the scenes.
-    SceneVisitor visitor( *commandList );
-
-    commandList->SetPipelineState( m_DisplayPipelineState );
-    commandList->SetGraphicsRootSignature( m_DisplayRootSignature );
-
-    commandList->SetViewport( m_Viewport );
-    commandList->SetScissorRect( m_ScissorRect );
-
-    commandList->SetRenderTarget( m_RenderTarget );
-    
-
-     // Floor plane.
-    float scalePlane      = 20.0f;
-    float translateOffset = scalePlane / 2.0f;
-
-    commandList->SetShaderResourceView( DisplayRootParameters::Textures, 0,
-        m_RenderShaderView, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
-
-    m_Plane->Accept( visitor );
-
-    //m_MiniPlane->Accept( visitor );
-
-    // Resolve the MSAA render target to the swapchain's backbuffer.
     auto& swapChainRT         = m_SwapChain->GetRenderTarget();
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
-    auto  drawRenderTarget    = m_RenderTarget.GetTexture( AttachmentPoint::Color0 );
 
-    commandList->ResolveSubresource( swapChainBackBuffer, drawRenderTarget );
-#else
-
-    auto& swapChainRT         = m_SwapChain->GetRenderTarget();
-    auto swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
-
-    #if RAY_TRACER
+#if RAY_TRACER
     commandList->CopyResource( swapChainBackBuffer, m_RayOutputResource );
-    #else
+#else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
-    #endif
-
 #endif
 
     // Render GUI.

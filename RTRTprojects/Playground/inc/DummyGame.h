@@ -37,8 +37,6 @@ class Window;  // From GameFramework.
 
 
 #define RAY_TRACER     1
-#define POST_PROCESSOR 0
-#define RASTER_DISPLAY 0
 
 #define UPDATE_TRANSFORMS 0
 
@@ -199,12 +197,7 @@ private:
 
 #endif
 
-    // refactored helper functions
-    void CreatePostProcessor( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
-    void CreateDisplayPipeline( const D3D12_STATIC_SAMPLER_DESC* sampler, DXGI_FORMAT backBufferFormat );
-    
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );
-
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
@@ -223,23 +216,6 @@ private:
 
     // Render target
     dx12lib::RenderTarget m_RenderTarget;
-
-#if RASTER_DISPLAY
-    std::shared_ptr<dx12lib::RootSignature> m_DisplayRootSignature;
-    std::shared_ptr<dx12lib::PipelineStateObject> m_DisplayPipelineState;
-
-    std::shared_ptr<dx12lib::Texture>            m_RenderShaderResource;
-    std::shared_ptr<dx12lib::ShaderResourceView> m_RenderShaderView;
-#endif
-
-#if POST_PROCESSOR
-    std::shared_ptr<dx12lib::Texture>             m_PostProcessOutput;
-    std::shared_ptr<dx12lib::UnorderedAccessView> m_PostProcessOutputUAV;
-
-    std::shared_ptr<dx12lib::RootSignature>       m_PostProcessRootSignature;
-    std::shared_ptr<dx12lib::PipelineStateObject> m_PostProcessPipelineState;
-#endif
-
 
     D3D12_VIEWPORT m_Viewport;
     D3D12_RECT m_ScissorRect;
@@ -260,7 +236,6 @@ private:
     float m_Yaw;
 
     CameraCB m_cam;
-
 
     int  m_Width;
     int  m_Height;
