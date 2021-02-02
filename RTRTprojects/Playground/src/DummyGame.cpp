@@ -355,7 +355,13 @@ void DummyGame::CreateRayTracingPipeline() {
     // Create the HIT-programs root-signature      
     {
         CD3DX12_DESCRIPTOR_RANGE1 TlvlAcc( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
-                                               D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+
+        CD3DX12_DESCRIPTOR_RANGE1 IdxBuff( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 
+            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 1 );
+
+        CD3DX12_DESCRIPTOR_RANGE1 VertBuff( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 
+            D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 2 );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
@@ -536,8 +542,8 @@ void DummyGame::CreateShaderTable()
     uint32_t shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
     m_ShaderTableEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-    m_ShaderTableEntrySize += sizeof( UINT64 );  // extra 8 bytes (64 bits) for heap pointer to viewers.
-    m_ShaderTableEntrySize = align_to( D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES, m_ShaderTableEntrySize );
+    m_ShaderTableEntrySize += 2*sizeof( UINT64 );  // extra 8 bytes (64 bits) for heap pointer to viewers.
+    m_ShaderTableEntrySize = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
 
     uint32_t shaderBufferSize = m_ShaderTableEntrySize;
     shaderBufferSize          = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
@@ -558,7 +564,7 @@ void DummyGame::CreateShaderTable()
     m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
 
     UINT64 heapUavSrvPtr = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
-    UINT64 cbvDest = cbvDest = m_MissSdrCBs[0]->GetD3D12Resource()->GetGPUVirtualAddress();
+    UINT64 cbvDest = m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
 
     // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
@@ -598,7 +604,7 @@ void DummyGame::CreateShaderTable()
         for (int i = 0; i < 25; ++i) {
             // Primary
             memcpy( pData + ( 2 * i + 0 ) * shaderBufferSize, pStandardHitGrp, shaderIdSize );  // regular closest hit
-            memcpy( pData + ( 2 * i + 0 ) * shaderBufferSize + shaderIdSize, &cbvDest,
+            memcpy( pData + ( 2 * i + 0 ) * shaderBufferSize + shaderIdSize, &heapUavSrvPtr,
                     sizeof( UINT64 ) );  // point to TLAS SRV
 
             // Shadow - secondary
