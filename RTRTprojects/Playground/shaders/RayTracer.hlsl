@@ -24,7 +24,9 @@ cbuffer PerFrameCameraOrigin : register(b0)
 struct RayPayload
 {
     float3 color;
-    uint depth;
+    float3 normal;
+    float depth;
+    uint bounces;
 };
 
 struct ShadowPayLoad
@@ -67,24 +69,26 @@ VertexPosNormalTex GetVertexAttributes(uint geometryIndex, uint primitiveIndex, 
 {
     uint3 triangleIndices = GetIndices(geometryIndex, primitiveIndex);
     uint triangleVertexIndex = 0;
-    float3 position = 0;
-    float3 normal = 0;
-    float3 texCoord = 0;
+    
+    VertexPosNormalTex v;
+    v.position = 0;
+    v.normal = 0;
+    v.texCoord = 0;
     
     for (int i = 0; i < 3; ++i)
     {
         // get byte address 
         triangleVertexIndex = triangleIndices[i] * sizeof(VertexAttributes);
-        position += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.position += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, NORMAL
-        normal += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.normal += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, TANGENT
         triangleVertexIndex += 3 * 4; // check the next float 3, BITANGENT
         triangleVertexIndex += 3 * 4; // check the next float 3, TEXCOORD
-        texCoord += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.texCoord += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
     }
+    v.normal = dot(v.normal, v.normal) == 0 ? float3(0, 0, 0) : v.normal;
     
-    VertexPosNormalTex v = { position, normal, texCoord };
     return v;
 }
 
@@ -173,7 +177,7 @@ void rayGen()
     ray.TMax = 100000;
 
     RayPayload payload;
-    payload.depth = 5;
+    payload.bounces = 5;
     TraceRay(gRtScene, 
         0 /*rayFlags*/, 
         0xFF, 
@@ -183,8 +187,10 @@ void rayGen()
         ray,
         payload
     );
-    float3 col = linearToSrgb(payload.color);
-    gOutput[launchIndex.xy] = float4(payload.color, 1);
+    //float3 col = linearToSrgb(payload.color);
+    //gOutput[launchIndex.xy] = float4(payload.colour, 1);
+    gOutput[launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    //gOutput[launchIndex.xy] = float4(payload.depth / 10000, payload.depth / 10000, payload.depth / 10000, 1);
 }
 
 
@@ -222,20 +228,20 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 L = normalize(float3(0.5, 2.5, -0.5));;
     
     // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
-    ShadowPayLoad shadowPayload = CalcShadowRay(posW, L);
+    ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
 
     float3 reflectedColour = 1;
     
-    if (payload.depth >= 2)
+    if (payload.bounces)
     {
         RayDesc ray;
-        ray.Origin = posW;
+        ray.Origin = v.position;
         ray.Direction = reflect(rayDirW, v.normal);
         ray.TMin = 0.001;
         ray.TMax = 100000;
 
         RayPayload reflPayload;
-        reflPayload.depth = payload.depth - 1;
+        reflPayload.bounces = payload.bounces - 1;
         TraceRay(gRtScene,
             0 /*rayFlags*/,
             0xFF,
@@ -256,10 +262,16 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 phongLightFactor = diffuse * kD * max(dot(v.normal, L), 0);
     
     payload.color = diffuse * phongLightFactor * shadowFactor;
+    payload.normal = v.normal;
+    payload.depth = hitT;
+
 }
 
 [shader("miss")]
 void standardMiss(inout RayPayload payload)
 {
     payload.color = float3(.529,.808,.922);
+    payload.normal = 0.5;
+    payload.depth = 100000;
+
 }

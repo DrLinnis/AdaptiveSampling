@@ -268,7 +268,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs, SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * 4 );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3+3+1+1) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
