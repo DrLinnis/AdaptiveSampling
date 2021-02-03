@@ -32,9 +32,9 @@ public:
     static void CreateBottomLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
                                      dx12lib::Scene* pScene, AccelerationStructure* pDes );
 
-    static void CreateTopLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList, size_t nbrBlas,
-                                  dx12lib::AccelerationBuffer* pBlasList[], uint64_t* pTlasSize,
-                                  AccelerationStructure* pDes, dx12lib::MappableBuffer* pInstanceDescBuffer, bool update = false );
+    static void CreateTopLevelAS( dx12lib::Device* pDevice, dx12lib::CommandList* pCommandList,
+                                uint64_t* pTlasSize, AccelerationStructure* pDes, size_t numInstances,
+                                  dx12lib::MappableBuffer* pInstanceDescBuffer, bool update = false );
 
 
 protected:

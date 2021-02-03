@@ -52,8 +52,8 @@ inline void ThrowIfFailed(HRESULT hr)
     {
         _com_error err(hr);
         OutputDebugString(err.ErrorMessage());
-
-        throw std::exception(err.ErrorMessage());
+        std::string data( err.ErrorMessage() );
+        throw std::exception( data.c_str() );
     }
 }
 

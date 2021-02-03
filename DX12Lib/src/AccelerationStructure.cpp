@@ -82,10 +82,12 @@ void AccelerationBuffer::CreateBottomLevelAS(Device* pDevice,
 
 }
 
-void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommandList, size_t nbrBlas,
-    AccelerationBuffer* pBlasList[],
+void AccelerationBuffer::CreateTopLevelAS(
+    Device* pDevice,
+    CommandList* pCommandList,
     uint64_t* pTlasSize,
     AccelerationStructure* pDes,
+    size_t numInstances,
     MappableBuffer* pInstanceDescBuffer, 
     bool update )
 {
@@ -94,7 +96,7 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.DescsLayout  = D3D12_ELEMENTS_LAYOUT_ARRAY;
     inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-    inputs.NumDescs = 1;
+    inputs.NumDescs      = numInstances;
     inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     inputs.InstanceDescs = pInstanceDescBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
 
@@ -105,13 +107,13 @@ void AccelerationBuffer::CreateTopLevelAS(Device* pDevice, CommandList* pCommand
     if (update) {
         pCommandList->UAVBarrier( pDes->pResult );
     } else {
-        pDes->pScratch = pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-                                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS 
+        pDes->pScratch = pDevice->CreateAccelerationBuffer( info.ScratchDataSizeInBytes, 
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS 
         );
         pDes->pScratch->SetName( L"DXR TLAS Scratch" );
 
-        pDes->pResult = pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 
+        pDes->pResult = pDevice->CreateAccelerationBuffer( info.ResultDataMaxSizeInBytes, 
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 
         );
         pDes->pResult->SetName( L"DXR TLAS" );
 

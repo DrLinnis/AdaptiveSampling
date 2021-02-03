@@ -124,11 +124,18 @@ private:
     
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
+    // mesh count and instance count
+    std::vector<size_t>  m_GeometryCountPerInstance;
+    size_t   m_Instances;
+    size_t   m_TotalGeometryCount;
+
+    size_t m_ShaderTableEntrySize;
+    size_t m_ShadersEntriesPerGeometry;
+    
     uint64_t mTlasSize = 0;
     
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_SphereHitRootSig;
-    std::shared_ptr<dx12lib::RootSignature>             m_PlaneHitRootSig;
+    std::shared_ptr<dx12lib::RootSignature>             m_StdHitRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_EmptyLocalRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_GlobalRootSig;
 
@@ -136,13 +143,11 @@ private:
     
     std::shared_ptr<dx12lib::MappableBuffer>            m_InstanceDescBuffer;
 
-    size_t                                              m_ShaderTableEntrySize = 0;
     std::shared_ptr<dx12lib::MappableBuffer>            m_RaygenShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
     std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
-    std::shared_ptr<dx12lib::MappableBuffer> m_MissSdrCBs[3];
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
 
@@ -163,6 +168,8 @@ private:
     std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
+
+    std::shared_ptr<dx12lib::ShaderTableResourceView> m_RayDummyHeap;
 
     std::shared_ptr<dx12lib::UnorderedAccessView>       m_RayOutputUAV;
     std::shared_ptr<dx12lib::ShaderResourceView>        m_TlasSRV;

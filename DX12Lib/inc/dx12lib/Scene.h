@@ -72,6 +72,11 @@ public:
         return m_RootNode;
     }
 
+    size_t GetGeometryCount() const
+    {
+        return m_Meshes.size();
+    }
+
     /**
      * Get the AABB of the scene.
      * This returns the AABB of the root node of the scene.
@@ -87,6 +92,7 @@ public:
 protected:
     friend class CommandList;
     friend class AccelerationBuffer;
+    friend class ShaderTableResourceView;
 
     /**
      * Load a scene from a file on disc.

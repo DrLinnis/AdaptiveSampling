@@ -765,6 +765,8 @@ std::shared_ptr<Scene> CommandList::CreateScene( const VertexCollection& vertice
 
     auto scene = std::make_shared<Scene>();
     scene->SetRootNode( node );
+    scene->m_Meshes.clear();
+    scene->m_Meshes.push_back( mesh );
 
     return scene;
 }
@@ -785,7 +787,7 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, DirectX::XMFLOAT3 p0
     XMFLOAT3 t[4] = { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 } };
 
     // Indices for the vertex positions.
-    uint16_t i[24] = {
+    uint32_t i[24] = {
         0, 1, 2, 3,  // +X
         4, 5, 6, 7,  // -X
         4, 1, 0, 5,  // +Y
@@ -797,7 +799,7 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, DirectX::XMFLOAT3 p0
     VertexCollection vertices;
     IndexCollection  indices;
 
-    for ( uint16_t f = 0; f < 6; ++f )  // For each face of the cube.
+    for ( uint32_t f = 0; f < 6; ++f )  // For each face of the cube.
     {
         
         // Four vertices per face.
@@ -1366,7 +1368,6 @@ void CommandList::SetComputeDynamicStructuredBuffer( uint32_t slot, size_t numEl
                                                       const void* bufferData )
 {
     size_t bufferSize = numElements * elementSize;
-
     auto heapAllocation = m_UploadBuffer->Allocate( bufferSize, elementSize );
 
     memcpy( heapAllocation.CPU, bufferData, bufferSize );

@@ -14,13 +14,14 @@ namespace dx12lib
 
 class Device;
 class Resource;
-
+class IndexBuffer;
+class VertexBuffer;
+class Scene;
 
 class ShaderTableResourceView
 {
 public:
     
-
     D3D12_GPU_DESCRIPTOR_HANDLE GetGpuDescriptorHandle() const
     {
         return m_SrvUavHeap->GetGPUDescriptorHandleForHeapStart();
@@ -35,7 +36,14 @@ protected:
                              const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
                              const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                              const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
-    ShaderTableResourceView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
+
+    ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
+                             const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
+                             const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv ,
+                             Scene* pMeshes);
+
+    ShaderTableResourceView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv );
 
     virtual ~ShaderTableResourceView() = default;
 
@@ -56,7 +64,14 @@ public:
     : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv, pCbv )
     {}
 
-    MakeShaderTableView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
+    MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource,
+                             const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
+                         const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
+    : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv, pCbv, pMeshes )
+    {}
+
+    MakeShaderTableView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv )
     : ShaderTableResourceView( device, pCbv )
     {}
 

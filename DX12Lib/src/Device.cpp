@@ -590,6 +590,18 @@ std::shared_ptr<ShaderTableResourceView>
     return unorderedAccessView;
 }
 
+std::shared_ptr<ShaderTableResourceView> Device::CreateShaderTableView( const std::shared_ptr<Resource>& resource,
+                                                                        const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
+                                                                        const D3D12_SHADER_RESOURCE_VIEW_DESC*  raySrv,
+                                                                        const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv,
+                                                                        Scene* pMeshes)
+{
+    std::shared_ptr<ShaderTableResourceView> unorderedAccessView =
+        std::make_shared<MakeShaderTableView>( *this, resource, uav, raySrv, pCbv, pMeshes );
+
+    return unorderedAccessView;
+}
+
 std::shared_ptr<ShaderTableResourceView> Device::CreateShaderTableView( const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
 {
     std::shared_ptr<ShaderTableResourceView> unorderedAccessView =
