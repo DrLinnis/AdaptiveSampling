@@ -114,7 +114,7 @@ ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
     RayDesc ray;
     ray.Origin = position;
     ray.Direction = direction;
-    ray.TMin = 0.01;
+    ray.TMin = 0.001;
     ray.TMax = 100000;
     ShadowPayLoad shadowPayload;
     TraceRay(gRtScene,
@@ -173,12 +173,12 @@ void rayGen()
     ray.TMax = 100000;
 
     RayPayload payload;
-    payload.depth = 2;
+    payload.depth = 5;
     TraceRay(gRtScene, 
         0 /*rayFlags*/, 
         0xFF, 
         0 /* ray index*/,
-        payload.depth /* Multiplier for Contribution to hit group index*/,
+        2 /* Multiplier for Contribution to hit group index*/,
         0,
         ray,
         payload
@@ -214,6 +214,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
     
+    VertexPosNormalTex v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
+    
     // Find the world-space hit position
     float3 posW = rayOriginW + hitT * rayDirW;
 
@@ -222,13 +224,33 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
     ShadowPayLoad shadowPayload = CalcShadowRay(posW, L);
 
+    float3 reflectedColour = 1;
+    
+    if (payload.depth >= 2)
+    {
+        RayDesc ray;
+        ray.Origin = posW;
+        ray.Direction = reflect(rayDirW, v.normal);
+        ray.TMin = 0.001;
+        ray.TMax = 100000;
+
+        RayPayload reflPayload;
+        reflPayload.depth = payload.depth - 1;
+        TraceRay(gRtScene,
+            0 /*rayFlags*/,
+            0xFF,
+            0 /* ray index*/,
+            2 /* Multiplier for Contribution to hit group index*/,
+            0,
+            ray,
+            reflPayload
+        );
+        reflectedColour = reflPayload.color;
+    }
     
     float shadowFactor = shadowPayload.hit ? 0.1 : 1.0;
     
-    float3 diffuse = GetDummyColour(GeometryIndex());
-    
-    VertexPosNormalTex v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
-    
+    float3 diffuse = GetDummyColour(GeometryIndex()) + reflectedColour * 0.1;
     
     float kD = 3.0;
     float3 phongLightFactor = diffuse * kD * max(dot(v.normal, L), 0);

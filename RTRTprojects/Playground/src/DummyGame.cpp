@@ -276,8 +276,10 @@ void DummyGame::CreateRayTracingPipeline() {
     ExportAssociation configAssociation( shaderExports, 5, &( subobjects[shaderConfigIndex] ) );
     subobjects[index++] = configAssociation.subobject;  
 
-        // Create the pipeline config
-        PipelineConfig config( 2 ); 
+    const unsigned int bounces = 5;
+
+        // Create the pipeline config, per bounce, one reflection ray and one depth ray
+        PipelineConfig config( bounces * 2 ); 
         subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
