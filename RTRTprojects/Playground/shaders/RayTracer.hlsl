@@ -24,6 +24,7 @@ cbuffer PerFrameCameraOrigin : register(b0)
 struct RayPayload
 {
     float3 color;
+    uint depth;
 };
 
 struct ShadowPayLoad
@@ -49,17 +50,18 @@ struct VertexPosNormalTex
 
 
 // Helper functions
-
 uint3 GetIndices(uint geometryIdx, uint triangleIndex)
 {
     uint indexByteStartAddress = triangleIndex * 3 * 4;
     return indices[geometryIdx].Load3(indexByteStartAddress);
 }
 
+
 float mod(float x, float y)
 {
     return x - y * floor(x / y);
 }
+
 
 VertexPosNormalTex GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
 {
@@ -85,6 +87,7 @@ VertexPosNormalTex GetVertexAttributes(uint geometryIndex, uint primitiveIndex, 
     VertexPosNormalTex v = { position, normal, texCoord };
     return v;
 }
+
 
 float3 GetDummyColour(uint index)
 {
@@ -125,6 +128,7 @@ ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
     );
     return shadowPayload;
 }
+
 
 float3 linearToSrgb(float3 c)
 {
@@ -169,11 +173,12 @@ void rayGen()
     ray.TMax = 100000;
 
     RayPayload payload;
+    payload.depth = 2;
     TraceRay(gRtScene, 
         0 /*rayFlags*/, 
         0xFF, 
         0 /* ray index*/,
-        2 /* Multiplier for Contribution to hit group index*/,
+        payload.depth /* Multiplier for Contribution to hit group index*/,
         0,
         ray,
         payload
