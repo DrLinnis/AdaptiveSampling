@@ -23,13 +23,6 @@ struct VertexAttributes
     float3 texCoord;
 };
 
-struct VertexPosNormalTex
-{
-    float3 position;
-    float3 normal;
-    float3 texCoord;
-};
-
 struct RayMaterialProp
 {
     float4 Diffuse;
@@ -48,7 +41,7 @@ ByteAddressBuffer vertices[] : register(t1, space1);
 
 ByteAddressBuffer GeometryMaterialMap : register(t1, space2);
 
-Texture2D<float4> albedos[] : register(t1, space3);
+Texture2D<float4> diffuseTex[] : register(t1, space3);
 
 // UAV
 RWTexture2D<float4> gOutput : register(u0);
@@ -63,8 +56,6 @@ cbuffer PerFrameCameraOrigin : register(b0)
     
     float2 _padding;
 }
-
-//ConstantBuffer<RayMaterialProp> GeometryMaterialMap[] : register(b1);
 
 
 
@@ -100,28 +91,47 @@ float mod(float x, float y)
 }
 
 
-VertexPosNormalTex GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
+VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
 {
     uint3 triangleIndices = GetIndices(geometryIndex, primitiveIndex);
     uint triangleVertexIndex = 0;
     
-    VertexPosNormalTex v;
+    VertexAttributes v;
     v.position = 0;
     v.normal = 0;
     v.texCoord = 0;
+    v.tangent = 0;
+    v.bitangent = 0;
+    
+    float3 vertPos[3];
+    float3 texels[3];
     
     for (int i = 0; i < 3; ++i)
     {
         // get byte address 
         triangleVertexIndex = triangleIndices[i] * sizeof(VertexAttributes);
-        v.position += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        vertPos[i] = asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex));
+        v.position += vertPos[i] * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, NORMAL
         v.normal += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, TANGENT
+        v.tangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, BITANGENT
+        v.bitangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3, TEXCOORD
-        v.texCoord += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        texels[i] = asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex));
+        v.texCoord += texels[i] * barycentrics[i];
     }
+    
+    float tA = abs((texels[1].x - texels[0].x) * (texels[2].y - texels[0].y) -
+            (texels[2].x - texels[0].x) * (texels[1].y - texels[0].y)
+        );
+    
+    // world space version
+    float pA = length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
+    
+    v.texCoord[2] = 0.5 * log2(tA / pA);
+    
     v.normal = dot(v.normal, v.normal) == 0 ? float3(0, 0, 0) : v.normal;
     
     return v;
@@ -148,18 +158,19 @@ float3 GetDummyColour(uint index)
 }
 
 
-float3 SampleColour(RayMaterialProp mat, float2 uv)
+SamplerState myTextureSampler : register(s0);
+
+float3 SampleColour(RayMaterialProp mat, float3 uvd)
 {
     uint index = mat.DiffuseTextureIdx;
     
     // Temporary ugly sammpling!
-    uint width, height;
-    albedos[index].GetDimensions(width, height);
-    int2 coord = floor(uv * width);
-    coord.x = mod(coord.x, width);
-    coord.y = mod(coord.y, height);
-    return albedos[index].Load(int3(coord, 0)).rgb;
-
+    uint width, height, nbrLevels;
+    diffuseTex[index].GetDimensions(0, width, height, nbrLevels);
+    
+    float depth = uvd[2] + 0.5 * log2(width * height);
+    
+    return diffuseTex[index].SampleLevel( myTextureSampler , uvd.xy, floor(depth)).rgb;
 }
 
 
@@ -182,6 +193,32 @@ ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
     );
     return shadowPayload;
 }
+
+
+RayPayload TracePath(float3 origin, float3 direction, uint bounce)
+{
+    RayPayload reflPayload;
+    // return black if we are too far away
+    if (!bounce)
+    {
+        reflPayload.colour = 0;
+        reflPayload.normal = 0;
+        return reflPayload;
+    }
+    reflPayload.bounces = bounce;
+    
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = direction;
+    ray.TMin = 0.001;
+    ray.TMax = 100000;
+    
+    TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF /*No culling*/, 0 /* ray index*/,
+        2 /* Multiplier for Contribution to hit group index*/, 0, ray, reflPayload
+    );
+    return reflPayload;
+}
+
 
 
 float3 linearToSrgb(float3 c)
@@ -258,7 +295,6 @@ void shadowMiss(inout ShadowPayLoad payload)
 }
 
 
-
 // Standard rays
 [shader("closesthit")] 
 void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
@@ -270,7 +306,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
     
-    VertexPosNormalTex v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
+    RayMaterialProp mat = GetMaterialProp(GeometryIndex());
+    VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
     
     // Find the world-space hit position
     float3 posW = rayOriginW + hitT * rayDirW;
@@ -280,39 +317,17 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
     ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
 
-    float3 reflectedColour = 1;
+    // Path reflected ray
+    RayPayload reflectedRay = TracePath(posW, reflect(rayDirW, v.normal), payload.bounces - 1);
     
-    if (payload.bounces)
-    {
-        RayDesc ray;
-        ray.Origin = v.position;
-        ray.Direction = reflect(rayDirW, v.normal);
-        ray.TMin = 0.001;
-        ray.TMax = 100000;
-
-        RayPayload reflPayload;
-        reflPayload.bounces = payload.bounces - 1;
-        TraceRay(gRtScene,
-            0 /*rayFlags*/,
-            0xFF,
-            0 /* ray index*/,
-            2 /* Multiplier for Contribution to hit group index*/,
-            0,
-            ray,
-            reflPayload
-        );
-        reflectedColour = reflPayload.colour;
-    }
     
-    RayMaterialProp mat = GetMaterialProp(GeometryIndex());
+    float3 reflectedColour = reflectedRay.colour;
     
-
-    
-    float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
-    
+    float shadowFactor = shadowPayload.hit ? 0.1 : 1.0;
+    shadowFactor = 1.0;
     //float3 materialColour = GetDummyColour(GeometryIndex());
-    float3 materialColour = SampleColour(mat, v.texCoord.xy);
-    float3 diffuse = materialColour + reflectedColour * 0.1;
+    float3 materialColour = SampleColour(mat, v.texCoord);
+    float3 diffuse = materialColour * shadowFactor + reflectedColour * 0.0;
     
     float kD = 3.0;
     float3 phongLightFactor = diffuse * kD * max(dot(v.normal, L), 0);
@@ -320,7 +335,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     
     
     
-    payload.colour = diffuse * shadowFactor;
+    payload.colour = diffuse;
     payload.normal = v.normal;
     payload.depth = hitT;
 

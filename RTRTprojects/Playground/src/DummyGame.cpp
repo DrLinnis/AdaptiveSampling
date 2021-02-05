@@ -233,8 +233,10 @@ void DummyGame::CreateRayTracingPipeline() {
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
+        CD3DX12_STATIC_SAMPLER_DESC myTextureSampler( 0 );
+
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 1, &myTextureSampler, rootSignatureFlags );
 
         m_StdHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
