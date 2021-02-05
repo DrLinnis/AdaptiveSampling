@@ -108,25 +108,28 @@ struct alignas( 16 ) MaterialProperties
 struct alignas( 16 ) RayMaterialProp
 {
     RayMaterialProp(
-        const DirectX::XMFLOAT4 diffuse = { 1, 1, 1, 1 },
+        const DirectX::XMFLOAT3 diffuse = { 1, 1, 1 },
         const float indexOfRefraction = 0.0f,
         const int diffuseTextureIdx = -1,
         const int normalTextureIdx = -1,
-        const int specularTextureIdx = -1
+        const int specularTextureIdx = -1,
+        const int maskTextureIdx = -1
     )
         : Diffuse(diffuse)
         , IndexOfReflection(indexOfRefraction)
         , DiffuseTextureIdx(diffuseTextureIdx)
         , NormalTextureIdx(normalTextureIdx)
         , SpecularTextureIdx(specularTextureIdx)
+        , MaskTextureIdx(maskTextureIdx)
     { }
 
-    DirectX::XMFLOAT4 Diffuse;  
-    //------------------------------------ ( 16 bytes )
+    DirectX::XMFLOAT3 Diffuse;  
     float IndexOfReflection;    
+    //------------------------------------ ( 16 bytes )
     unsigned int DiffuseTextureIdx;
     unsigned int NormalTextureIdx;
     unsigned int SpecularTextureIdx;
+    unsigned int MaskTextureIdx;
     //------------------------------------ ( 16 bytes )
     // Total:                              ( 16 * 2 = 32 bytes )
 };

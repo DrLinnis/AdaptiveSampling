@@ -96,6 +96,11 @@ public:
         return nbrSpecularTextures;
     }
 
+    size_t GetMaskTextureCount() const 
+    {
+        return nbrMaskTextures;
+    }
+
     /**
      * Get the AABB of the scene.
      * This returns the AABB of the root node of the scene.
@@ -152,6 +157,7 @@ private:
     size_t nbrDiffuseTextures = 0;
     size_t nbrNormalTextures  = 0;
     size_t nbrSpecularTextures = 0;
+    size_t nbrMaskTextures     = 0;
 
 
 };

@@ -25,23 +25,27 @@ struct VertexAttributes
 
 struct RayMaterialProp
 {
-    float4 Diffuse;
+    float3 Diffuse;
     float IndexOfReflection;
     int DiffuseTextureIdx;
     int NormalTextureIdx;
     int SpecularTextureIdx;
+    int MaskTextureIdx;
 };
 
 
 // SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
 
-ByteAddressBuffer indices[] : register(t1, space0);
-ByteAddressBuffer vertices[] : register(t1, space1);
+ByteAddressBuffer indices[]     : register(t1, space0);
+ByteAddressBuffer vertices[]    : register(t1, space1);
 
 ByteAddressBuffer GeometryMaterialMap : register(t1, space2);
 
-Texture2D<float4> diffuseTex[] : register(t1, space3);
+Texture2D<float4> diffuseTex[]  : register(t1, space3);
+Texture2D<float4> normalsTex[]  : register(t1, space4);
+Texture2D<float4> specularTex[] : register(t1, space5);
+Texture2D<float4> maskTex[]     : register(t1, space6);
 
 // UAV
 RWTexture2D<float4> gOutput : register(u0);
@@ -66,14 +70,15 @@ uint3 GetIndices(uint geometryIdx, uint triangleIndex)
     return indices[geometryIdx].Load3(indexByteStartAddress);
 }
 
+
 RayMaterialProp GetMaterialProp(uint geometryIndex)
 {
     RayMaterialProp result;
     // From Geometry index to int32 location to byte location.
     uint indexByteStartAddress = geometryIndex * sizeof(RayMaterialProp);
     
-        result.Diffuse = asfloat(GeometryMaterialMap.Load4(indexByteStartAddress));
-        indexByteStartAddress += 4 * 4; // add 4 floats to byte counter
+        result.Diffuse = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
+        indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
         result.IndexOfReflection = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
         indexByteStartAddress += 4; // add one float
         result.DiffuseTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
@@ -81,9 +86,12 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
         result.NormalTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
         indexByteStartAddress += 4; // add one int
         result.SpecularTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+        indexByteStartAddress += 4; // add one int
+        result.MaskTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
     
     return result;
 }
+
 
 float mod(float x, float y)
 {
@@ -110,18 +118,28 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     {
         // get byte address 
         triangleVertexIndex = triangleIndices[i] * sizeof(VertexAttributes);
+        
+        // position
         vertPos[i] = asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex));
         v.position += vertPos[i] * barycentrics[i];
-        triangleVertexIndex += 3 * 4; // check the next float 3, NORMAL
+        triangleVertexIndex += 3 * 4; // check the next float 3
+        // normal
         v.normal += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
-        triangleVertexIndex += 3 * 4; // check the next float 3, TANGENT
+        triangleVertexIndex += 3 * 4; // check the next float 3
+        // tangent
         v.tangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
-        triangleVertexIndex += 3 * 4; // check the next float 3, BITANGENT
+        triangleVertexIndex += 3 * 4; // check the next float 3
+        // bitangent
         v.bitangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
-        triangleVertexIndex += 3 * 4; // check the next float 3, TEXCOORD
+        triangleVertexIndex += 3 * 4; // check the next float 3
+        // tex coordinate
         texels[i] = asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex));
         v.texCoord += texels[i] * barycentrics[i];
     }
+    
+    // DEPTH CALCULATION BASED ON:
+    // https://media.contentapi.ea.com/content/dam/ea/seed/presentations/2019-ray-tracing-gems-chapter-20-akenine-moller-et-al.pdf
+    
     
     float tA = abs((texels[1].x - texels[0].x) * (texels[2].y - texels[0].y) -
             (texels[2].x - texels[0].x) * (texels[1].y - texels[0].y)
@@ -132,7 +150,10 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     
     v.texCoord[2] = 0.5 * log2(tA / pA);
     
-    v.normal = dot(v.normal, v.normal) == 0 ? float3(0, 0, 0) : v.normal;
+    // normalize direction vectors
+    v.normal = dot(v.normal, v.normal) == 0 ? float3(0, 0, 0) : normalize(v.normal);
+    v.tangent = dot(v.tangent, v.tangent) == 0 ? float3(0, 0, 0) : normalize(v.tangent);
+    v.bitangent = dot(v.bitangent, v.bitangent) == 0 ? float3(0, 0, 0) : normalize(v.bitangent);
     
     return v;
 }
@@ -158,19 +179,13 @@ float3 GetDummyColour(uint index)
 }
 
 
-SamplerState myTextureSampler : register(s0);
+SamplerState trilinearFilter : register(s0);
+SamplerState pointFilter : register(s1);
 
-float3 SampleColour(RayMaterialProp mat, float3 uvd)
+float3 TriSampleTex(Texture2D<float4> texArr[], uint index, float3 uvd)
 {
-    uint index = mat.DiffuseTextureIdx;
-    
-    // Temporary ugly sammpling!
-    uint width, height, nbrLevels;
-    diffuseTex[index].GetDimensions(0, width, height, nbrLevels);
-    
-    float depth = uvd[2] + 0.5 * log2(width * height);
-    
-    return diffuseTex[index].SampleLevel( myTextureSampler , uvd.xy, floor(depth)).rgb;
+    float depth = uvd[2];
+    return texArr[index].SampleLevel(trilinearFilter, uvd.xy, floor(depth)).rgb;
 }
 
 
@@ -220,7 +235,6 @@ RayPayload TracePath(float3 origin, float3 direction, uint bounce)
 }
 
 
-
 float3 linearToSrgb(float3 c)
 {
     // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
@@ -230,7 +244,6 @@ float3 linearToSrgb(float3 c)
     float3 srgb = 0.662002687 * sq1 + 0.684122060 * sq2 - 0.323583601 * sq3 - 0.0225411470 * c;
     return srgb;
 }
-
 
 
 /* START OF REYGEN SHADER */
@@ -275,9 +288,12 @@ void rayGen()
         payload
     );
     //float3 col = linearToSrgb(payload.colour);
+    float depth = payload.depth / 100000;
+    
+    
     gOutput[launchIndex.xy] = float4(payload.colour, 1);
     //gOutput[launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
-    //gOutput[launchIndex.xy] = float4(payload.depth / 10000, payload.depth / 10000, payload.depth / 10000, 1);
+    //gOutput[launchIndex.xy] = float4(depth, depth, depth, 1);
 }
 
 
@@ -303,41 +319,69 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
+    
+    float3 L = normalize(float3(0.5, 2.5, -0.5));;
+    
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
     
     RayMaterialProp mat = GetMaterialProp(GeometryIndex());
     VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
     
+    // calculate depth
+    uint width, height, nbrLevels;
+    // assumes every texture follows the same size and that each object at least has diffuse texture!
+    diffuseTex[mat.DiffuseTextureIdx].GetDimensions(0, width, height, nbrLevels);
+    
+    // Adjust for lack of w*h in tA term.
+    v.texCoord[2] += 0.5 * log2(width * height); 
+    
+    float3 finalColour = 0;
+    float3 finalNormal = 0;
+    float finalDepth = 0;
+    
     // Find the world-space hit position
     float3 posW = rayOriginW + hitT * rayDirW;
+    
+    // Transparent pixel hit!
+    if (mat.MaskTextureIdx >= 0 && maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x != 1 ) 
+    {
+        // unfortunetly we must continue the ray and reduce depth or we will crash :(
+        RayPayload continouedRay = TracePath(posW, rayDirW, payload.bounces - 1);
+        finalColour = continouedRay.colour;
+        finalNormal = continouedRay.normal;
+        finalDepth = hitT + continouedRay.depth;
+    }
+    else  // We have hit a normal object/pixel
+    {
+        // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
+        ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
 
-    float3 L = normalize(float3(0.5, 2.5, -0.5));;
+        float3 normal = v.normal;
+        if (mat.NormalTextureIdx >= 0)
+        {
+            normal = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord) * 2 - 1;
+            float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
+            normal = mul(TBN, normal);
+        }
+        
+        // Path reflected ray
+        RayPayload reflectedRay = TracePath(posW, reflect(rayDirW, normal), payload.bounces - 1);
     
-    // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
-    ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
-
-    // Path reflected ray
-    RayPayload reflectedRay = TracePath(posW, reflect(rayDirW, v.normal), payload.bounces - 1);
+        float3 reflectedColour = reflectedRay.colour;
     
-    
-    float3 reflectedColour = reflectedRay.colour;
-    
-    float shadowFactor = shadowPayload.hit ? 0.1 : 1.0;
-    shadowFactor = 1.0;
-    //float3 materialColour = GetDummyColour(GeometryIndex());
-    float3 materialColour = SampleColour(mat, v.texCoord);
-    float3 diffuse = materialColour * shadowFactor + reflectedColour * 0.0;
-    
-    float kD = 3.0;
-    float3 phongLightFactor = diffuse * kD * max(dot(v.normal, L), 0);
+        float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
     
     
+        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord);
+        finalColour = materialColour * shadowFactor + reflectedColour * 0.1;
+        finalNormal = normal;
+        finalDepth = hitT;
+    }
     
-    
-    payload.colour = diffuse;
-    payload.normal = v.normal;
-    payload.depth = hitT;
+    payload.colour = finalColour;
+    payload.normal = finalNormal;
+    payload.depth = finalDepth;
 
 }
 

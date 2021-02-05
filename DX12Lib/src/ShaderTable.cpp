@@ -104,7 +104,8 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     auto nbrMeshes     = pMeshes->m_Meshes.size();
     auto nbrMaterials  = pMeshes->m_Materials.size();
 
-    auto nbrTextures = pMeshes->nbrDiffuseTextures; // TODO ADD: + pMeshes->nbrNormalTextures + pMeshes->nbrSpecularTextures;
+    auto nbrTextures = pMeshes->nbrDiffuseTextures + pMeshes->nbrNormalTextures 
+        + pMeshes->nbrSpecularTextures + pMeshes->nbrMaskTextures;
 
     if ( m_Resource )
     {
@@ -205,7 +206,8 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     std::vector<dx12lib::Texture*> _specularTextureList;
     _specularTextureList.resize( pMeshes->nbrSpecularTextures );
 
-   
+    std::vector<dx12lib::Texture*> _maskTextureList;
+    _maskTextureList.resize( pMeshes->nbrMaskTextures );
 
     // define CBV buffer for material list
     {
@@ -216,7 +218,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
         m_MaterialBuffer       = m_Device.CreateMappableBuffer( matListBuffSize );
         m_MaterialBuffer->SetName( L"DXR Geometry Material Map" );
 
-        int diffuseTexIdx = 0, normalTexIdx = 0, specularTexIdx = 0;
+        int diffuseTexIdx = 0, normalTexIdx = 0, specularTexIdx = 0, maskTexIdx = 0;
 
         RayMaterialProp defaultMaterialSettings;
 
@@ -225,7 +227,11 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
             auto mat = pMeshes->m_Meshes[i]->GetMaterial();
 
             matPropList[i]                   = defaultMaterialSettings;
-            matPropList[i].Diffuse           = mat->GetDiffuseColor();
+
+            matPropList[i].Diffuse.x         = mat->GetDiffuseColor().x;
+            matPropList[i].Diffuse.y         = mat->GetDiffuseColor().y;
+            matPropList[i].Diffuse.z         = mat->GetDiffuseColor().z;
+
             matPropList[i].IndexOfReflection = mat->GetIndexOfRefraction();
 
             auto tex = mat->GetTexture( Material::TextureType::Diffuse );
@@ -248,6 +254,14 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
                 matPropList[i].SpecularTextureIdx      = specularTexIdx;
                 _specularTextureList[specularTexIdx++] = tex.get();
             }
+
+            tex = mat->GetTexture( Material::TextureType::Opacity );
+            if ( tex )
+            {
+                matPropList[i].MaskTextureIdx      = maskTexIdx;
+                _maskTextureList[maskTexIdx++] = tex.get();
+            }
+
         }
 
         
@@ -286,6 +300,8 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
         D3D12_SHADER_RESOURCE_VIEW_DESC texCopy = {};
         texCopy.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURE2D;
         texCopy.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        texCopy.Texture2D.MipLevels             = (UINT)-1;
+        texCopy.Texture2D.MostDetailedMip       = 0;
 
         std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> srvTextures;
         srvTextures.resize( nbrTextures );
@@ -298,26 +314,46 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
             srvTextures[idx] = texCopy;
 
             srvTextures[idx].Format = tex->GetD3D12ResourceDesc().Format;
-            srvTextures[idx].Texture2D.MipLevels = (UINT)-1;
-            srvTextures[idx].Texture2D.MostDetailedMip = 0;
 
             d3d12Device->CreateShaderResourceView( tex->GetD3D12Resource().Get(), &srvTextures[idx], heapHandle );
 
             heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
         }
 
-        // TODO::
-        // Create Normal Texture Buffers
         for ( dx12lib::Texture* tex: _normalTextureList )
         {
-            
+            unsigned int idx = texIdx++;
+            srvTextures[idx] = texCopy;
+
+            srvTextures[idx].Format = tex->GetD3D12ResourceDesc().Format;
+
+            d3d12Device->CreateShaderResourceView( tex->GetD3D12Resource().Get(), &srvTextures[idx], heapHandle );
+
+            heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
         }
 
-        // TODO::
-        // Create Specular Texture Buffers
         for ( dx12lib::Texture* tex: _specularTextureList )
         {
-            
+            unsigned int idx = texIdx++;
+            srvTextures[idx] = texCopy;
+
+            srvTextures[idx].Format = tex->GetD3D12ResourceDesc().Format;
+
+            d3d12Device->CreateShaderResourceView( tex->GetD3D12Resource().Get(), &srvTextures[idx], heapHandle );
+
+            heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+        }
+
+        for ( dx12lib::Texture* tex: _maskTextureList )
+        {
+            unsigned int idx = texIdx++;
+            srvTextures[idx] = texCopy;
+
+            srvTextures[idx].Format = tex->GetD3D12ResourceDesc().Format;
+
+            d3d12Device->CreateShaderResourceView( tex->GetD3D12Resource().Get(), &srvTextures[idx], heapHandle );
+
+            heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
         }
     }
 }

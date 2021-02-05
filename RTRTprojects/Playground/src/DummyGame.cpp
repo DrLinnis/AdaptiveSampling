@@ -205,7 +205,7 @@ void DummyGame::CreateRayTracingPipeline() {
     // Create the HIT-programs root-signature      
     {
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[5] = {};
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[8] = {};
         size_t                    rangeIdx = 0;
         size_t                    offset    = 2;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
@@ -227,16 +227,32 @@ void DummyGame::CreateRayTracingPipeline() {
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += m_TotalDiffuseTexCount;
 
+         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalNormalTexCount;
+
+         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalSpecularTexCount;
+
+         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalMaskTexCount;
+
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
         rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
+        CD3DX12_STATIC_SAMPLER_DESC samplers[2];
+        samplers[0].Init( 0 );
+        samplers[1].Init( 1, D3D12_FILTER_MIN_MAG_MIP_POINT );
+
         CD3DX12_STATIC_SAMPLER_DESC myTextureSampler( 0 );
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 1, &myTextureSampler, rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 2, samplers, rootSignatureFlags );
 
         m_StdHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -360,15 +376,29 @@ void DummyGame::CreateAccelerationStructure()
         m_Instances = 1;
         m_GeometryCountPerInstance.resize( m_Instances );
         m_DiffuseTexCountPerInstance.resize( m_Instances );
+        m_NormalTexCountPerInstance.resize( m_Instances );
+        m_SpecularTexCountPerInstance.resize( m_Instances );
+        m_MaskTexCountPerInstance.resize( m_Instances );
+
         m_GeometryCountPerInstance[0] = m_RaySceneMesh->GetGeometryCount();
         m_DiffuseTexCountPerInstance[0] = m_RaySceneMesh->GetDiffuseTextureCount();
+        m_NormalTexCountPerInstance[0]  = m_RaySceneMesh->GetNormalTextureCount();
+        m_SpecularTexCountPerInstance[0] = m_RaySceneMesh->GetSpecularTextureCount();
+        m_MaskTexCountPerInstance[0]     = m_RaySceneMesh->GetMaskTextureCount();
 
         m_TotalGeometryCount = 0;
         m_TotalDiffuseTexCount = 0;
+        m_TotalNormalTexCount  = 0;
+        m_TotalSpecularTexCount = 0;
+        m_TotalMaskTexCount     = 0;
+
         for ( int i = 0; i < m_Instances; ++i )
         {
             m_TotalGeometryCount += m_GeometryCountPerInstance[i];
             m_TotalDiffuseTexCount += m_DiffuseTexCountPerInstance[i];
+            m_TotalNormalTexCount += m_NormalTexCountPerInstance[i];
+            m_TotalSpecularTexCount += m_SpecularTexCountPerInstance[i];
+            m_TotalMaskTexCount += m_MaskTexCountPerInstance[i];
         }
     }
 

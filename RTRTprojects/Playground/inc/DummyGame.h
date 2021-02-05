@@ -129,11 +129,17 @@ private:
     // mesh count and instance count
     std::vector<size_t>  m_GeometryCountPerInstance;
     std::vector<size_t>  m_DiffuseTexCountPerInstance;
+    std::vector<size_t>  m_NormalTexCountPerInstance;
+    std::vector<size_t>  m_SpecularTexCountPerInstance;
+    std::vector<size_t>  m_MaskTexCountPerInstance;
 
     size_t   m_Instances;
 
     size_t   m_TotalGeometryCount;
     size_t   m_TotalDiffuseTexCount;
+    size_t   m_TotalNormalTexCount;
+    size_t   m_TotalSpecularTexCount;
+    size_t   m_TotalMaskTexCount;
 
     size_t m_ShaderTableEntrySize;
     size_t m_ShadersEntriesPerGeometry;

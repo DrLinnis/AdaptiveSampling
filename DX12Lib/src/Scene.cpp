@@ -159,6 +159,8 @@ void Scene::ImportScene( CommandList& commandList, const aiScene& scene, std::fi
             nbrNormalTextures++;
         if ( m->GetTexture( Material::TextureType::Specular ) )
             nbrSpecularTextures++;
+        if ( m->GetTexture( Material::TextureType::Opacity ) )
+            nbrMaskTextures++;
     }
 
     // Import the root node.
@@ -238,6 +240,16 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
         fs::path texturePath( aiTexturePath.C_Str() );
         auto     texture = commandList.LoadTextureFromFile( parentPath / texturePath, true );
         pMaterial->SetTexture( Material::TextureType::Emissive, texture );
+    }
+
+    // Load alpha textures.
+    if ( material.GetTextureCount( aiTextureType_OPACITY ) > 0 &&
+         material.GetTexture( aiTextureType_OPACITY, 0, &aiTexturePath, nullptr, nullptr, &blendFactor,
+                              &aiBlendOperation ) == aiReturn_SUCCESS )
+    {
+        fs::path texturePath( aiTexturePath.C_Str() );
+        auto     texture = commandList.LoadTextureFromFile( parentPath / texturePath, true );
+        pMaterial->SetTexture( Material::TextureType::Opacity, texture );
     }
 
     // Load diffuse textures.
