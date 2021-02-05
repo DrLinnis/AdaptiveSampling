@@ -1,29 +1,9 @@
 
-// SRV
-RaytracingAccelerationStructure gRtScene : register(t0);
-
-ByteAddressBuffer indices[] : register(t1, space0);
-ByteAddressBuffer vertices[] : register(t1, space1);
-
-// UAV
-RWTexture2D<float4> gOutput : register(u0);
-
-// CBV
-cbuffer PerFrameCameraOrigin : register(b0)
-{
-    float4 cameraOrigin;
-    float4 cameraLookAt;
-    float4 cameraLookUp;
-    float2 cameraWinSize;
-    
-    float2 _padding;
-}
-
 
 // PAYLOADS AND STRUCTS
 struct RayPayload
 {
-    float3 color;
+    float3 colour;
     float3 normal;
     float depth;
     uint bounces;
@@ -50,6 +30,43 @@ struct VertexPosNormalTex
     float3 texCoord;
 };
 
+struct RayMaterialProp
+{
+    float4 Diffuse;
+    float IndexOfReflection;
+    int DiffuseTextureIdx;
+    int NormalTextureIdx;
+    int SpecularTextureIdx;
+};
+
+
+// SRV
+RaytracingAccelerationStructure gRtScene : register(t0);
+
+ByteAddressBuffer indices[] : register(t1, space0);
+ByteAddressBuffer vertices[] : register(t1, space1);
+
+ByteAddressBuffer GeometryMaterialMap : register(t1, space2);
+
+Texture2D<float4> albedos[] : register(t1, space3);
+
+// UAV
+RWTexture2D<float4> gOutput : register(u0);
+
+// CBV
+cbuffer PerFrameCameraOrigin : register(b0)
+{
+    float4 cameraOrigin;
+    float4 cameraLookAt;
+    float4 cameraLookUp;
+    float2 cameraWinSize;
+    
+    float2 _padding;
+}
+
+//ConstantBuffer<RayMaterialProp> GeometryMaterialMap[] : register(b1);
+
+
 
 // Helper functions
 uint3 GetIndices(uint geometryIdx, uint triangleIndex)
@@ -58,6 +75,24 @@ uint3 GetIndices(uint geometryIdx, uint triangleIndex)
     return indices[geometryIdx].Load3(indexByteStartAddress);
 }
 
+RayMaterialProp GetMaterialProp(uint geometryIndex)
+{
+    RayMaterialProp result;
+    // From Geometry index to int32 location to byte location.
+    uint indexByteStartAddress = geometryIndex * sizeof(RayMaterialProp);
+    
+        result.Diffuse = asfloat(GeometryMaterialMap.Load4(indexByteStartAddress));
+        indexByteStartAddress += 4 * 4; // add 4 floats to byte counter
+        result.IndexOfReflection = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+        indexByteStartAddress += 4; // add one float
+        result.DiffuseTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+        indexByteStartAddress += 4; // add one int
+        result.NormalTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+        indexByteStartAddress += 4; // add one int
+        result.SpecularTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+    
+    return result;
+}
 
 float mod(float x, float y)
 {
@@ -109,6 +144,21 @@ float3 GetDummyColour(uint index)
     };
     
     return arr[mod(index, 25)];
+
+}
+
+
+float3 SampleColour(RayMaterialProp mat, float2 uv)
+{
+    uint index = mat.DiffuseTextureIdx;
+    
+    // Temporary ugly sammpling!
+    uint width, height;
+    albedos[index].GetDimensions(width, height);
+    int2 coord = floor(uv * width);
+    coord.x = mod(coord.x, width);
+    coord.y = mod(coord.y, height);
+    return albedos[index].Load(int3(coord, 0)).rgb;
 
 }
 
@@ -187,9 +237,9 @@ void rayGen()
         ray,
         payload
     );
-    //float3 col = linearToSrgb(payload.color);
-    //gOutput[launchIndex.xy] = float4(payload.colour, 1);
-    gOutput[launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    //float3 col = linearToSrgb(payload.colour);
+    gOutput[launchIndex.xy] = float4(payload.colour, 1);
+    //gOutput[launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     //gOutput[launchIndex.xy] = float4(payload.depth / 10000, payload.depth / 10000, payload.depth / 10000, 1);
 }
 
@@ -251,17 +301,26 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             ray,
             reflPayload
         );
-        reflectedColour = reflPayload.color;
+        reflectedColour = reflPayload.colour;
     }
     
-    float shadowFactor = shadowPayload.hit ? 0.1 : 1.0;
+    RayMaterialProp mat = GetMaterialProp(GeometryIndex());
     
-    float3 diffuse = GetDummyColour(GeometryIndex()) + reflectedColour * 0.1;
+
+    
+    float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
+    
+    //float3 materialColour = GetDummyColour(GeometryIndex());
+    float3 materialColour = SampleColour(mat, v.texCoord.xy);
+    float3 diffuse = materialColour + reflectedColour * 0.1;
     
     float kD = 3.0;
     float3 phongLightFactor = diffuse * kD * max(dot(v.normal, L), 0);
     
-    payload.color = diffuse * phongLightFactor * shadowFactor;
+    
+    
+    
+    payload.colour = diffuse * shadowFactor;
     payload.normal = v.normal;
     payload.depth = hitT;
 
@@ -270,7 +329,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
 [shader("miss")]
 void standardMiss(inout RayPayload payload)
 {
-    payload.color = float3(.529,.808,.922);
+    payload.colour = float3(.529, .808, .922);
     payload.normal = 0.5;
     payload.depth = 100000;
 

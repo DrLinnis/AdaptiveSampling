@@ -77,6 +77,25 @@ public:
         return m_Meshes.size();
     }
 
+    size_t GetMaterialCount() const 
+    {
+        return m_Materials.size();
+    }
+
+    size_t GetDiffuseTextureCount() const 
+    {
+        return nbrDiffuseTextures;
+    }
+    size_t GetNormalTextureCount() const
+    {
+        return nbrNormalTextures;
+    }
+
+    size_t GetSpecularTextureCount() const
+    {
+        return nbrSpecularTextures;
+    }
+
     /**
      * Get the AABB of the scene.
      * This returns the AABB of the root node of the scene.
@@ -128,5 +147,12 @@ private:
     std::shared_ptr<SceneNode> m_RootNode;
 
     std::wstring m_SceneFile;
+
+    // NEW
+    size_t nbrDiffuseTextures = 0;
+    size_t nbrNormalTextures  = 0;
+    size_t nbrSpecularTextures = 0;
+
+
 };
 }  // namespace dx12lib

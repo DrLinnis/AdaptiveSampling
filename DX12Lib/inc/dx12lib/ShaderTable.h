@@ -17,6 +17,7 @@ class Resource;
 class IndexBuffer;
 class VertexBuffer;
 class Scene;
+class MappableBuffer;
 
 class ShaderTableResourceView
 {
@@ -48,9 +49,12 @@ protected:
     virtual ~ShaderTableResourceView() = default;
 
 private:
+
+
     Device&                                         m_Device;
     std::shared_ptr<Resource>                       m_Resource;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>    m_SrvUavHeap;
+    std::shared_ptr<MappableBuffer>                 m_MaterialBuffer;
 };
 
 

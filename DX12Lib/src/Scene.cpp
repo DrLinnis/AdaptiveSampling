@@ -152,7 +152,14 @@ void Scene::ImportScene( CommandList& commandList, const aiScene& scene, std::fi
         ImportMesh( commandList, *( scene.mMeshes[i] ) );
     }
 
-
+    for (std::shared_ptr<Material> m : m_Materials) {
+        if ( m->GetTexture( Material::TextureType::Diffuse ) )
+            nbrDiffuseTextures++;
+        if ( m->GetTexture( Material::TextureType::Normal ) )
+            nbrNormalTextures++;
+        if ( m->GetTexture( Material::TextureType::Specular ) )
+            nbrSpecularTextures++;
+    }
 
     // Import the root node.
     m_RootNode = ImportSceneNode( commandList, nullptr, scene.mRootNode );

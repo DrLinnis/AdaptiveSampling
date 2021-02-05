@@ -205,16 +205,27 @@ void DummyGame::CreateRayTracingPipeline() {
     // Create the HIT-programs root-signature      
     {
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[3] = {};
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[5] = {};
         size_t                    rangeIdx = 0;
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 2 );
+        size_t                    offset    = 2;
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 1, 0,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, 3 );
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalGeometryCount;
 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 1, 1,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
-                                 3 + m_TotalGeometryCount );
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalGeometryCount;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 2,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += 1;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalDiffuseTexCount, 1, 3,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalDiffuseTexCount;
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
 
@@ -276,10 +287,9 @@ void DummyGame::CreateRayTracingPipeline() {
     ExportAssociation configAssociation( shaderExports, 5, &( subobjects[shaderConfigIndex] ) );
     subobjects[index++] = configAssociation.subobject;  
 
-    const unsigned int bounces = 5;
 
         // Create the pipeline config, per bounce, one reflection ray and one depth ray
-        PipelineConfig config( bounces * 2 ); 
+        PipelineConfig config( m_Bounces * 2 ); 
         subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
@@ -347,12 +357,16 @@ void DummyGame::CreateAccelerationStructure()
     {
         m_Instances = 1;
         m_GeometryCountPerInstance.resize( m_Instances );
+        m_DiffuseTexCountPerInstance.resize( m_Instances );
         m_GeometryCountPerInstance[0] = m_RaySceneMesh->GetGeometryCount();
+        m_DiffuseTexCountPerInstance[0] = m_RaySceneMesh->GetDiffuseTextureCount();
 
         m_TotalGeometryCount = 0;
+        m_TotalDiffuseTexCount = 0;
         for ( int i = 0; i < m_Instances; ++i )
         {
             m_TotalGeometryCount += m_GeometryCountPerInstance[i];
+            m_TotalDiffuseTexCount += m_DiffuseTexCountPerInstance[i];
         }
     }
 

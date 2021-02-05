@@ -40,6 +40,7 @@ namespace dx12lib
 
 class Texture;
 
+
 // clang-format off
 struct alignas( 16 ) MaterialProperties
 {
@@ -102,6 +103,34 @@ struct alignas( 16 ) MaterialProperties
     //------------------------------------ ( 16 bytes )
     // Total:                              ( 16 * 8 = 128 bytes )
 };
+
+
+struct alignas( 16 ) RayMaterialProp
+{
+    RayMaterialProp(
+        const DirectX::XMFLOAT4 diffuse = { 1, 1, 1, 1 },
+        const float indexOfRefraction = 0.0f,
+        const int diffuseTextureIdx = -1,
+        const int normalTextureIdx = -1,
+        const int specularTextureIdx = -1
+    )
+        : Diffuse(diffuse)
+        , IndexOfReflection(indexOfRefraction)
+        , DiffuseTextureIdx(diffuseTextureIdx)
+        , NormalTextureIdx(normalTextureIdx)
+        , SpecularTextureIdx(specularTextureIdx)
+    { }
+
+    DirectX::XMFLOAT4 Diffuse;  
+    //------------------------------------ ( 16 bytes )
+    float IndexOfReflection;    
+    unsigned int DiffuseTextureIdx;
+    unsigned int NormalTextureIdx;
+    unsigned int SpecularTextureIdx;
+    //------------------------------------ ( 16 bytes )
+    // Total:                              ( 16 * 2 = 32 bytes )
+};
+
 // clang-format on
 
 class Material

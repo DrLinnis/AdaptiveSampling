@@ -122,12 +122,18 @@ private:
     // Added tutorial member:
 #if RAY_TRACER
     
+    const unsigned int m_Bounces = 5;
+
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
     // mesh count and instance count
     std::vector<size_t>  m_GeometryCountPerInstance;
+    std::vector<size_t>  m_DiffuseTexCountPerInstance;
+
     size_t   m_Instances;
+
     size_t   m_TotalGeometryCount;
+    size_t   m_TotalDiffuseTexCount;
 
     size_t m_ShaderTableEntrySize;
     size_t m_ShadersEntriesPerGeometry;
@@ -169,7 +175,7 @@ private:
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
 
-    std::shared_ptr<dx12lib::ShaderTableResourceView> m_RayDummyHeap;
+    std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayDummyHeap;
 
     std::shared_ptr<dx12lib::UnorderedAccessView>       m_RayOutputUAV;
     std::shared_ptr<dx12lib::ShaderResourceView>        m_TlasSRV;
