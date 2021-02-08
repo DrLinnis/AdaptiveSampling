@@ -152,9 +152,12 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[3] = {};
         size_t                    rangeIdx           = 0;
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 3 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 4 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                 m_nbrRayRenderTargets );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                 m_nbrRayRenderTargets + 1 );
 
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
@@ -188,7 +191,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[8] = {};
         size_t                    rangeIdx = 0;
-        size_t                    offset    = 4;
+        size_t                    offset    = m_nbrRayRenderTargets + 1;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
@@ -278,7 +281,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs, SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3+3+1+1) );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (4*3 + 2 + 1) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -319,12 +322,12 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     D3D12_RESOURCE_DESC renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1 );
     renderDesc.Format              = backBufferFormat;
     renderDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; 
- 
-
-    m_nbrRayRenderTargets = 3;
 
     auto rayImage = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     rayImage->SetName( L"RayGen diffuse output texture" );
+
+    auto rayAlbedo = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayAlbedo->SetName( L"RayGen albedo output texture" );
 
     auto rayNormals = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     rayNormals->SetName( L"RayGen normal output texture" );
@@ -332,9 +335,22 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto rayDepth = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     rayDepth->SetName( L"RayGen depth output texture" );
 
+    auto rayPos = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayPos->SetName( L"RayGen position output texture" );
+
+    auto rayObjID = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayObjID->SetName( L"RayGen object ID output texture" );
+
+    auto rayMetal = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayMetal->SetName( L"RayGen metalness output texture" );
+
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayDepth );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayAlbedo );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayNormals );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayDepth );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, rayPos );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, rayObjID );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color6, rayMetal );
 
     m_RayCamCB = m_Device->CreateMappableBuffer( 256 );
 
@@ -539,8 +555,6 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    //m_RaySceneMesh = commandList->CreatePlane( 15,15 );
-    //m_RaySceneMesh = commandList->CreateSphere( 15, 16);
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
@@ -592,9 +606,7 @@ void DummyGame::OnResize( ResizeEventArgs& e )
     m_Viewport = CD3DX12_VIEWPORT( 0.0f, 0.0f, static_cast<float>( m_Width ), static_cast<float>( m_Height ) );
 
     m_RenderTarget.Resize( m_Width, m_Height );
-
-    //m_RayOutputResource->Resize( m_Width, m_Height );
-    //m_RayShaderHeap.recrate();
+    //m_RayRenderTarget.Resize( m_Width, m_Height );
 
 }
 
@@ -829,7 +841,7 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    auto outputImage = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
+    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );

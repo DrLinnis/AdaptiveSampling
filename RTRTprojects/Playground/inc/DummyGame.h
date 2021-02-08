@@ -177,7 +177,7 @@ private:
     };
 
     // Tut 6
-    uint32_t        m_nbrRayRenderTargets;
+    const uint32_t        m_nbrRayRenderTargets = 7;
     dx12lib::RenderTarget m_RayRenderTarget;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;

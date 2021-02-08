@@ -5,7 +5,12 @@ struct RayPayload
 {
     float3 colour;
     float3 normal;
-    float depth;
+    float3 position;
+    float3 albedo;
+    
+    float metalness;
+    int object;
+    
     uint bounces;
 };
 
@@ -182,10 +187,10 @@ float3 GetDummyColour(uint index)
 SamplerState trilinearFilter : register(s0);
 SamplerState pointFilter : register(s1);
 
-float3 TriSampleTex(Texture2D<float4> texArr[], uint index, float3 uvd)
+float4 TriSampleTex(Texture2D<float4> texArr[], uint index, float3 uvd)
 {
     float depth = uvd[2];
-    return texArr[index].SampleLevel(trilinearFilter, uvd.xy, floor(depth)).rgb;
+    return texArr[index].SampleLevel(trilinearFilter, uvd.xy, floor(depth));
 }
 
 
@@ -246,6 +251,54 @@ float3 linearToSrgb(float3 c)
 }
 
 
+/* Following three functions generates pattern colour from single index*/
+int3 _getPattern( int index) {
+    int n = (int) pow(index, 1 / 3); // cubic root
+    index -= (n*n*n);
+    int3 p = { n, n, n };
+    if (index == 0) {
+        return p;
+    }
+    index--;
+    int v = index % 3;
+    index = index / 3;
+    if (index < n) {
+        p[v] = index % n;
+        return p;
+    }
+    index -= n;
+    p[v] = index / n;
+    p[++v % 3] = index % n;
+    return p;
+}
+
+int _getElement(int index) {
+    int value = index - 1;
+    int v = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        v = v | (value & 1);
+        v <<= 1;
+        value >>= 1;
+    }
+    v >>= 1;
+    return v & 0xFF;
+}
+
+float3 GenColour(int id)
+{
+    int3 pattern = _getPattern(id);
+    
+    float3 rgb = 0;
+    // Convert from integer [0,255] to float [0,1].
+    rgb.r = (float) _getElement(pattern[0]) / 255; 
+    rgb.g = (float) _getElement(pattern[1]) / 255;
+    rgb.b = (float) _getElement(pattern[2]) / 255;
+    
+    return rgb;
+}
+
+
 /* START OF REYGEN SHADER */
 [shader("raygeneration")]
 void rayGen()
@@ -287,13 +340,19 @@ void rayGen()
         ray,
         payload
     );
-    //float3 col = linearToSrgb(payload.colour);
-    float depth = payload.depth / 10000;
     
+    //float3 col = linearToSrgb(payload.colour);
+    float3 depth = length(cameraOrigin - payload.position) / 10000;
+    float3 metal = payload.metalness;
     
     gOutput[0][launchIndex.xy] = float4(payload.colour, 1);
-    gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
-    gOutput[2][launchIndex.xy] = float4(depth, depth, depth, 1);
+    gOutput[1][launchIndex.xy] = float4(payload.albedo, 1);
+    gOutput[2][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    gOutput[3][launchIndex.xy] = float4(depth, 1);
+    gOutput[4][launchIndex.xy] = float4(payload.position / 1000, 1);
+    gOutput[5][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
+    gOutput[6][launchIndex.xy] = float4(metal, 1);
+
 }
 
 
@@ -338,7 +397,11 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     
     float3 finalColour = 0;
     float3 finalNormal = 0;
-    float finalDepth = 0;
+    float3 finalPos = 0;
+    float3 finalAlbedo = 0;
+    
+    float finalMetalness = 0;
+    int finalObject = 0;
     
     // Find the world-space hit position
     float3 posW = rayOriginW + hitT * rayDirW;
@@ -350,7 +413,11 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         RayPayload continouedRay = TracePath(posW, rayDirW, payload.bounces - 1);
         finalColour = continouedRay.colour;
         finalNormal = continouedRay.normal;
-        finalDepth = hitT + continouedRay.depth;
+        finalPos = continouedRay.position;
+        finalAlbedo = continouedRay.albedo;
+        finalObject = continouedRay.object;
+        finalMetalness = continouedRay.metalness;
+
     }
     else  // We have hit a normal object/pixel
     {
@@ -360,9 +427,16 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float3 normal = v.normal;
         if (mat.NormalTextureIdx >= 0)
         {
-            normal = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord) * 2 - 1;
+            // from [0,1] to [-1, 1]
+            normal = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord).rgb * 2 - 1;
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(TBN, normal);
+        }
+        float spec = 0;
+        if (mat.SpecularTextureIdx >= 0)
+        {
+            float4 sampledValue = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord);
+            spec = sampledValue.r;
         }
         
         // Path reflected ray
@@ -373,23 +447,39 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
     
     
-        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord);
+        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord).rgb;
+        
         finalColour = materialColour * shadowFactor + reflectedColour * 0.1;
         finalNormal = normal;
-        finalDepth = hitT;
+        finalPos = posW;
+        finalAlbedo = materialColour;
+        
+        finalObject = GeometryIndex();
+        finalMetalness = spec;
     }
     
     payload.colour = finalColour;
     payload.normal = finalNormal;
-    payload.depth = finalDepth;
-
+    payload.position = finalPos;
+    payload.albedo = finalAlbedo;
+    
+    payload.metalness = finalMetalness;
+    payload.object = finalObject;
 }
 
 [shader("miss")]
 void standardMiss(inout RayPayload payload)
 {
-    payload.colour = float3(.529, .808, .922);
+    float3 rayDirW = WorldRayDirection();
+    float3 rayOriginW = WorldRayOrigin();
+    
+    // sky normal, depth, and colour
+    payload.colour = float3(.529, .808, .922); 
+    payload.albedo = float3(.529, .808, .922);
     payload.normal = 0.5;
-    payload.depth = 100000;
+    payload.position = rayOriginW + 100000 * rayDirW;
+    
+    payload.metalness = 0;
+    payload.object = -1;
 
 }
