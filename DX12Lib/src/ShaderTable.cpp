@@ -14,6 +14,7 @@
 #include <dx12lib/Material.h>
 #include <dx12lib/MappableBuffer.h>
 #include <dx12lib/Texture.h>
+#include <dx12lib/RenderTarget.h>
 
 using namespace dx12lib;
 
@@ -22,16 +23,15 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
                                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
 : m_Device( device )
-, m_Resource( outputResource )
 {
     assert( pOutputUav || pRayTlasSrv || pCbv );
 
     auto d3d12Device          = m_Device.GetD3D12Device();
-    auto d3d12Resource = m_Resource ? m_Resource->GetD3D12Resource() : nullptr;
+    auto d3d12Resource = outputResource ? outputResource->GetD3D12Resource() : nullptr;
 
-    if ( m_Resource )
+    if ( outputResource )
     {
-        auto d3d12ResourceDesc = m_Resource->GetD3D12ResourceDesc();
+        auto d3d12ResourceDesc = outputResource->GetD3D12ResourceDesc();
 
         // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
         assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
@@ -66,15 +66,6 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const D3D12_CO
     assert( pCbv );
 
     auto d3d12Device   = m_Device.GetD3D12Device();
-    auto d3d12Resource = m_Resource ? m_Resource->GetD3D12Resource() : nullptr;
-
-    if ( m_Resource )
-    {
-        auto d3d12ResourceDesc = m_Resource->GetD3D12ResourceDesc();
-
-        // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
-        assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
-    }
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.NumDescriptors             = 1;
@@ -90,34 +81,40 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const D3D12_CO
 }
 
 
-ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
+ShaderTableResourceView::ShaderTableResourceView( Device& device, 
+                                                  const uint32_t nbrRenderTargets,
+                                                  const RenderTarget*                     pRenderTargets,
                                                   const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
                                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
 : m_Device( device )
-, m_Resource( outputResource )
 {
     assert( pOutputUav || pRayTlasSrv || pCbv );
 
     auto d3d12Device   = m_Device.GetD3D12Device();
-    auto d3d12Resource = m_Resource ? m_Resource->GetD3D12Resource() : nullptr;
     auto nbrMeshes     = pMeshes->m_Meshes.size();
     auto nbrMaterials  = pMeshes->m_Materials.size();
 
     auto nbrTextures = pMeshes->nbrDiffuseTextures + pMeshes->nbrNormalTextures 
         + pMeshes->nbrSpecularTextures + pMeshes->nbrMaskTextures;
 
-    if ( m_Resource )
+    for (int i = 0; i < nbrRenderTargets; ++i) 
     {
-        auto d3d12ResourceDesc = m_Resource->GetD3D12ResourceDesc();
+        AttachmentPoint point           = static_cast<AttachmentPoint>( i );
+        auto            textureResource = pRenderTargets->GetTexture( point );
+        if ( textureResource )
+        {
+            auto d3d12ResourceDesc = textureResource->GetD3D12ResourceDesc();
 
-        // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
-        assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
+            // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
+            assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
+        }
     }
+    
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    // UAV, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = 3 + 2 * nbrMeshes + 1 + nbrTextures;
+    // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
+    desc.NumDescriptors = nbrRenderTargets + 2 + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -128,10 +125,21 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
 
     // ray gen root sig + TLAS
     {
-        d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, heapHandle );
+        // Output targets
+        for ( int i = 0; i < nbrRenderTargets; ++i )
+        {
+            auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
 
-        heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+            d3d12Device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(),
+                nullptr, pOutputUav, heapHandle );
 
+            heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+
+        }
+        
+
+
+        // Per frame buffer - camera info etc
         d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
 
         heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );

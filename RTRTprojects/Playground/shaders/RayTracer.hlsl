@@ -48,7 +48,7 @@ Texture2D<float4> specularTex[] : register(t1, space5);
 Texture2D<float4> maskTex[]     : register(t1, space6);
 
 // UAV
-RWTexture2D<float4> gOutput : register(u0);
+RWTexture2D<float4> gOutput[] : register(u0);
 
 // CBV
 cbuffer PerFrameCameraOrigin : register(b0)
@@ -288,12 +288,12 @@ void rayGen()
         payload
     );
     //float3 col = linearToSrgb(payload.colour);
-    float depth = payload.depth / 100000;
+    float depth = payload.depth / 10000;
     
     
-    gOutput[launchIndex.xy] = float4(payload.colour, 1);
-    //gOutput[launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
-    //gOutput[launchIndex.xy] = float4(depth, depth, depth, 1);
+    gOutput[0][launchIndex.xy] = float4(payload.colour, 1);
+    gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    gOutput[2][launchIndex.xy] = float4(depth, depth, depth, 1);
 }
 
 

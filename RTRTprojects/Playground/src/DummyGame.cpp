@@ -45,25 +45,6 @@ using namespace DirectX;
 #include <algorithm>  // For std::min, std::max, and std::clamp.
 #include <random>
 
-namespace PostProcessingRootParameters
-{
-enum
-{
-    Input,      // Texture2D Output : register( t0 );
-    Output,     // RWTexture2D Output : register( u0 );
-    NumRootParameters
-};
-}
-
-namespace DisplayRootParameters
-{
-enum
-{
-    Textures,   // Texture2D DiffuseTexture : register( t0 );
-    NumRootParameters
-};
-}
-
 DummyGame::Colour::Colour(float r, float g, float b)
     : r(r)
     , g(g)
@@ -171,9 +152,9 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[3] = {};
         size_t                    rangeIdx           = 0;
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 1 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 2 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 3 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 4 );
 
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
@@ -207,7 +188,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[8] = {};
         size_t                    rangeIdx = 0;
-        size_t                    offset    = 2;
+        size_t                    offset    = 4;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
@@ -338,9 +319,22 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     D3D12_RESOURCE_DESC renderDesc = CD3DX12_RESOURCE_DESC::Tex2D( backBufferFormat, m_Width, m_Height, 1, 1 );
     renderDesc.Format              = backBufferFormat;
     renderDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; 
+ 
 
-    m_RayOutputResource = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
-    m_RayOutputResource->SetName( L"RayGen output texture" );
+    m_nbrRayRenderTargets = 3;
+
+    auto rayImage = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayImage->SetName( L"RayGen diffuse output texture" );
+
+    auto rayNormals = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayNormals->SetName( L"RayGen normal output texture" );
+
+    auto rayDepth = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    rayDepth->SetName( L"RayGen depth output texture" );
+
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayDepth );
 
     m_RayCamCB = m_Device->CreateMappableBuffer( 256 );
 
@@ -359,7 +353,8 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     cbvDesc.SizeInBytes                     = 256;
     cbvDesc.BufferLocation                  = m_RayCamCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
-    m_RayShaderHeap = m_Device->CreateShaderTableView( m_RayOutputResource, &uavDesc, &srvTlasDesc, &cbvDesc, m_RaySceneMesh.get() );
+    m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &uavDesc, &srvTlasDesc,
+                                                       &cbvDesc, m_RaySceneMesh.get() );
 }
 
 void DummyGame::CreateAccelerationStructure() 
@@ -634,11 +629,8 @@ void DummyGame::UnloadContent()
     m_MissShaderTable.reset();
     m_HitShaderTable.reset();
 
-    m_RayOutputResource.reset();
+    m_RayRenderTarget.Reset();
     m_RayShaderHeap.reset();
-
-    m_RayOutputUAV.reset();
-    m_TlasSRV.reset();
 
 #endif
 
@@ -772,7 +764,12 @@ void DummyGame::OnRender()
     */
 #if RAY_TRACER
     {
-        commandList->TransitionBarrier( m_RayOutputResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+        for (uint32_t i = 0; i < m_nbrRayRenderTargets; ++i) 
+        {
+            AttachmentPoint point    = static_cast<AttachmentPoint>( i );
+            auto            resource = m_RayRenderTarget.GetTexture( point );
+            commandList->TransitionBarrier( resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+        }
 
 #if UPDATE_TRANSFORMS
         dx12lib::AccelerationBuffer* blasList[] = { m_BLAS_plane.get(), m_BLAS_sphere.get() };
@@ -819,17 +816,21 @@ void DummyGame::OnRender()
         // Dispatch Rays
         commandList->DispatchRays( &raytraceDesc );
 
-        commandList->TransitionBarrier( m_RayOutputResource, D3D12_RESOURCE_STATE_COPY_SOURCE );
+        for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+        {
+            auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+            commandList->TransitionBarrier( resource, D3D12_RESOURCE_STATE_COPY_SOURCE );
+        }
 
     }
     #endif
-    
     
     auto& swapChainRT         = m_SwapChain->GetRenderTarget();
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    commandList->CopyResource( swapChainBackBuffer, m_RayOutputResource );
+    auto outputImage = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
+    commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 #endif

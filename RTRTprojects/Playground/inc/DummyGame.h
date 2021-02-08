@@ -177,14 +177,11 @@ private:
     };
 
     // Tut 6
-    std::shared_ptr<dx12lib::Texture>                   m_RayOutputResource;
+    uint32_t        m_nbrRayRenderTargets;
+    dx12lib::RenderTarget m_RayRenderTarget;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
 
-    std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayDummyHeap;
-
-    std::shared_ptr<dx12lib::UnorderedAccessView>       m_RayOutputUAV;
-    std::shared_ptr<dx12lib::ShaderResourceView>        m_TlasSRV;
 
     // new helper functions
     

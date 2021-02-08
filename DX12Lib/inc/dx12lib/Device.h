@@ -214,7 +214,8 @@ public:
 
     std::shared_ptr<ShaderTableResourceView> CreateShaderTableView( const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
 
-    std::shared_ptr<ShaderTableResourceView> CreateShaderTableView( const std::shared_ptr<Resource>&        resource,
+    std::shared_ptr<ShaderTableResourceView> CreateShaderTableView( const uint32_t      nbrRenderTargets,
+                                                                    const RenderTarget*        pRenderTarget,
                                                                     const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav,
                                                                     const D3D12_SHADER_RESOURCE_VIEW_DESC*  raySrv,
                                                                     const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv,
