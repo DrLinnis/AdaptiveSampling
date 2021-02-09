@@ -9,6 +9,20 @@ shaders and RTRT.
 
     
 ### Meetings:
+##### Meeting notes 9/2:
+---
+To solve normal-maps mip-map approximation done using averaging, use lean mapping
+instead. But regular mipmaps is good enough for now.
+    https://www.csee.umbc.edu/~olano/papers/lean/
+    
+When calculating the hit position, of choosing to either use the interpolated value
+or the generated ray and then calculate the hit position, both should be equivalent.
+
+In terms of texture filtering, the texture filtering done by Ewins et al. is good enough. 
+
+In PBR shading, the specular maps can be used to regulate the shininess, whilst trying
+out default values for the other materials. 
+
 ##### Meeting notes 2/2:
 ---
 Aim for some sort of model moving about in the scene, linear interpolation is enough.
