@@ -85,6 +85,7 @@ target_link_libraries( ${TARGET_NAME}
     dxgi.lib
     dxguid.lib
     d3dcompiler.lib
+    "-Wl,--stack,10000000"
 )
 
 # Set debug database to enable the "Edit and Continue" feature.

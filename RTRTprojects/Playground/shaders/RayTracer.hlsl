@@ -164,25 +164,6 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
 }
 
 
-float3 GetDummyColour(uint index)
-{
-    const float3 arr[25] =
-    {
-        float3(0.8308, 0.5853, 0.5497), float3(0.9172, 0.2858, 0.7572), float3(0.7537, 0.3804, 0.5678)
-        , float3(0.0759, 0.0540, 0.5308), float3(0.7792, 0.9340, 0.1299), float3(0.5688, 0.4694, 0.0119)
-        , float3(0.3371, 0.1622, 0.7943), float3(0.3112, 0.5285, 0.1656), float3(0.6020, 0.2630, 0.6541)
-        , float3(0.6892, 0.7482, 0.4505), float3(0.0838, 0.2290, 0.9133), float3(0.1524, 0.8258, 0.5383)
-        , float3(0.9961, 0.0782, 0.4427), float3(0.1067, 0.9619, 0.0046), float3(0.7749, 0.8173, 0.8687)
-        , float3(0.0844, 0.3998, 0.2599), float3(0.8001, 0.4314, 0.9106), float3(0.1818, 0.2638, 0.1455)
-        , float3(0.1361, 0.8693, 0.5797), float3(0.5499, 0.1450, 0.8530), float3(0.6221, 0.3510, 0.5132)
-        , float3(0.4018, 0.0760, 0.2399), float3(0.1233, 0.1839, 0.2400), float3(0.4173, 0.0497, 0.9027)
-        , float3(0.9448, 0.4909, 0.4893)
-    };
-    
-    return arr[mod(index, 25)];
-
-}
-
 
 SamplerState trilinearFilter : register(s0);
 SamplerState pointFilter : register(s1);
@@ -345,7 +326,7 @@ void rayGen()
     float3 depth = length(cameraOrigin - payload.position) / 10000;
     float3 metal = payload.metalness;
     
-    gOutput[0][launchIndex.xy] = float4(payload.colour, 1);
+    gOutput[0][launchIndex.xy] = float4(linearToSrgb(payload.colour), 1);
     gOutput[1][launchIndex.xy] = float4(payload.albedo, 1);
     gOutput[2][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[3][launchIndex.xy] = float4(depth, 1);

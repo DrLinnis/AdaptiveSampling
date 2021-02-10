@@ -12,6 +12,7 @@
 #include <dx12lib/Visitor.h>
 #include <dx12lib/AccelerationStructure.h>
 
+
 using namespace dx12lib;
 
 // A progress handler for Assimp
@@ -152,15 +153,28 @@ void Scene::ImportScene( CommandList& commandList, const aiScene& scene, std::fi
         ImportMesh( commandList, *( scene.mMeshes[i] ) );
     }
 
+    _diffuse.clear();
+    _normal.clear();
+    _specular.clear();
+    _opacity.clear();
+
     for (std::shared_ptr<Material> m : m_Materials) {
-        if ( m->GetTexture( Material::TextureType::Diffuse ) )
-            nbrDiffuseTextures++;
-        if ( m->GetTexture( Material::TextureType::Normal ) )
-            nbrNormalTextures++;
-        if ( m->GetTexture( Material::TextureType::Specular ) )
-            nbrSpecularTextures++;
-        if ( m->GetTexture( Material::TextureType::Opacity ) )
-            nbrMaskTextures++;
+
+        auto tex = m->GetTexture( Material::TextureType::Diffuse );
+        if ( tex )
+            _diffuse.insert(tex.get());
+
+        tex = m->GetTexture( Material::TextureType::Normal );
+        if ( tex )
+            _normal.insert( tex.get() );
+
+        tex = m->GetTexture( Material::TextureType::Specular );
+        if ( tex )
+            _specular.insert( tex.get() );
+
+        tex = m->GetTexture( Material::TextureType::Opacity );
+        if ( tex )
+            _opacity.insert( tex.get() );
     }
 
     // Import the root node.

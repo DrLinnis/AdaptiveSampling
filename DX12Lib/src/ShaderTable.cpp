@@ -3,6 +3,7 @@
 #include <dx12lib/ShaderTable.h>
 
 #include <vector>
+#include <algorithm>
 
 #include <dx12lib/Device.h>
 #include <dx12lib/Resource.h>
@@ -95,8 +96,8 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     auto nbrMeshes     = pMeshes->m_Meshes.size();
     auto nbrMaterials  = pMeshes->m_Materials.size();
 
-    auto nbrTextures = pMeshes->nbrDiffuseTextures + pMeshes->nbrNormalTextures 
-        + pMeshes->nbrSpecularTextures + pMeshes->nbrMaskTextures;
+    auto nbrTextures = pMeshes->GetDiffuseTextureCount() + pMeshes->GetNormalTextureCount() 
+        + pMeshes->GetSpecularTextureCount() + pMeshes->GetMaskTextureCount();
 
     for (int i = 0; i < nbrRenderTargets; ++i) 
     {
@@ -206,16 +207,20 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     // define lists of diffuse, normal, and specular textures
     // used for material propert list AND texture SRV
     std::vector<dx12lib::Texture*> _diffuseTextureList;
-    _diffuseTextureList.resize( pMeshes->nbrDiffuseTextures );
+    _diffuseTextureList.resize( pMeshes->GetDiffuseTextureCount() );
+    std::copy( pMeshes->_diffuse.begin(), pMeshes->_diffuse.end(), _diffuseTextureList.begin() );
 
     std::vector<dx12lib::Texture*> _normalTextureList;
-    _normalTextureList.resize( pMeshes->nbrNormalTextures );
+    _normalTextureList.resize( pMeshes->GetNormalTextureCount() );
+    std::copy( pMeshes->_normal.begin(), pMeshes->_normal.end(), _normalTextureList.begin() );
 
     std::vector<dx12lib::Texture*> _specularTextureList;
-    _specularTextureList.resize( pMeshes->nbrSpecularTextures );
+    _specularTextureList.resize( pMeshes->GetSpecularTextureCount() );
+    std::copy( pMeshes->_specular.begin(), pMeshes->_specular.end(), _specularTextureList.begin() );
 
     std::vector<dx12lib::Texture*> _maskTextureList;
-    _maskTextureList.resize( pMeshes->nbrMaskTextures );
+    _maskTextureList.resize( pMeshes->GetMaskTextureCount() );
+    std::copy( pMeshes->_opacity.begin(), pMeshes->_opacity.end(), _maskTextureList.begin() );
 
     // define CBV buffer for material list
     {
@@ -226,13 +231,14 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
         m_MaterialBuffer       = m_Device.CreateMappableBuffer( matListBuffSize );
         m_MaterialBuffer->SetName( L"DXR Geometry Material Map" );
 
-        int diffuseTexIdx = 0, normalTexIdx = 0, specularTexIdx = 0, maskTexIdx = 0;
-
         RayMaterialProp defaultMaterialSettings;
 
         for ( int i = 0; i < nbrMeshes; ++i )
         {
             auto mat = pMeshes->m_Meshes[i]->GetMaterial();
+
+            if ( i >= 247 )
+                int j = 0;
 
             matPropList[i]                   = defaultMaterialSettings;
 
@@ -245,29 +251,33 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
             auto tex = mat->GetTexture( Material::TextureType::Diffuse );
             if ( tex )
             {
-                matPropList[i].DiffuseTextureIdx     = diffuseTexIdx;
-                _diffuseTextureList[diffuseTexIdx++] = tex.get();
+                std::vector<dx12lib::Texture*>::iterator itr =
+                    std::find( _diffuseTextureList.begin(), _diffuseTextureList.end(), tex.get() );
+                matPropList[i].DiffuseTextureIdx = std::distance( _diffuseTextureList.begin(), itr );
             }
 
             tex = mat->GetTexture( Material::TextureType::Normal );
             if ( tex )
             {
-                matPropList[i].NormalTextureIdx    = normalTexIdx;
-                _normalTextureList[normalTexIdx++] = tex.get();
+                std::vector<dx12lib::Texture*>::iterator itr =
+                    std::find( _normalTextureList.begin(), _normalTextureList.end(), tex.get() );
+                matPropList[i].NormalTextureIdx = std::distance( _normalTextureList.begin(), itr );
             }
 
             tex = mat->GetTexture( Material::TextureType::Specular );
             if ( tex )
             {
-                matPropList[i].SpecularTextureIdx      = specularTexIdx;
-                _specularTextureList[specularTexIdx++] = tex.get();
+                std::vector<dx12lib::Texture*>::iterator itr =
+                    std::find( _specularTextureList.begin(), _specularTextureList.end(), tex.get() );
+                matPropList[i].SpecularTextureIdx = std::distance( _specularTextureList.begin(), itr );
             }
 
             tex = mat->GetTexture( Material::TextureType::Opacity );
             if ( tex )
             {
-                matPropList[i].MaskTextureIdx      = maskTexIdx;
-                _maskTextureList[maskTexIdx++] = tex.get();
+                std::vector<dx12lib::Texture*>::iterator itr =
+                    std::find( _maskTextureList.begin(), _maskTextureList.end(), tex.get() );
+                matPropList[i].MaskTextureIdx = std::distance( _maskTextureList.begin(), itr );
             }
 
         }

@@ -188,8 +188,18 @@ void DummyGame::CreateRayTracingPipeline() {
 
     // Create the HIT-programs root-signature      
     {
+        std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
+        // TLAS + Idx + Vert + MatProp + Diffuse
+        size_t rangeSize = 5;
+        if ( m_TotalNormalTexCount >= 1 )
+            rangeSize += 1;
+        if ( m_TotalSpecularTexCount >= 1 )
+            rangeSize += 1;
+        if ( m_TotalMaskTexCount >= 0 )
+            rangeSize += 1;
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[8] = {};
+        ranges.resize( rangeSize );
+
         size_t                    rangeIdx = 0;
         size_t                    offset    = m_nbrRayRenderTargets + 1;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
@@ -211,21 +221,32 @@ void DummyGame::CreateRayTracingPipeline() {
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += m_TotalDiffuseTexCount;
 
-         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalNormalTexCount;
-
-         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalSpecularTexCount;
-
-         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalMaskTexCount;
+        if ( m_TotalNormalTexCount >= 1 ) {
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
+                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+            offset += m_TotalNormalTexCount;
+        }
+         
+        if (m_TotalSpecularTexCount >= 1) {
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
+                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+            offset += m_TotalSpecularTexCount;
+        }
+         
+        if ( m_TotalMaskTexCount >= 1 ) {
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
+                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+            offset += m_TotalMaskTexCount;
+        }
+        else
+        {
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 6,
+                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        }
+         
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-
-        rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges );
+        rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges.data() );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
@@ -555,11 +576,11 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" );
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" );
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;

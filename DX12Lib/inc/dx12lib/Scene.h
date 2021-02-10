@@ -35,6 +35,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 
@@ -52,6 +53,7 @@ class Mesh;
 class Material;
 class Visitor;
 class AccelerationStructure;
+class Texture;
 
 class Scene
 {
@@ -84,21 +86,21 @@ public:
 
     size_t GetDiffuseTextureCount() const 
     {
-        return nbrDiffuseTextures;
+        return _diffuse.size();
     }
     size_t GetNormalTextureCount() const
     {
-        return nbrNormalTextures;
+        return _normal.size();
     }
 
     size_t GetSpecularTextureCount() const
     {
-        return nbrSpecularTextures;
+        return _specular.size();
     }
 
     size_t GetMaskTextureCount() const 
     {
-        return nbrMaskTextures;
+        return _opacity.size();
     }
 
     /**
@@ -154,10 +156,10 @@ private:
     std::wstring m_SceneFile;
 
     // NEW
-    size_t nbrDiffuseTextures = 0;
-    size_t nbrNormalTextures  = 0;
-    size_t nbrSpecularTextures = 0;
-    size_t nbrMaskTextures     = 0;
+    std::set<dx12lib::Texture*> _diffuse;
+    std::set<dx12lib::Texture*> _normal;
+    std::set<dx12lib::Texture*> _specular;
+    std::set<dx12lib::Texture*> _opacity;
 
 
 };
