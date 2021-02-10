@@ -231,7 +231,8 @@ public:
      */
     std::shared_ptr<Scene>
         LoadSceneFromFile( const std::wstring&                 fileName,
-                           const std::function<bool( float )>& loadingProgres = std::function<bool( float )>() );
+                           const float scale = 1.0, 
+                           const std::function<bool( float )>& loadingProgres = std::function<bool( float )>());
 
     /**
      * Load a scene from a string.

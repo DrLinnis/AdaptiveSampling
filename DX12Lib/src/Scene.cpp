@@ -179,6 +179,7 @@ void Scene::ImportScene( CommandList& commandList, const aiScene& scene, std::fi
 
     // Import the root node.
     m_RootNode = ImportSceneNode( commandList, nullptr, scene.mRootNode );
+
 }
 
 void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material, std::filesystem::path parentPath )

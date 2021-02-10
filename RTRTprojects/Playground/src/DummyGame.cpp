@@ -447,7 +447,7 @@ void DummyGame::CreateAccelerationStructure()
             pInstDesc[0].InstanceID                              = 0;
             pInstDesc[0].InstanceContributionToHitGroupIndex     = 0;
             pInstDesc[0].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            pInstDesc[0].Transform[0][0] = pInstDesc[0].Transform[1][1] = pInstDesc[0].Transform[2][2] = 1;
+            pInstDesc[0].Transform[0][0] = pInstDesc[0].Transform[1][1] = pInstDesc[0].Transform[2][2] = m_RaySceneMesh->GetSceneScale();
             // select the BLAS we build on.
             pInstDesc[0].AccelerationStructure = blasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
             pInstDesc[0].InstanceMask          = 0xFF;
@@ -580,7 +580,7 @@ bool DummyGame::LoadContent()
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" );
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" );
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -781,6 +781,12 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     {
         ImGui::ShowDemoWindow( &showDemoWindow );
     }
+    else if (ImGui::Begin( "Speed slider" ))// not demo window
+    {
+        ImGui::SliderFloat( "Speed", &speed, 1, 1000 );
+
+        ImGui::End();
+    }
 
     m_GUI->Render( commandList, renderTarget );
 }
@@ -930,9 +936,6 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
         case KeyCode::Space:
             m_Up = 1.0f;
             break;
-        case KeyCode::ControlKey:
-            speed = 300.0f;
-            break;
         }
     }
 }
@@ -971,9 +974,6 @@ void DummyGame::OnKeyReleased( KeyEventArgs& e )
             break;
         case KeyCode::Space:
             m_Up = 0.0f;
-            break;
-        case KeyCode::ControlKey:
-            speed = 100.0f;
             break;
         }
     }

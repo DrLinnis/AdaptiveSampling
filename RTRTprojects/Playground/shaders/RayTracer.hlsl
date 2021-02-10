@@ -402,6 +402,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     else  // We have hit a normal object/pixel
     {
+        
+        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord).rgb;
+        
         // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
         ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
 
@@ -426,9 +429,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float3 reflectedColour = reflectedRay.colour;
     
         float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
-    
-    
-        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord).rgb;
         
         finalColour = materialColour * shadowFactor + reflectedColour * 0.1;
         finalNormal = normal;

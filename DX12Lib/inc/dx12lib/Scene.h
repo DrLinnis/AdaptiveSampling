@@ -58,7 +58,9 @@ class Texture;
 class Scene
 {
 public:
-    Scene()  = default;
+    Scene( float scale = 1.0f )
+    : _sceneScale( scale )
+    { }
     ~Scene() = default;
 
     void BuildBottomLevelAccelerationStructure( dx12lib::Device* pDevice, 
@@ -74,6 +76,7 @@ public:
         return m_RootNode;
     }
 
+    /* Geometry and material counts */
     size_t GetGeometryCount() const
     {
         return m_Meshes.size();
@@ -84,6 +87,7 @@ public:
         return m_Materials.size();
     }
 
+    /* Texture counts */
     size_t GetDiffuseTextureCount() const 
     {
         return _diffuse.size();
@@ -101,6 +105,10 @@ public:
     size_t GetMaskTextureCount() const 
     {
         return _opacity.size();
+    }
+
+    float GetSceneScale() const {
+        return _sceneScale;
     }
 
     /**
@@ -161,6 +169,8 @@ private:
     std::set<dx12lib::Texture*> _specular;
     std::set<dx12lib::Texture*> _opacity;
 
+    
+    float _sceneScale = 1.0;
 
 };
 }  // namespace dx12lib

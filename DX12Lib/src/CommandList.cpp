@@ -720,9 +720,10 @@ void CommandList::PanoToCubemap( const std::shared_ptr<Texture>& cubemapTexture,
 }
 
 std::shared_ptr<Scene> CommandList::LoadSceneFromFile( const std::wstring&                 fileName,
+                                                       const float                         scale,
                                                        const std::function<bool( float )>& loadingProgress )
 {
-    auto scene = std::make_shared<Scene>();
+    auto scene = std::make_shared<Scene>( scale );
 
     if ( scene->LoadSceneFromFile( *this, fileName, loadingProgress ) )
     {
