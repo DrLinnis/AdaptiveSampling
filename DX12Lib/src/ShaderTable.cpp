@@ -237,9 +237,6 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
         {
             auto mat = pMeshes->m_Meshes[i]->GetMaterial();
 
-            if ( i >= 247 )
-                int j = 0;
-
             matPropList[i]                   = defaultMaterialSettings;
 
             matPropList[i].Diffuse.x         = mat->GetDiffuseColor().x;

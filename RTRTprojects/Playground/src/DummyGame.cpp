@@ -190,13 +190,7 @@ void DummyGame::CreateRayTracingPipeline() {
     {
         std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
         // TLAS + Idx + Vert + MatProp + Diffuse
-        size_t rangeSize = 5;
-        if ( m_TotalNormalTexCount >= 1 )
-            rangeSize += 1;
-        if ( m_TotalSpecularTexCount >= 1 )
-            rangeSize += 1;
-        if ( m_TotalMaskTexCount >= 0 )
-            rangeSize += 1;
+        size_t rangeSize = 8;
 
         ranges.resize( rangeSize );
 
@@ -221,32 +215,22 @@ void DummyGame::CreateRayTracingPipeline() {
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += m_TotalDiffuseTexCount;
 
-        if ( m_TotalNormalTexCount >= 1 ) {
-            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
-                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-            offset += m_TotalNormalTexCount;
-        }
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
+                                    D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalNormalTexCount;
          
-        if (m_TotalSpecularTexCount >= 1) {
-            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
-                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-            offset += m_TotalSpecularTexCount;
-        }
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
+                                    D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalSpecularTexCount;
          
-        if ( m_TotalMaskTexCount >= 1 ) {
-            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
-                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-            offset += m_TotalMaskTexCount;
-        }
-        else
-        {
-            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 6,
-                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        }
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
+                                    D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += m_TotalMaskTexCount;
          
 
-        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+        CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
         rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges.data() );
+        rayRootParams[1].InitAsConstantBufferView( 1 ); // 
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
@@ -257,7 +241,7 @@ void DummyGame::CreateRayTracingPipeline() {
         CD3DX12_STATIC_SAMPLER_DESC myTextureSampler( 0 );
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 2, samplers, rootSignatureFlags );
+        rootSignatureDescription.Init_1_1( 2, rayRootParams, 2, samplers, rootSignatureFlags );
 
         m_StdHitRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -394,6 +378,25 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
                                                        &cbvDesc, m_RaySceneMesh.get() );
 }
 
+void FillTransformMatrix( FLOAT pDest[3][4], InstanceTransforms* pTrans) 
+{
+    pDest[0][0] = pTrans->RS._11;
+    pDest[1][0] = pTrans->RS._21;
+    pDest[2][0] = pTrans->RS._31;
+
+    pDest[0][1] = pTrans->RS._12;
+    pDest[1][1] = pTrans->RS._22;
+    pDest[2][1] = pTrans->RS._32;
+
+    pDest[0][2] = pTrans->RS._13;
+    pDest[1][2] = pTrans->RS._23;
+    pDest[2][2] = pTrans->RS._33;
+
+    pDest[0][3] = pTrans->translate.x;
+    pDest[1][3] = pTrans->translate.y;
+    pDest[2][3] = pTrans->translate.z;
+}
+
 void DummyGame::CreateAccelerationStructure() 
 {
 
@@ -406,6 +409,9 @@ void DummyGame::CreateAccelerationStructure()
     // Init based on acceleration structure
     {
         m_Instances = 1;
+
+        m_InstanceTransforms.resize( m_Instances );
+
         m_GeometryCountPerInstance.resize( m_Instances );
         m_DiffuseTexCountPerInstance.resize( m_Instances );
         m_NormalTexCountPerInstance.resize( m_Instances );
@@ -431,7 +437,12 @@ void DummyGame::CreateAccelerationStructure()
             m_TotalNormalTexCount += m_NormalTexCountPerInstance[i];
             m_TotalSpecularTexCount += m_SpecularTexCountPerInstance[i];
             m_TotalMaskTexCount += m_MaskTexCountPerInstance[i];
+
+            float scale             = m_RaySceneMesh->GetSceneScale();
+
+            m_InstanceTransforms[0] = InstanceTransforms( XMFLOAT3( scale, scale, scale ) );
         }
+
     }
 
     // Create instances
@@ -447,7 +458,10 @@ void DummyGame::CreateAccelerationStructure()
             pInstDesc[0].InstanceID                              = 0;
             pInstDesc[0].InstanceContributionToHitGroupIndex     = 0;
             pInstDesc[0].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            pInstDesc[0].Transform[0][0] = pInstDesc[0].Transform[1][1] = pInstDesc[0].Transform[2][2] = m_RaySceneMesh->GetSceneScale();
+
+            FillTransformMatrix( pInstDesc[0].Transform, &m_InstanceTransforms[0] );
+           
+
             // select the BLAS we build on.
             pInstDesc[0].AccelerationStructure = blasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
             pInstDesc[0].InstanceMask          = 0xFF;
@@ -468,7 +482,19 @@ void DummyGame::CreateAccelerationStructure()
 
 void DummyGame::CreateConstantBuffer() 
 {
-    // nothing done here atm :(
+    m_InstanceTransformResources = m_Device->CreateMappableBuffer( sizeof( InstanceTransforms ) );
+    void* pData;
+    ThrowIfFailed( m_InstanceTransformResources->Map( &pData ) );
+    {
+        InstanceTransforms transposedInstTrans = m_InstanceTransforms[0];
+        
+        XMStoreFloat4x4( &transposedInstTrans.RS, XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.RS ) ) );
+        XMStoreFloat4x4( &transposedInstTrans.normal_RS, XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.normal_RS ) ) );
+
+        memcpy( pData, &transposedInstTrans, sizeof( InstanceTransforms ) );
+    }
+    m_InstanceTransformResources->Unmap();
+
 }
 
 void DummyGame::CreateShaderTable()
@@ -476,7 +502,7 @@ void DummyGame::CreateShaderTable()
     uint32_t shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
     m_ShaderTableEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-    m_ShaderTableEntrySize += sizeof( UINT64 );  // extra 8 bytes (64 bits) for heap pointer to viewers.
+    m_ShaderTableEntrySize += 2 * sizeof( UINT64 );  // extra 8 bytes (64 bits) for heap pointer to viewers.
     m_ShaderTableEntrySize = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
 
     uint32_t shaderBufferSize = m_ShaderTableEntrySize;
@@ -501,6 +527,7 @@ void DummyGame::CreateShaderTable()
     m_RayPipelineState->GetD3D12PipelineState()->QueryInterface( IID_PPV_ARGS( &pRtsoProps ) );
 
     UINT64 descriptorHeapStart = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
+    UINT64 instanceTransformHeapStart = m_InstanceTransformResources->GetD3D12Resource()->GetGPUVirtualAddress();
 
     // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
@@ -544,6 +571,8 @@ void DummyGame::CreateShaderTable()
                     shaderIdSize );  // regular closest hit
             memcpy( pData + ( m_ShadersEntriesPerGeometry * i + 0 ) * shaderBufferSize + shaderIdSize, 
                 &descriptorHeapStart, sizeof( UINT64 ) );  
+            memcpy( pData + ( m_ShadersEntriesPerGeometry * i + 0 ) * shaderBufferSize + shaderIdSize + sizeof( UINT64 ),
+                &instanceTransformHeapStart, sizeof( UINT64 ) );  
 
             // Shadow - secondary
             memcpy( pData + ( m_ShadersEntriesPerGeometry * i + 1 ) * shaderBufferSize, pShadowHitGrp,
@@ -576,11 +605,11 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" );
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -602,9 +631,9 @@ bool DummyGame::LoadContent()
 
     CreateRayTracingPipeline(); // Tutorial 4
 
-    CreateShaderResource( backBufferFormat );  // Tutorial 6
+    CreateConstantBuffer();  // Tutorial 9
 
-    CreateConstantBuffer();                     // Tutorial 9
+    CreateShaderResource( backBufferFormat );  // Tutorial 6
 
     CreateShaderTable();  // Tutorial 5
 
@@ -868,7 +897,7 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
+    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color2 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );

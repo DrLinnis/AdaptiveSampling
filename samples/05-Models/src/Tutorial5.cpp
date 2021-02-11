@@ -177,7 +177,7 @@ bool Tutorial5::LoadScene( const std::wstring& sceneFile )
 
     // Load a scene, passing an optional function object for receiving loading progress events.
     m_LoadingText = std::string( "Loading " ) + ConvertString( sceneFile ) + "...";
-    auto scene    = commandList->LoadSceneFromFile( sceneFile, std::bind( &Tutorial5::LoadingProgress, this, _1 ) );
+    auto scene    = commandList->LoadSceneFromFile( sceneFile, 1.0, std::bind( &Tutorial5::LoadingProgress, this, _1 ));
 
     if ( scene )
     {

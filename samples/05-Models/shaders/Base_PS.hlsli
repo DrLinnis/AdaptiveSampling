@@ -413,6 +413,7 @@ float4 main( PixelShaderInput IN ): SV_Target
 #else 
     shadow = -N.z;
 #endif // ENABLE_LIGHTING
-
+    
+    //return float4((IN.NormalVS + 1) * 0.5, 0);
     return float4( ( emissive + ambient + diffuse + specular ).rgb * shadow, alpha * material.Opacity );
 }

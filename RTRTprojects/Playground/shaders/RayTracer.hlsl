@@ -38,6 +38,15 @@ struct RayMaterialProp
     int MaskTextureIdx;
 };
 
+struct InstanceTransforms
+{
+    matrix<float, 4, 4> rotScale;
+    matrix<float, 4, 4> normalRotScale;
+    float4 translate;
+    
+    // 4x4x4 Bytes == 16 aligned
+};
+
 
 // SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
@@ -66,6 +75,7 @@ cbuffer PerFrameCameraOrigin : register(b0)
     float2 _padding;
 }
 
+ConstantBuffer<InstanceTransforms> instTrans : register(b1);
 
 
 // Helper functions
@@ -154,11 +164,15 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     float pA = length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
     
     v.texCoord[2] = 0.5 * log2(tA / pA);
+  
+    v.position = mul(instTrans.rotScale, float4(v.position, 0)).xyz;
+    
+    v.position += instTrans.translate.xyz;
     
     // normalize direction vectors
-    v.normal = dot(v.normal, v.normal) == 0 ? float3(0, 0, 0) : normalize(v.normal);
-    v.tangent = dot(v.tangent, v.tangent) == 0 ? float3(0, 0, 0) : normalize(v.tangent);
-    v.bitangent = dot(v.bitangent, v.bitangent) == 0 ? float3(0, 0, 0) : normalize(v.bitangent);
+    v.normal = normalize(v.normal);
+    v.tangent = normalize(-v.tangent);
+    v.bitangent = normalize(v.bitangent);
     
     return v;
 }
@@ -384,14 +398,13 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float finalMetalness = 0;
     int finalObject = 0;
     
-    // Find the world-space hit position
-    float3 posW = rayOriginW + hitT * rayDirW;
+    
     
     // Transparent pixel hit!
     if (mat.MaskTextureIdx >= 0 && maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x != 1 ) 
     {
         // unfortunetly we must continue the ray and reduce depth or we will crash :(
-        RayPayload continouedRay = TracePath(posW, rayDirW, payload.bounces - 1);
+        RayPayload continouedRay = TracePath(v.position, rayDirW, payload.bounces - 1);
         finalColour = continouedRay.colour;
         finalNormal = continouedRay.normal;
         finalPos = continouedRay.position;
@@ -414,8 +427,11 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             // from [0,1] to [-1, 1]
             normal = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord).rgb * 2 - 1;
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
-            normal = mul(TBN, normal);
+            normal = mul(normal, TBN);
         }
+        normal = mul(instTrans.normalRotScale, float4(normal, 0)).xyz;
+        
+        
         float spec = 0;
         if (mat.SpecularTextureIdx >= 0)
         {
@@ -424,7 +440,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         }
         
         // Path reflected ray
-        RayPayload reflectedRay = TracePath(posW, reflect(rayDirW, normal), payload.bounces - 1);
+        RayPayload reflectedRay = TracePath(v.position, reflect(rayDirW, normal), payload.bounces - 1);
     
         float3 reflectedColour = reflectedRay.colour;
     
@@ -432,7 +448,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         finalColour = materialColour * shadowFactor + reflectedColour * 0.1;
         finalNormal = normal;
-        finalPos = posW;
+        finalPos = v.position;
         finalAlbedo = materialColour;
         
         finalObject = GeometryIndex();

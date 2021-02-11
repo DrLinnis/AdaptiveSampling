@@ -58,6 +58,74 @@ struct CameraCB
     DirectX::XMFLOAT2 _padding;
 };
 
+struct InstanceTransforms
+{
+
+    InstanceTransforms()
+    : RS(   1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1)
+    , translate(0,0,0,0)
+    {
+        auto A = DirectX::XMLoadFloat4x4( &RS );
+        auto detA = DirectX::XMMatrixDeterminant( A ); 
+        auto Ainv = DirectX::XMMatrixInverse( &detA, A );
+        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
+        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+    }
+
+    #if 1
+    InstanceTransforms( DirectX::XMFLOAT3 scale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
+    : RS( scale.x, 0, 0, 0, 
+        0, scale.y, 0, 0, 
+        0, 0, scale.z, 0,
+            0, 0,       0, 1)
+    , translate(pos.x, pos.y, pos.z, 0)
+    {
+        auto A = DirectX::XMLoadFloat4x4( &RS );
+        auto detA = DirectX::XMMatrixDeterminant( A ); 
+        auto Ainv = DirectX::XMMatrixInverse( &detA, A );
+        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
+        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+    }
+    #else
+    InstanceTransforms( DirectX::XMFLOAT3 scale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
+    : RS( scale.x, 0, 0, 0, 
+        0, 0, -scale.y, 0, 
+        0, scale.z, 0, 0,
+            0, 0,       0, 1)
+    , translate(pos.x, pos.y, pos.z, 0)
+    {
+        auto A         = DirectX::XMLoadFloat4x4( &RS );
+        auto detA      = DirectX::XMMatrixDeterminant( A );
+        auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
+        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
+        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+    }
+    #endif
+
+    InstanceTransforms( DirectX::XMFLOAT3X3 rotScale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
+    : RS( rotScale._11, rotScale._12, rotScale._12, 0, 
+        rotScale._21, rotScale._22, rotScale._22, 0,
+        rotScale._31, rotScale._32, rotScale._32, 0,
+        0, 0, 0, 1 )
+    , translate( pos.x, pos.y, pos.z, 0 )
+    {
+        auto A         = DirectX::XMLoadFloat4x4( &RS );
+        auto detA      = DirectX::XMMatrixDeterminant( A );
+        auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
+        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
+        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+    }
+
+    DirectX::XMFLOAT4X4 RS;
+    DirectX::XMFLOAT4X4 normal_RS;
+    DirectX::XMFLOAT4   translate;
+
+    // 4x4x4 Bytes == 16 aligned
+};
+
 
 class DummyGame
 {
@@ -160,6 +228,7 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
     std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
+    std::shared_ptr<dx12lib::MappableBuffer> m_InstanceTransformResources;
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
 
@@ -181,7 +250,7 @@ private:
     dx12lib::RenderTarget m_RayRenderTarget;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
-
+    std::vector<InstanceTransforms>                   m_InstanceTransforms;
 
     // new helper functions
     
