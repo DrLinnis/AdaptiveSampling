@@ -160,14 +160,22 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
             (texels[2].x - texels[0].x) * (texels[1].y - texels[0].y)
         );
     
+    
+    v.position = mul(instTrans.rotScale, float4(v.position, 0)).xyz;
+    
+    v.position += instTrans.translate.xyz;
+    
+    for (int i = 0; i < 3; ++i)
+    {
+        vertPos[i] = mul(instTrans.rotScale, float4(vertPos[i], 0)).xyz;
+        vertPos[i] += instTrans.translate.xyz;
+    }
+    
     // world space version
     float pA = length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
     
     v.texCoord[2] = 0.5 * log2(tA / pA);
   
-    v.position = mul(instTrans.rotScale, float4(v.position, 0)).xyz;
-    
-    v.position += instTrans.translate.xyz;
     
     // normalize direction vectors
     v.normal = normalize(v.normal);
@@ -398,10 +406,17 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float finalMetalness = 0;
     int finalObject = 0;
     
+    float4 diffuseTexCol = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord);
+    
+    // Assume only alpha or mask is used, not both.
+    float alpha_refract = diffuseTexCol.w;
+    if (mat.MaskTextureIdx >= 0)
+        alpha_refract *= maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x;
+    
     
     
     // Transparent pixel hit!
-    if (mat.MaskTextureIdx >= 0 && maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x != 1 ) 
+    if (alpha_refract == 0) 
     {
         // unfortunetly we must continue the ray and reduce depth or we will crash :(
         RayPayload continouedRay = TracePath(v.position, rayDirW, payload.bounces - 1);
@@ -415,12 +430,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     else  // We have hit a normal object/pixel
     {
+        alpha_refract = 1;
         
-        float3 materialColour = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord).rgb;
-        
-        // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
-        ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
-
+        // Build normal and specular
         float3 normal = v.normal;
         if (mat.NormalTextureIdx >= 0)
         {
@@ -429,7 +441,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(normal, TBN);
         }
-        normal = mul(instTrans.normalRotScale, float4(normal, 0)).xyz;
+        
+        normal = normalize(mul(instTrans.normalRotScale, float4(normal, 0)).xyz);
         
         
         float spec = 0;
@@ -439,17 +452,27 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             spec = sampledValue.r;
         }
         
+        // Path refracted ray.
+        RayPayload refractedRay;
+        if (alpha_refract < 1.0) // only cast refracted if it will be used.
+            refractedRay = TracePath(v.position, refract(rayDirW, -normal, mat.IndexOfReflection), payload.bounces - 1);
+        
+        // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
+        ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
+        
         // Path reflected ray
-        RayPayload reflectedRay = TracePath(v.position, reflect(rayDirW, normal), payload.bounces - 1);
+        RayPayload reflectedRay = TracePath(v.position, reflect(rayDirW, -normal), payload.bounces - 1);
     
         float3 reflectedColour = reflectedRay.colour;
     
         float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
         
-        finalColour = materialColour * shadowFactor + reflectedColour * 0.1;
+        // Emitted + reflected + refracted 
+        finalColour = lerp(refractedRay.colour, diffuseTexCol.rgb * shadowFactor, alpha_refract) + reflectedColour * 0.1;
+        
         finalNormal = normal;
         finalPos = v.position;
-        finalAlbedo = materialColour;
+        finalAlbedo = diffuseTexCol.rgb;
         
         finalObject = GeometryIndex();
         finalMetalness = spec;

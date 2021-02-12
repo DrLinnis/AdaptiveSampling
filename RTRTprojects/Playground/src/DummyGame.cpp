@@ -211,21 +211,27 @@ void DummyGame::CreateRayTracingPipeline() {
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += 1;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalDiffuseTexCount, 1, 3,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalDiffuseTexCount;
+        // temp values
+        unsigned int nDiffuseDesc = m_TotalDiffuseTexCount > 0 ? m_TotalDiffuseTexCount : 1;
+        unsigned int nNormalDesc   = m_TotalNormalTexCount > 0 ? m_TotalNormalTexCount : 1;
+        unsigned int nSpecularDesc = m_TotalSpecularTexCount > 0 ? m_TotalSpecularTexCount : 1;
+        unsigned int nMaskDesc     = m_TotalMaskTexCount > 0 ? m_TotalMaskTexCount : 1;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalNormalTexCount, 1, 4,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nDiffuseDesc, 1, 3,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
+        offset += nDiffuseDesc;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nNormalDesc, 1, 4,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalNormalTexCount;
+        offset += nNormalDesc;
          
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalSpecularTexCount, 1, 5,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nSpecularDesc, 1, 5,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalSpecularTexCount;
+        offset += nSpecularDesc;
          
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalMaskTexCount, 1, 6,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nMaskDesc, 1, 6,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
-        offset += m_TotalMaskTexCount;
+        offset += nMaskDesc;
          
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
@@ -295,8 +301,8 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = configAssociation.subobject;  
 
 
-        // Create the pipeline config, per bounce, one reflection ray and one depth ray
-        PipelineConfig config( m_Bounces * 2 ); 
+        // Create the pipeline config, per bounce, 1 reflection, 1 refraction, 1 shadowray
+        PipelineConfig config( m_Bounces * 3 ); 
         subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
@@ -605,11 +611,11 @@ bool DummyGame::LoadContent()
 
     
     // DISPLAY MESHES IN RAY TRACING
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -897,7 +903,7 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color2 );
+    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
