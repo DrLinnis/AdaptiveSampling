@@ -9,6 +9,11 @@ shaders and RTRT.
 
     
 ### Meetings:
+##### Meeting notes 16/2:
+---
+No notes, but <link> has PBR DXR implementation
+    https://github.com/phgphg777/DXR-PathTracer/blob/master/DXRPathTracer/sampling.hlsli
+
 ##### Meeting notes 9/2:
 ---
 To solve normal-maps mip-map approximation done using averaging, use lean mapping
