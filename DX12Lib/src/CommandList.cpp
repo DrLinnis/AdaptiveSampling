@@ -769,6 +769,9 @@ std::shared_ptr<Scene> CommandList::CreateScene( const VertexCollection& vertice
     scene->m_Meshes.clear();
     scene->m_Meshes.push_back( mesh );
 
+    scene->m_Materials.clear();
+    scene->m_Materials.push_back( material );
+
     return scene;
 }
 
@@ -783,7 +786,14 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, DirectX::XMFLOAT3 p0
                       { -s + p0.x, s + p0.y, s + p0.z }, { -s + p0.x, s + p0.y, -s + p0.z },
                       { -s + p0.x, -s + p0.y, -s + p0.z }, { -s + p0.x, -s + p0.y, s + p0.z } };
     // 6 face normals
+    // n = t x bn
+    XMFLOAT3 tn[6] = { { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 1, 0, 0 } };
+
+    XMFLOAT3 bn[6] = { { 0, -1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 } };
+
     XMFLOAT3 n[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+
+
     // 4 unique texture coordinates
     XMFLOAT3 t[4] = { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 } };
 
@@ -804,10 +814,10 @@ std::shared_ptr<Scene> CommandList::CreateCube( float size, DirectX::XMFLOAT3 p0
     {
         
         // Four vertices per face.
-        vertices.emplace_back( p[i[f * 4 + 0]] , n[f], t[0] );
-        vertices.emplace_back( p[i[f * 4 + 1]] , n[f], t[1] );
-        vertices.emplace_back( p[i[f * 4 + 2]] , n[f], t[2] );
-        vertices.emplace_back( p[i[f * 4 + 3]] , n[f], t[3] );
+        vertices.emplace_back( p[i[f * 4 + 0]], n[f], t[0], tn[f], bn[f] );
+        vertices.emplace_back( p[i[f * 4 + 1]], n[f], t[1], tn[f], bn[f] );
+        vertices.emplace_back( p[i[f * 4 + 2]], n[f], t[2], tn[f], bn[f] );
+        vertices.emplace_back( p[i[f * 4 + 3]], n[f], t[3], tn[f], bn[f] );
 
         // First triangle.
         indices.emplace_back( f * 4 + 0 );
@@ -846,29 +856,29 @@ std::shared_ptr<Scene> CommandList::CreateSphere( float radius, uint32_t tessell
     {
         float v = 1 - (float)i / verticalSegments;
 
-        float latitude = ( i * XM_PI / verticalSegments ) - XM_PIDIV2;
-        float dy, dxz;
+        float latitude = ( i * XM_PI / verticalSegments ) - XM_PIDIV2; // inside +- PI/2
+        float sinPhi, cosPhi;
 
-        XMScalarSinCos( &dy, &dxz, latitude );
+        XMScalarSinCos( &sinPhi, &cosPhi, latitude );  // sin phi, cos phi (vertical)
 
         // Create a single ring of vertices at this latitude.
         for ( size_t j = 0; j <= horizontalSegments; j++ )
         {
             float u = (float)j / horizontalSegments;
 
-            float longitude = j * XM_2PI / horizontalSegments;
-            float dx, dz;
+            float longitude = j * XM_2PI / horizontalSegments; // inside 2PI
+            float sinTheta, cosTheta;
 
-            XMScalarSinCos( &dx, &dz, longitude );
+            XMScalarSinCos( &sinTheta, &cosTheta, longitude );  // sin theta, cos theta (horizontal)
+            // Convert cos phi to sin phi
 
-            dx *= dxz;
-            dz *= dxz;
-
-            auto normal            = XMVectorSet( dx, dy, dz, 0 );
+            auto normal            = XMVectorSet( sinTheta * cosPhi, sinPhi, cosTheta * cosPhi, 0 );
             auto textureCoordinate = XMVectorSet( u, v, 0, 0 );
             auto position          = normal * radius;
+            auto bitangent         = XMVectorSet( sinTheta * sinPhi, cosPhi, cosTheta * sinPhi, 0 );
+            auto tangent           = XMVectorSet( cosTheta, 0, sinTheta, 0 );
 
-            vertices.emplace_back( position + XMLoadFloat3( &offset ), normal, textureCoordinate );
+            vertices.emplace_back( position + XMLoadFloat3( &offset ), normal, textureCoordinate, tangent, bitangent );
         }
     }
 
@@ -1117,10 +1127,10 @@ std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, XMFL
     // clang-format off
     // Define a plane that is aligned with the X-Z plane and the normal is facing up in the Y-axis.
     VertexCollection vertices = {
-        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
-        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
-        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
-        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) )  // 3
     };
     // clang-format on
     IndexCollection indices = { 1, 3, 0, 2, 3, 1 };
