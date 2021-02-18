@@ -1,4 +1,7 @@
 
+// Define constants in code
+#define PI 3.1415926538
+#define EPSILON 0.00001
 
 // PAYLOADS AND STRUCTS
 struct RayPayload
@@ -16,7 +19,7 @@ struct RayPayload
 
 struct ShadowPayLoad
 {
-    bool hit;
+    bool hitObject;
 };
 
 struct VertexAttributes
@@ -31,7 +34,7 @@ struct VertexAttributes
 struct RayMaterialProp
 {
     float3 Diffuse;
-    float IndexOfReflection;
+    float IdxOfRef;
     int DiffuseTextureIdx;
     int NormalTextureIdx;
     int SpecularTextureIdx;
@@ -94,7 +97,7 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
     
         result.Diffuse = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
         indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
-        result.IndexOfReflection = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+        result.IdxOfRef = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
         indexByteStartAddress += 4; // add one float
         result.DiffuseTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
         indexByteStartAddress += 4; // add one int
@@ -363,15 +366,85 @@ void rayGen()
 [shader("closesthit")]
 void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
-    payload.hit = true;
+    payload.hitObject = true;
 }
 
 [shader("miss")]
 void shadowMiss(inout ShadowPayLoad payload)
 {
-    payload.hit = false;
+    payload.hitObject = false;
 }
 
+// Trowbridge-Reitx GGX - Normal Distribution Functions
+float DistributionGGX(float cosTheta, float alpha)
+{
+    float a2 = alpha * alpha;
+    float NdotH = cosTheta;
+    float NdotH2 = NdotH * NdotH;
+    
+    float nom = a2;
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    denom = PI * denom * denom;
+    
+    return nom / denom;
+}
+
+// Geometry functions
+float GeometrySchlickGGX(float cosTheta, float k)
+{
+    float nom = cosTheta;
+    float denom = max(cosTheta * (1.0 - k) + k, EPSILON);
+	
+    return nom / denom;
+}
+  
+float GeometrySmith(float cosLight, float cosView, float k)
+{
+    float ggx1 = GeometrySchlickGGX(cosView, k);
+    float ggx2 = GeometrySchlickGGX(cosLight, k);
+	
+    return ggx1 * ggx2;
+}
+
+//Fresnel function
+float3 FresnelSchlick(float3 F0, float cosOmega)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
+}
+
+float3 CookTorranceBRDF(float3 l, float3 n, float3 v, float3 albedo,
+                        float metalness, float IdxOfRef, float roughness)
+{
+    float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
+    F0 = lerp(F0, albedo, metalness);
+    
+    
+    float alpha = 0.5;
+    float k_direct = (alpha + 1) * (alpha + 1) / 8;
+   
+    // Build halfway vector
+    float3 h = normalize(l + v); 
+    
+    float cosTheta = max(dot(n, h), 0); // angle between normal and halfway vector
+    float cosOmega = max(dot(v, h), 0); // angle between view and halfway vector
+    
+    float cosLight = max(dot(n, l), 0); // angle between light and normal
+    float cosView = max(dot(n, v), 0); // angle between view and normal
+    
+    float D = DistributionGGX(cosTheta, alpha);
+    
+    float3 F = FresnelSchlick(F0, cosOmega); 
+    
+    float G = GeometrySmith(cosLight, cosView, k_direct);    
+    
+    // Calc diffuse comp (REFRACT)
+    float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
+    
+    float denom = max(4 * cosView * cosLight, EPSILON);
+    
+    return kD * albedo / PI + D * F * G / denom;
+    //return D;
+}
 
 // Standard rays
 [shader("closesthit")] 
@@ -381,8 +454,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
+    const float p = 1 / (2 * PI);
     
-    float3 L = normalize(float3(0.5, 2.5, -0.5));;
+    float3 L = normalize(float3(0.5, 2.5, -0.5));
+    //float3 L = normalize(float3(0.5, 1, 0.5));;
     
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
@@ -390,13 +465,33 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     RayMaterialProp mat = GetMaterialProp(GeometryIndex());
     VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
     
-    // calculate depth
-    uint width, height, nbrLevels;
-    // assumes every texture follows the same size and that each object at least has diffuse texture!
-    diffuseTex[mat.DiffuseTextureIdx].GetDimensions(0, width, height, nbrLevels);
     
-    // Adjust for lack of w*h in tA term.
-    v.texCoord[2] += 0.5 * log2(width * height); 
+    // Alpha can be set by either mask or diffuse texture
+    
+    float4 tex_rgba = float4(mat.Diffuse, 1);
+    
+    
+    if (mat.MaskTextureIdx >= 0) {
+        float alpha = maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x;
+        tex_rgba.w *= alpha;
+    }
+    
+    if (mat.DiffuseTextureIdx >= 0)
+    {
+        // Point filter sample from diffuse texture
+        float alpha = diffuseTex[mat.DiffuseTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).w;
+        tex_rgba.w *= alpha;
+        
+        // calculate depth
+        uint width, height, nbrLevels;
+        diffuseTex[mat.DiffuseTextureIdx].GetDimensions(0, width, height, nbrLevels);
+    
+        // Adjust for lack of w*h in tA term.
+        v.texCoord[2] += 0.5 * log2(width * height);
+        
+        tex_rgba.rgb *= TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord).rgb;
+
+    }
     
     float3 finalColour = 0;
     float3 finalNormal = 0;
@@ -406,17 +501,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float finalMetalness = 0;
     int finalObject = 0;
     
-    float4 diffuseTexCol = TriSampleTex(diffuseTex, mat.DiffuseTextureIdx, v.texCoord);
-    
-    // Assume only alpha or mask is used, not both.
-    float alpha_refract = diffuseTexCol.w;
-    if (mat.MaskTextureIdx >= 0)
-        alpha_refract *= maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x;
-    
-    
     
     // Transparent pixel hit!
-    if (alpha_refract == 0) 
+    if (tex_rgba.w == 0) 
     {
         // unfortunetly we must continue the ray and reduce depth or we will crash :(
         RayPayload continouedRay = TracePath(v.position, rayDirW, payload.bounces - 1);
@@ -430,9 +517,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     else  // We have hit a normal object/pixel
     {
-        alpha_refract = 1;
+        // sample diffuse texture value
+        float3 albedo = tex_rgba.rgb;
         
-        // Build normal and specular
+        // Build normal
         float3 normal = v.normal;
         if (mat.NormalTextureIdx >= 0)
         {
@@ -441,41 +529,46 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(normal, TBN);
         }
-        
         normal = normalize(mul(instTrans.normalRotScale, float4(normal, 0)).xyz);
         
+        // Reflection vector
+        float3 R = reflect(rayDirW, normal);
+        // View Vector
+        float3 V = -rayDirW;
         
-        float spec = 0;
+        float specIntensity = 0;
         if (mat.SpecularTextureIdx >= 0)
         {
-            float4 sampledValue = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord);
-            spec = sampledValue.r;
+            specIntensity = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).r;
         }
         
-        // Path refracted ray.
-        RayPayload refractedRay;
-        if (alpha_refract < 1.0) // only cast refracted if it will be used.
-            refractedRay = TracePath(v.position, refract(rayDirW, -normal, mat.IndexOfReflection), payload.bounces - 1);
+        // Path reflected ray
+        RayPayload reflectedRay = TracePath(v.position, R, payload.bounces - 1);
         
-        // Fire a shadow ray. The direction is hard-coded here, but can be fetched from a constant-buffer
+        
+        float3 L0 = 0.5 * CookTorranceBRDF(R, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * reflectedRay.colour * dot(normal, R);
+        
+        //float3 L0 = CookTorranceBRDF(L, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * float3(.529, .808, .922) * dot(normal, L);
+        
+        //float3 L0 = 0;
+        
+        // Fire a shadow ray. 
         ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
         
-        // Path reflected ray
-        RayPayload reflectedRay = TracePath(v.position, reflect(rayDirW, -normal), payload.bounces - 1);
-    
-        float3 reflectedColour = reflectedRay.colour;
-    
-        float shadowFactor = shadowPayload.hit ? 0.5 : 1.0;
+        if (!shadowPayload.hitObject)
+            L0 = L0 + 0.5 * CookTorranceBRDF(L, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * float3(.529, .808, .922) * dot(normal, L);
+
         
-        // Emitted + reflected + refracted 
-        finalColour = lerp(refractedRay.colour, diffuseTexCol.rgb * shadowFactor, alpha_refract) + reflectedColour * 0.1;
+        //finalColour = CookTorranceBRDF(L, normal, V, albedo, 0.5, mat.IdxOfRef, specIntensity) * dot(normal, L);
+        finalColour = L0;
+        
         
         finalNormal = normal;
         finalPos = v.position;
-        finalAlbedo = diffuseTexCol.rgb;
+        finalAlbedo = albedo;
         
         finalObject = GeometryIndex();
-        finalMetalness = spec;
+        finalMetalness = specIntensity;
     }
     
     payload.colour = finalColour;

@@ -38,7 +38,7 @@ class Window;  // From GameFramework.
 
 #define RAY_TRACER     1
 
-#define UPDATE_TRANSFORMS 0
+#define UPDATE_TRANSFORMS 1
 
 
 struct CameraCB
@@ -61,6 +61,15 @@ struct CameraCB
 struct InstanceTransforms
 {
 
+    void CalculateNormalInverse() 
+    {
+        auto A         = DirectX::XMLoadFloat4x4( &RS );
+        auto detA      = DirectX::XMMatrixDeterminant( A );
+        auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
+        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
+        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+    }
+
     InstanceTransforms()
     : RS(   1, 0, 0, 0,
             0, 1, 0, 0,
@@ -68,11 +77,7 @@ struct InstanceTransforms
             0, 0, 0, 1)
     , translate(0,0,0,0)
     {
-        auto A = DirectX::XMLoadFloat4x4( &RS );
-        auto detA = DirectX::XMMatrixDeterminant( A ); 
-        auto Ainv = DirectX::XMMatrixInverse( &detA, A );
-        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
-        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+        CalculateNormalInverse();
     }
 
     #if 1
@@ -83,11 +88,7 @@ struct InstanceTransforms
             0, 0,       0, 1)
     , translate(pos.x, pos.y, pos.z, 0)
     {
-        auto A = DirectX::XMLoadFloat4x4( &RS );
-        auto detA = DirectX::XMMatrixDeterminant( A ); 
-        auto Ainv = DirectX::XMMatrixInverse( &detA, A );
-        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
-        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+        CalculateNormalInverse();
     }
     #else
     InstanceTransforms( DirectX::XMFLOAT3 scale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
@@ -97,11 +98,7 @@ struct InstanceTransforms
             0, 0,       0, 1)
     , translate(pos.x, pos.y, pos.z, 0)
     {
-        auto A         = DirectX::XMLoadFloat4x4( &RS );
-        auto detA      = DirectX::XMMatrixDeterminant( A );
-        auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
-        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
-        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+        CalculateNormalInverse();
     }
     #endif
 
@@ -112,11 +109,7 @@ struct InstanceTransforms
         0, 0, 0, 1 )
     , translate( pos.x, pos.y, pos.z, 0 )
     {
-        auto A         = DirectX::XMLoadFloat4x4( &RS );
-        auto detA      = DirectX::XMMatrixDeterminant( A );
-        auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
-        auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
-        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+        CalculateNormalInverse();
     }
 
     DirectX::XMFLOAT4X4 RS;
@@ -280,6 +273,11 @@ private:
     */
     void CreateConstantBuffer();
 
+    /*
+        Update values from creation
+    */
+    void UpdateConstantBuffer();
+
 #endif
 
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );
@@ -295,7 +293,6 @@ private:
 
     // Some geometry to render.
     std::shared_ptr<dx12lib::Scene> m_RaySceneMesh;
-    std::shared_ptr<dx12lib::Scene> m_RaySphere;
     
     std::shared_ptr<dx12lib::Texture> m_DummyTexture;
 
@@ -306,7 +303,8 @@ private:
     D3D12_RECT m_ScissorRect;
 
     float lookat_dist = 10.0;
-    float speed       = 100.0f;
+    float speed       = 300.0f;
+    float  thetaSpeed  = 0.0f;
     double theta       = 0;
 
     // Camera controller

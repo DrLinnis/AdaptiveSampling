@@ -474,3 +474,33 @@ void Scene::BuildBottomLevelAccelerationStructure( dx12lib::Device* pDevice,
 {
     AccelerationBuffer::CreateBottomLevelAS( pDevice, pCommandList, this, pDes );
 }
+
+
+void dx12lib::Scene::MergeScene( std::shared_ptr<Scene> other )
+{
+    for ( std::shared_ptr<Mesh> m: other->m_Meshes )
+    {
+        m_Meshes.push_back( m );
+    }
+
+    for ( std::shared_ptr<Material> m: other->m_Materials )
+    {
+        m_Materials.push_back( m );
+
+        auto tex = m->GetTexture( Material::TextureType::Diffuse );
+        if ( tex )
+            _diffuse.insert( tex.get() );
+
+        tex = m->GetTexture( Material::TextureType::Normal );
+        if ( tex )
+            _normal.insert( tex.get() );
+
+        tex = m->GetTexture( Material::TextureType::Specular );
+        if ( tex )
+            _specular.insert( tex.get() );
+
+        tex = m->GetTexture( Material::TextureType::Opacity );
+        if ( tex )
+            _opacity.insert( tex.get() );
+    }
+}

@@ -19,6 +19,9 @@
 #include <dx12lib/UnorderedAccessView.h>
 #include <dx12lib/ShaderResourceView.h>
 
+#include <dx12lib/Material.h>
+#include <dx12lib/Texture.h>
+
 #include <dx12lib/AccelerationStructure.h>
 #include <dx12lib/RT_PipelineStateObject.h>
 #include <dx12lib/MappableBuffer.h>
@@ -486,21 +489,27 @@ void DummyGame::CreateAccelerationStructure()
     m_BLAS = blasBuffers.pResult;
 }
 
-void DummyGame::CreateConstantBuffer() 
+
+void DummyGame::UpdateConstantBuffer()
 {
-    m_InstanceTransformResources = m_Device->CreateMappableBuffer( sizeof( InstanceTransforms ) );
     void* pData;
     ThrowIfFailed( m_InstanceTransformResources->Map( &pData ) );
     {
         InstanceTransforms transposedInstTrans = m_InstanceTransforms[0];
-        
+
         XMStoreFloat4x4( &transposedInstTrans.RS, XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.RS ) ) );
-        XMStoreFloat4x4( &transposedInstTrans.normal_RS, XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.normal_RS ) ) );
+        XMStoreFloat4x4( &transposedInstTrans.normal_RS,
+                         XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.normal_RS ) ) );
 
         memcpy( pData, &transposedInstTrans, sizeof( InstanceTransforms ) );
     }
     m_InstanceTransformResources->Unmap();
+}
 
+void DummyGame::CreateConstantBuffer() 
+{
+    m_InstanceTransformResources = m_Device->CreateMappableBuffer( sizeof( InstanceTransforms ) );
+    UpdateConstantBuffer();
 }
 
 void DummyGame::CreateShaderTable()
@@ -608,14 +617,131 @@ bool DummyGame::LoadContent()
     auto  commandList  = commandQueue.GetCommandList();
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
+    auto earth      = commandList->LoadTextureFromFile( L"Assets/Textures/earth.dds" );
+    auto UV = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
 
-    
+    auto brick_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/brick_diff.png" );
+    auto brick_norm = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/brick_norm.png" );
+    auto brick_spec = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/brick_spec.png" );
+
+    auto cobble_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/cobble_diff.png" );
+    auto cobble_norm = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/cobble_norm.png" );
+    auto cobble_spec = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/cobble_spec.png" );
+
+    auto concrete_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/concrete_diff.png" );
+    auto concrete_norm = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/concrete_norm.png" );
+    auto concrete_spec = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/concrete_spec.png" );
+
+    auto wood_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/wood_diff.png" );
+    auto wood_norm = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/wood_norm.png" );
+
+    auto trans_alpha_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/alpha_diffuse.png" );
+    auto trans_mask_diff  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_diff.tga" );
+    auto trans_mask_mask  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_mask.tga" );
+
     // DISPLAY MESHES IN RAY TRACING
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
+    #if 0
+    auto m_RaySphere = commandList->CreateSphere( 30, 16u, DirectX::XMFLOAT3( -300, 100, 0) );
+
+    auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    sphereMat->SetDiffuseColor( DirectX::XMFLOAT4( 0.1, 0.7, 0.7, 0 ) );
+
+    //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
+
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+
+    // merge scenes
+    m_RaySceneMesh->MergeScene( m_RaySphere );
+    #else   // Debug Scene
+
+    m_cam.pos = DirectX::XMFLOAT4( 0, 700, 700 , 0);
+    m_Yaw     = 90;
+    m_Pitch   = 45;
+
+    // "Empty scene"
+    m_RaySceneMesh = commandList->CreateSphere( 1 );
+
+    // Centre Sphere
+    auto centreSphere = commandList->CreateSphere( 30 );
+    auto tmpMatCentre = centreSphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    tmpMatCentre->SetTexture( Material::TextureType::Diffuse, earth );
+    m_RaySceneMesh->MergeScene( centreSphere );
+
+    // Playboard
+    auto playboard = commandList->CreatePlane( 400, 400, XMFLOAT3( 0, -30, 0 ) );
+    auto tmpMatPlayboard    = playboard->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    tmpMatPlayboard->SetTexture( Material::TextureType::Diffuse, UV );
+    m_RaySceneMesh->MergeScene( playboard );
+
+    // Added material spheres
+    const int subspheres = 10;
+    for ( int i = 0; i <= subspheres - 1; ++i ) 
+    {
+        float alpha     = i * Math::_2PI / ( (float) subspheres ) ;
+        float radius    = 100;
+        std::shared_ptr<dx12lib::Scene> tmpScene;
+
+        bool isSphere = Math::random_double() > 0.5;
+
+        if ( isSphere )
+            tmpScene = commandList->CreateSphere( 10, 32u, XMFLOAT3( radius * std::cos( alpha ), 0, radius * std::sin( alpha ) ) );
+        else
+            tmpScene = commandList->CreateCube( 20, XMFLOAT3( radius * std::cos( alpha ), 0, radius * std::sin( alpha ) ) );
+
+        auto tmpMat = tmpScene->GetRootNode()->GetMesh( 0 )->GetMaterial();
+
+        int texture = (int) std::round( Math::random_double() * 4 );
+        
+        switch ( texture )
+        {
+        case 0:
+            tmpMat->SetTexture( Material::TextureType::Diffuse, brick_diff );
+            tmpMat->SetTexture( Material::TextureType::Normal, brick_norm );
+            tmpMat->SetTexture( Material::TextureType::Specular, brick_spec );
+            break;
+        case 1:
+            tmpMat->SetTexture( Material::TextureType::Diffuse,     cobble_diff );
+            tmpMat->SetTexture( Material::TextureType::Normal,      cobble_norm );
+            tmpMat->SetTexture( Material::TextureType::Specular,    cobble_spec );
+            break;
+        case 2:
+            tmpMat->SetTexture( Material::TextureType::Diffuse,     concrete_diff );
+            tmpMat->SetTexture( Material::TextureType::Normal,      concrete_norm );
+            tmpMat->SetTexture( Material::TextureType::Specular,    concrete_spec );
+            break;
+        case 3:
+            tmpMat->SetTexture( Material::TextureType::Diffuse, wood_diff );
+            tmpMat->SetTexture( Material::TextureType::Normal, wood_norm );
+            break;
+        case 4:
+            tmpMat->SetDiffuseColor( XMFLOAT4( Math::random_double(), Math::random_double(), Math::random_double(), 0 ) );
+            break;
+        default:
+            tmpMat->SetTexture( Material::TextureType::Diffuse, UV );
+            break;
+        }
+
+        m_RaySceneMesh->MergeScene( tmpScene );
+    }
+
+    // Added transparent objects
+    auto maskPlane       = commandList->CreatePlane( 100, 100, XMFLOAT3( -150, 70, 0 ) );
+    auto tmpMatMaskPlane = maskPlane->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    tmpMatMaskPlane->SetTexture( Material::TextureType::Diffuse, trans_mask_diff );
+    tmpMatMaskPlane->SetTexture( Material::TextureType::Opacity, trans_mask_mask );
+    m_RaySceneMesh->MergeScene( maskPlane );
+
+    auto alphaPlane       = commandList->CreatePlane( 100, 100, XMFLOAT3( 150, 70, 0 ) );
+    auto tmpMatAlphaPlane = alphaPlane->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    tmpMatAlphaPlane->SetTexture( Material::TextureType::Diffuse, trans_alpha_diff );
+    m_RaySceneMesh->MergeScene( alphaPlane );
+    
+    #endif
+
 
     // Create a color buffer with sRGB for gamma correction.
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -674,7 +800,6 @@ void DummyGame::OnDPIScaleChanged( DPIScaleEventArgs& e )
 void DummyGame::UnloadContent()
 {
     m_RaySceneMesh.reset();
-    m_RaySphere.reset();
     m_DummyTexture.reset();
 
     // ray tracing 
@@ -741,7 +866,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
     static double   totalTime  = 0.0;
 
     totalTime += e.DeltaTime;
-    theta += e.DeltaTime;
+    theta += thetaSpeed * e.DeltaTime;
     frameCount++;
 
     if ( totalTime > 1.0 )
@@ -783,20 +908,25 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         }
         m_RayCamCB->Unmap();
 
+
 #if UPDATE_TRANSFORMS
+
+        auto R = DirectX::XMMatrixRotationY( theta );
+        auto S = DirectX::XMMatrixScaling( 5,5,5 );
+        auto matrix      = DirectX::XMMatrixMultiply( R, S );
+
+        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, matrix );
+        m_InstanceTransforms[0].CalculateNormalInverse();
+
+        UpdateConstantBuffer();
+
         D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
         ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
         {
-            pInstDesc[1].Transform[1][1] = pInstDesc[1].Transform[2][2] = std::cos( theta );
-            pInstDesc[1].Transform[1][2]                                = -std::sin( theta );
-            pInstDesc[1].Transform[2][1]                                = std::sin( theta );
-
-            pInstDesc[2].Transform[0][0] = pInstDesc[2].Transform[1][1] = std::cos( theta );
-            pInstDesc[2].Transform[0][1]                                = -std::sin( theta );
-            pInstDesc[2].Transform[1][0]                                = std::sin( theta );
-
+            FillTransformMatrix( pInstDesc[0].Transform, &m_InstanceTransforms[0] );
         }
         m_InstanceDescBuffer->Unmap();
+
 #endif
     }
 
@@ -816,9 +946,10 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     {
         ImGui::ShowDemoWindow( &showDemoWindow );
     }
-    else if (ImGui::Begin( "Speed slider" ))// not demo window
+    else if (ImGui::Begin( "Speed sliders" ))// not demo window
     {
-        ImGui::SliderFloat( "Speed", &speed, 1, 1000 );
+        ImGui::SliderFloat( "Camera Speed", &speed, 1, 1000 );
+        ImGui::SliderFloat( "Rotation Speed", &thetaSpeed, -1, 1 );
 
         ImGui::End();
     }
@@ -846,10 +977,8 @@ void DummyGame::OnRender()
         }
 
 #if UPDATE_TRANSFORMS
-        dx12lib::AccelerationBuffer* blasList[] = { m_BLAS_plane.get(), m_BLAS_sphere.get() };
-
-        AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), 2, blasList, &mTlasSize,
-                                              &m_TlasBuffers, m_InstanceDescBuffer.get(), true );
+        AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
+                                              m_Instances, m_InstanceDescBuffer.get(), true );
 #endif
         /*
             Here we declare where the hitshader is, where the miss shader is, and where the raygen shader

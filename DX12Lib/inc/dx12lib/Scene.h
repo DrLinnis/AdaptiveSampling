@@ -123,6 +123,8 @@ public:
      */
     virtual void Accept( Visitor& visitor );
 
+    void MergeScene( std::shared_ptr<Scene> other );
+
 protected:
     friend class CommandList;
     friend class AccelerationBuffer;
