@@ -19,6 +19,10 @@ Expect to work with 2-4 spp.
 Don't focus too much on PBR - for the scope of the thesis - work with peter shirley's 
 ray tracing in a weekend.
 
+Try to work with a cornell box for reference, to compare with c solution. 
+
+Also try to work with GPU solution, because CPU solution might be too different.
+
 ##### Meeting notes 16/2:
 ---
 No notes, but <link> has PBR DXR implementation
