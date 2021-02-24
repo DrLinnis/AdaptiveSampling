@@ -623,9 +623,9 @@ bool DummyGame::LoadContent()
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" ); scene_scale    = 100;
 
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
@@ -647,6 +647,7 @@ bool DummyGame::LoadContent()
     }
     #endif
 
+    // Debug scene
     #else   // Debug Scene
 
     auto earth = commandList->LoadTextureFromFile( L"Assets/Textures/earth.dds" );
@@ -876,9 +877,10 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
     static double   totalTime  = 0.0;
+    static double   accumalatedRotation = 0.0;
 
     totalTime += e.DeltaTime;
-    theta += thetaSpeed * e.DeltaTime;
+    accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
     if ( totalTime > 1.0 )
@@ -903,45 +905,22 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
     // Defacto update
     {
-        const float cam_dist = 1.0;
-        XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
-
-        FrameData old = m_frameData;
-
-        UpdateCamera( 
-            ( m_Left - m_Right ) * speed * e.DeltaTime, 
-            ( m_Up - m_Down ) * speed * e.DeltaTime,
-            ( m_Backward - m_Forward ) * speed * e.DeltaTime 
-        );
-
-        auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
-        DirectX::XMStoreFloat4( &m_frameData.camLookAt , lookAt);
-        if (!m_frameData.Equal(&old)) 
-        {
-            m_frameData.accumulatedFrames = 0;
-        }
-        else
-        {
-            m_frameData.accumulatedFrames += 1;
-        }
-
-        void* pData;
-        ThrowIfFailed( m_RayCamCB->Map( &pData ) );
-        {
-            memcpy( pData, &m_frameData, sizeof( FrameData ) );
-        }
-        m_RayCamCB->Unmap();
-
+        bool isAccumelatingFrames = true;
 
 #if UPDATE_TRANSFORMS
 
-        auto S = DirectX::XMMatrixScaling( scale, scale, scale );
-        auto R = DirectX::XMMatrixRotationY( theta );
+        InstanceTransforms oldTransforms = m_InstanceTransforms[0];
+
+        auto S  = DirectX::XMMatrixScaling( scene_scale, scene_scale, scene_scale );
+        auto R  = DirectX::XMMatrixRotationY( accumalatedRotation + Math::Radians( scene_rot_offset ) );
         auto RS = DirectX::XMMatrixMultiply( R, S );
 
         DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, RS );
         m_InstanceTransforms[0].CalculateNormalInverse();
 
+        isAccumelatingFrames &= m_InstanceTransforms[0].Equal( &oldTransforms );
+
+        // update buffers
         UpdateConstantBuffer();
 
         D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
@@ -952,6 +931,42 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         m_InstanceDescBuffer->Unmap();
 
 #endif
+
+
+
+        const float cam_dist = 1.0;
+        XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
+
+        FrameData old = m_frameData;
+
+        UpdateCamera( 
+            ( m_Left - m_Right ) * cam_speed * e.DeltaTime, 
+            ( m_Up - m_Down ) * cam_speed * e.DeltaTime,
+                      ( m_Backward - m_Forward ) * cam_speed * e.DeltaTime 
+        );
+
+        auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
+        DirectX::XMStoreFloat4( &m_frameData.camLookAt , lookAt);
+        
+        isAccumelatingFrames &= m_frameData.Equal( &old );
+
+
+        if ( !isAccumelatingFrames )
+        {
+            m_frameData.accumulatedFrames = 0;
+        }
+        else
+        {
+            m_frameData.accumulatedFrames += 1;
+        }
+
+        // update buffers
+        void* pData;
+        ThrowIfFailed( m_RayCamCB->Map( &pData ) );
+        {
+            memcpy( pData, &m_frameData, sizeof( FrameData ) );
+        }
+        m_RayCamCB->Unmap();
     }
 
 
@@ -972,9 +987,11 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     }
     else if (ImGui::Begin( "Speed sliders" ))// not demo window
     {
-        ImGui::SliderFloat( "Camera Speed", &speed, 1, 1000 );
-        ImGui::SliderFloat( "Rotation Speed", &thetaSpeed, -1, 1 );
-        ImGui::SliderFloat( "Scene Scale", &scale, 1, 100 );
+        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 1000 );
+        ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
+
+        ImGui::SliderFloat( "Scene Rotation Offset", &scene_rot_offset, -180, 180 );
+        ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
 
         ImGui::End();
     }

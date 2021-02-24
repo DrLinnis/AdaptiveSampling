@@ -54,12 +54,21 @@ struct FrameData
 
     bool Equal( FrameData* pOld ) 
     { 
-        DirectX::XMFLOAT4 a, b, c;
-        DirectX::XMStoreFloat4(&a, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ), DirectX::XMLoadFloat4( &pOld->camPos ) ));
-        DirectX::XMStoreFloat4(&b, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ), DirectX::XMLoadFloat4( &pOld->camLookAt ) ));
-        DirectX::XMStoreFloat4(&c, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ), DirectX::XMLoadFloat4( &pOld->camLookUp ) ));
+        DirectX::XMFLOAT4 arr[3];
+        DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ),
+                                                                 DirectX::XMLoadFloat4( &pOld->camPos ) ) );
+        DirectX::XMStoreFloat4( &arr[1], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ),
+                                                                 DirectX::XMLoadFloat4( &pOld->camLookAt ) ) );
+        DirectX::XMStoreFloat4( &arr[2], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ),
+                                                                 DirectX::XMLoadFloat4( &pOld->camLookUp ) ) );
 
-        return a.x && b.x && c.x && a.y && b.y && c.y && a.z && b.z && c.z;
+        for ( DirectX::XMFLOAT4 a : arr) {
+            bool elements = a.x && a.y && a.z;
+            if ( !elements )
+                return false;
+        }
+
+        return true;
     }
 
     DirectX::XMFLOAT4 camPos;
@@ -131,6 +140,41 @@ struct InstanceTransforms
     DirectX::XMFLOAT4   translate;
 
     // 4x4x4 Bytes == 16 aligned
+
+    bool Equal( InstanceTransforms* pOld )
+    {
+        DirectX::XMFLOAT4X4* thisMatrices[2] = { &this->RS, &this->normal_RS };
+        DirectX::XMFLOAT4X4* theyMatrices[2] = { &pOld->RS, &pOld->normal_RS };
+            
+        // Checking matrices
+        for (int idx = 0; idx < 2; ++idx) 
+        {
+            DirectX::XMFLOAT4X4* curr = thisMatrices[idx];
+            DirectX::XMFLOAT4X4* old  = theyMatrices[idx];
+            for ( int i = 0; i < 4; ++i )
+            {
+                for ( int j = 0; j < 4; ++j )
+                {
+                    if ( curr->m[i][j] != old->m[i][j] )
+                        return false;
+                }
+            }
+        }
+
+        // checking vectors
+        DirectX::XMFLOAT4 arr[1];
+        DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &translate ),
+                                                                 DirectX::XMLoadFloat4( &pOld->translate ) ) );
+
+        for ( DirectX::XMFLOAT4 a: arr )
+        {
+            bool elements = a.x && a.y && a.z;
+            if ( !elements )
+                return false;
+        }
+
+        return true;
+    }
 };
 
 
@@ -303,10 +347,12 @@ private:
     D3D12_RECT m_ScissorRect;
 
     float lookat_dist = 10.0;
-    float speed       = 300.0f;
-    float  thetaSpeed  = 0.0f;
-    double theta       = 0;
-    float scale       = 1;
+
+    float cam_speed       = 300.0f;
+
+    float scene_rot_speed  = 0.0f;
+    float scene_rot_offset       = 0;
+    float scene_scale       = 1;
 
     // Camera controller
     float m_Forward;
