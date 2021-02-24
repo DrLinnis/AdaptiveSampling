@@ -24,11 +24,6 @@ struct RayPayload
     uint seed;
 };
 
-struct ShadowPayLoad
-{
-    bool hitObject;
-};
-
 struct VertexAttributes
 {
     float3 position;
@@ -296,29 +291,6 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
     
     return result;
 }
-
-
-// RAY GENERATION related helper functions
-ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
-{
-    RayDesc ray;
-    ray.Origin = position;
-    ray.Direction = direction;
-    ray.TMin = 0.001;
-    ray.TMax = 100000;
-    ShadowPayLoad shadowPayload;
-    TraceRay(gRtScene,
-        0 /*rayFlags*/,
-        0xFF,
-        1 /* ray index*/,
-        0,
-        1,
-        ray,
-        shadowPayload
-    );
-    return shadowPayload;
-}
-
 
 RayPayload TracePath(float3 origin, float3 direction, uint rayBudget, uint seed)
 {
