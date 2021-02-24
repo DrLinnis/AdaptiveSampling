@@ -66,6 +66,8 @@ struct InstanceTransforms
 
 struct PerFrameData
 {
+    float4 atmopshere;
+    
     float4 camOrigin;
     float4 camLookAt;
     float4 camLookUp;
@@ -338,7 +340,7 @@ RayPayload TracePath(float3 origin, float3 direction, uint rayBudget, uint seed)
     ray.TMax = 100000;
     
     TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF /*No culling*/, 0 /* ray index*/,
-        2 /* Multiplier for Contribution to hit group index*/, 0, ray, reflPayload
+        1 /* Multiplier for Contribution to hit group index*/, 0, ray, reflPayload
     );
     return reflPayload;
 }
@@ -515,7 +517,7 @@ void rayGen()
         0 /*rayFlags*/, 
         0xFF, 
         0 /* ray index*/,
-        2 /* Multiplier for Contribution to hit group index*/,
+        1 /* Multiplier for Contribution to hit group index*/,
         0,
         ray,
         payload
@@ -545,21 +547,6 @@ void rayGen()
     gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
     gOutput[4][launchIndex.xy] = float4(payload.specular, payload.specular, payload.specular, 1);
 
-}
-
-/*
-    SHADOW rays
-*/
-[shader("closesthit")]
-void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
-{
-    payload.hitObject = true;
-}
-
-[shader("miss")]
-void shadowMiss(inout ShadowPayLoad payload)
-{
-    payload.hitObject = false;
 }
 
 /*

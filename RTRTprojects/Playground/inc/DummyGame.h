@@ -71,6 +71,8 @@ struct FrameData
         return true;
     }
 
+    DirectX::XMFLOAT4 backgroundColour;
+
     DirectX::XMFLOAT4 camPos;
     DirectX::XMFLOAT4 camLookAt;
     DirectX::XMFLOAT4 camLookUp;

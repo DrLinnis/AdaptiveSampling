@@ -107,10 +107,6 @@ static const WCHAR* kStandardChs        = L"standardChs";
 static const WCHAR* kStandardMiss       = L"standardMiss";
 static const WCHAR* kStandardHitGroup   = L"standardHitGroup";
 
-static const WCHAR* kShadowChs      = L"shadowChs";
-static const WCHAR* kShadowMiss     = L"shadowMiss";
-static const WCHAR* kShadowHitGroup = L"ShadowHitGroup";
-
 void DummyGame::CreateRayTracingPipeline() {
     // Need 10 subobjects:
     //  1 for the DXIL library
@@ -122,25 +118,20 @@ void DummyGame::CreateRayTracingPipeline() {
     //  2 for shader config (shared between all programs. 1 for the config, 1 for association)
     //  1 for pipeline config
     //  1 for the global root signature
-    std::array<D3D12_STATE_SUBOBJECT, 16> subobjects;
+    std::array<D3D12_STATE_SUBOBJECT, 15> subobjects;
     uint32_t                              index = 0;
 
     // Load 
     ComPtr<IDxcBlob> shaders =
         ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_5" );
-    const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs, kShadowChs,
-                                   kShadowMiss };  // SIZE 5
+    const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs };  // SIZE 5
     
-    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 5 );
+    DxilLibrary      dxilLib( shaders.Get(), entryPoints, 3 );
     subobjects[index++] = dxilLib.stateSubobject; 
 
-    // Normal Hit Group and Shadow Hit Group
+    // Normal Hit Group 
     HitProgram hitProgram( nullptr, kStandardChs, kStandardHitGroup );
     subobjects[index++] = hitProgram.subObject; 
-
-    HitProgram shadowHitProgram( nullptr, kShadowChs, kShadowHitGroup );
-    subobjects[index++] = shadowHitProgram.subObject;  
-
 
 
     // Create the ray-gen root-signature and association
@@ -281,8 +272,8 @@ void DummyGame::CreateRayTracingPipeline() {
 
         // EMPTY associations
         uint32_t          emptyRootIndex    = index++;   
-        const WCHAR*      emptyExportName[] = { kStandardMiss, kShadowMiss, kShadowChs };  
-        ExportAssociation emptyRootAssociation( emptyExportName, 3, &( subobjects[emptyRootIndex] ) );
+        const WCHAR*      emptyExportName[] = { kStandardMiss };  
+        ExportAssociation emptyRootAssociation( emptyExportName, 1, &( subobjects[emptyRootIndex] ) );
         subobjects[index++] = emptyRootAssociation.subobject;
 
 
@@ -292,12 +283,12 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
-    const WCHAR*      shaderExports[]   = { kStandardMiss, kStandardChs, kRayGenShader, kShadowMiss, kShadowChs }; 
-    ExportAssociation configAssociation( shaderExports, 5, &( subobjects[shaderConfigIndex] ) );
+    const WCHAR*      shaderExports[]   = { kStandardMiss, kStandardChs, kRayGenShader }; 
+    ExportAssociation configAssociation( shaderExports, 3, &( subobjects[shaderConfigIndex] ) );
     subobjects[index++] = configAssociation.subobject;  
 
 
-        // Create the pipeline config, per bounce, 1 reflection, 1 refraction, 1 shadowray
+        // Create the pipeline config, per bounce, 1 reflection, 1 refraction
         PipelineConfig config( m_Bounces * 2 ); 
         subobjects[index++] = config.subobject;  // 8
 
@@ -515,7 +506,7 @@ void DummyGame::CreateShaderTable()
 
     uint32_t shaderBufferSize = m_ShaderTableEntrySize;
     shaderBufferSize          = align_to( D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, m_ShaderTableEntrySize );
-    m_ShadersEntriesPerGeometry = 2;
+    m_ShadersEntriesPerGeometry = 1;
 
     uint32_t perGeomShaderBuffSize = m_ShadersEntriesPerGeometry * shaderBufferSize;
 
@@ -524,11 +515,11 @@ void DummyGame::CreateShaderTable()
     m_RaygenShaderTable->SetName( L"DXR Raygen Shader Table" );
 
     m_MissShaderTable = m_Device->CreateMappableBuffer( m_ShadersEntriesPerGeometry *
-                                                        shaderBufferSize );  // 2, one per primary and one per shadow
+                                                        shaderBufferSize );  // 2, one per primary ray
     m_MissShaderTable->SetName( L"DXR Miss Shader Table" );
 
     m_HitShaderTable = m_Device->CreateMappableBuffer(
-        m_TotalGeometryCount * perGeomShaderBuffSize );  // 25, one per primary and one per shadow
+        m_TotalGeometryCount * perGeomShaderBuffSize );  // 25, one per primary ray
     m_HitShaderTable->SetName( L"DXR Hit Shader Table" );
 
     ComPtr<ID3D12StateObjectProperties> pRtsoProps;
@@ -540,13 +531,11 @@ void DummyGame::CreateShaderTable()
     // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
 
-    // miss for regular and shadow
+    // miss for regular
     void* pStandardMiss   = pRtsoProps->GetShaderIdentifier( kStandardMiss );
-    void* pShadowMiss = pRtsoProps->GetShaderIdentifier( kShadowMiss );
 
-    // hit for regular and shadow
+    // hit for regular
     void* pStandardHitGrp = pRtsoProps->GetShaderIdentifier( kStandardHitGroup );
-    void* pShadowHitGrp = pRtsoProps->GetShaderIdentifier( kShadowHitGroup );
 
     uint8_t* pData;
     ThrowIfFailed( m_RaygenShaderTable->GetD3D12Resource()->Map( 0, nullptr, (void**)&pData ) );  // Map
@@ -564,7 +553,6 @@ void DummyGame::CreateShaderTable()
         // Entry 1 - miss program PRIMARY
         memcpy( pData, pStandardMiss, shaderIdSize );
 
-        memcpy( pData + shaderBufferSize, pShadowMiss, shaderIdSize );
     }
     m_MissShaderTable->Unmap();  // Unmap
 
@@ -582,9 +570,6 @@ void DummyGame::CreateShaderTable()
             memcpy( pData + ( m_ShadersEntriesPerGeometry * i + 0 ) * shaderBufferSize + shaderIdSize + sizeof( UINT64 ),
                 &instanceTransformHeapStart, sizeof( UINT64 ) );  
 
-            // Shadow - secondary
-            memcpy( pData + ( m_ShadersEntriesPerGeometry * i + 1 ) * shaderBufferSize, pShadowHitGrp,
-                    shaderIdSize );  // shadow hit
         }
         
     }
