@@ -306,6 +306,7 @@ private:
     float speed       = 300.0f;
     float  thetaSpeed  = 0.0f;
     double theta       = 0;
+    float scale       = 1;
 
     // Camera controller
     float m_Forward;

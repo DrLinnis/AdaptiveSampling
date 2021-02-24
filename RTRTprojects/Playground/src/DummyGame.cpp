@@ -619,12 +619,16 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj");
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+    #if 1
 
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
+
+    #else
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
     DirectX::XMFLOAT3 lightPositions[] = {
         { 1120, 200, 445 }, { 1120, 200, -405 }, { -1190, 200, 445 }, { -1190, 200, -405 }
@@ -641,6 +645,7 @@ bool DummyGame::LoadContent()
 
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
+    #endif
 
     #else   // Debug Scene
 
@@ -930,9 +935,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
 #if UPDATE_TRANSFORMS
 
+        auto S = DirectX::XMMatrixScaling( scale, scale, scale );
         auto R = DirectX::XMMatrixRotationY( theta );
+        auto RS = DirectX::XMMatrixMultiply( R, S );
 
-        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, R );
+        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, RS );
         m_InstanceTransforms[0].CalculateNormalInverse();
 
         UpdateConstantBuffer();
@@ -967,6 +974,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     {
         ImGui::SliderFloat( "Camera Speed", &speed, 1, 1000 );
         ImGui::SliderFloat( "Rotation Speed", &thetaSpeed, -1, 1 );
+        ImGui::SliderFloat( "Scene Scale", &scale, 1, 100 );
 
         ImGui::End();
     }
