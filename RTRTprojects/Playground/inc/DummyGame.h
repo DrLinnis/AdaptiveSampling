@@ -54,24 +54,30 @@ struct FrameData
 
     bool Equal( FrameData* pOld ) 
     { 
-        DirectX::XMFLOAT4 arr[3];
+        DirectX::XMFLOAT4 arr[4];
         DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ),
                                                                  DirectX::XMLoadFloat4( &pOld->camPos ) ) );
         DirectX::XMStoreFloat4( &arr[1], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ),
                                                                  DirectX::XMLoadFloat4( &pOld->camLookAt ) ) );
         DirectX::XMStoreFloat4( &arr[2], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ),
                                                                  DirectX::XMLoadFloat4( &pOld->camLookUp ) ) );
+        DirectX::XMStoreFloat4( &arr[3], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &atmosphere ),
+                                                                 DirectX::XMLoadFloat4( &pOld->atmosphere ) ) );
+        
+        
+
 
         for ( DirectX::XMFLOAT4 a : arr) {
-            bool elements = a.x && a.y && a.z;
-            if ( !elements )
+            bool elements = a.x && a.y && a.z; 
+            if ( !elements ) // If not all channels are equal
                 return false;
         }
+
 
         return true;
     }
 
-    DirectX::XMFLOAT4 backgroundColour;
+    DirectX::XMFLOAT4 atmosphere;
 
     DirectX::XMFLOAT4 camPos;
     DirectX::XMFLOAT4 camLookAt;
@@ -280,7 +286,7 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
-    std::shared_ptr<dx12lib::MappableBuffer> m_RayCamCB;
+    std::shared_ptr<dx12lib::MappableBuffer> m_FrameDataCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_InstanceTransformResources;
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
@@ -329,6 +335,8 @@ private:
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    FLOAT backgroundColour[3] = { 0, 0, 0 };
+
 
     // General
     std::shared_ptr<dx12lib::Device>    m_Device;

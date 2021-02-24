@@ -61,7 +61,7 @@ struct InstanceTransforms
 
 struct PerFrameData
 {
-    float4 atmopshere;
+    float4 atmosphere;
     
     float4 camOrigin;
     float4 camLookAt;
@@ -292,6 +292,8 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
     return result;
 }
 
+
+// TRACE helper functions
 RayPayload TracePath(float3 origin, float3 direction, uint rayBudget, uint seed)
 {
     RayPayload reflPayload;
@@ -511,7 +513,8 @@ void rayGen()
     if (frame.accumulatedFrames == 0)
         avrRadiance = newRadiance;
     else
-        avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
+        avrRadiance = newRadiance;
+    //lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
     
     gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
     gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
@@ -637,7 +640,7 @@ void standardMiss(inout RayPayload payload)
     float3 rayOriginW = WorldRayOrigin();
     
     // sky normal, depth, and colour
-    payload.colour = float3(.529, .808, .922);
+    payload.colour = frame.atmosphere.xyz;
     payload.normal = 0.5;
     payload.position = rayOriginW + 100000 * rayDirW;
     

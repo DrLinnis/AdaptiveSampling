@@ -124,7 +124,7 @@ void DummyGame::CreateRayTracingPipeline() {
     // Load 
     ComPtr<IDxcBlob> shaders =
         ShaderHelper::CompileLibrary( L"RTRTprojects/Playground/shaders/RayTracer.hlsl", L"lib_6_5" );
-    const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs };  // SIZE 5
+    const WCHAR* entryPoints[] = { kRayGenShader, kStandardMiss, kStandardChs };  // SIZE 3
     
     DxilLibrary      dxilLib( shaders.Get(), entryPoints, 3 );
     subobjects[index++] = dxilLib.stateSubobject; 
@@ -257,8 +257,12 @@ void DummyGame::CreateRayTracingPipeline() {
         {
             D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
+            CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+
+            rayRootParams[0].InitAsConstantBufferView( 0 );
+
             CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-            rootSignatureDescription.Init_1_1( 0, nullptr, 0, nullptr, rootSignatureFlags );
+            rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
 
             m_EmptyLocalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -350,7 +354,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, rayObjID );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color6, rayMetal );
 
-    m_RayCamCB = m_Device->CreateMappableBuffer( 256 );
+    m_FrameDataCB = m_Device->CreateMappableBuffer( 256 );
 
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -365,7 +369,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.SizeInBytes                     = 256;
-    cbvDesc.BufferLocation                  = m_RayCamCB->GetD3D12Resource()->GetGPUVirtualAddress();
+    cbvDesc.BufferLocation                  = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &uavDesc, &srvTlasDesc,
                                                        &cbvDesc, m_RaySceneMesh.get() );
@@ -527,6 +531,7 @@ void DummyGame::CreateShaderTable()
 
     UINT64 descriptorHeapStart = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
     UINT64 instanceTransformHeapStart = m_InstanceTransformResources->GetD3D12Resource()->GetGPUVirtualAddress();
+    UINT64 perFrameDataHeapStart      = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
@@ -552,6 +557,9 @@ void DummyGame::CreateShaderTable()
     {
         // Entry 1 - miss program PRIMARY
         memcpy( pData, pStandardMiss, shaderIdSize );
+
+        // Entry 1.1 Parameter Constant Buffer pointer
+        memcpy( pData + shaderIdSize, &perFrameDataHeapStart, sizeof( UINT64 ) );  
 
     }
     m_MissShaderTable->Unmap();  // Unmap
@@ -610,7 +618,7 @@ bool DummyGame::LoadContent()
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" ); scene_scale    = 100;
+    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" ); scene_scale = 100;
 
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
@@ -924,6 +932,10 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         FrameData old = m_frameData;
 
+        m_frameData.atmosphere.x = backgroundColour[0];
+        m_frameData.atmosphere.y = backgroundColour[1];
+        m_frameData.atmosphere.z = backgroundColour[2];
+
         UpdateCamera( 
             ( m_Left - m_Right ) * cam_speed * e.DeltaTime, 
             ( m_Up - m_Down ) * cam_speed * e.DeltaTime,
@@ -932,7 +944,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
         DirectX::XMStoreFloat4( &m_frameData.camLookAt , lookAt);
-        
+
         isAccumelatingFrames &= m_frameData.Equal( &old );
 
 
@@ -947,11 +959,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         // update buffers
         void* pData;
-        ThrowIfFailed( m_RayCamCB->Map( &pData ) );
+        ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
         {
             memcpy( pData, &m_frameData, sizeof( FrameData ) );
         }
-        m_RayCamCB->Unmap();
+        m_FrameDataCB->Unmap();
     }
 
 
@@ -970,7 +982,8 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     {
         ImGui::ShowDemoWindow( &showDemoWindow );
     }
-    else if (ImGui::Begin( "Speed sliders" ))// not demo window
+    
+    if (ImGui::Begin( "Camera and Transform Sliders" ))// not demo window
     {
         ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 1000 );
         ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
@@ -980,6 +993,14 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
 
         ImGui::End();
     }
+
+    if ( ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
+    {
+        ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
+
+        ImGui::End();
+    }
+
 
     m_GUI->Render( commandList, renderTarget );
 }
