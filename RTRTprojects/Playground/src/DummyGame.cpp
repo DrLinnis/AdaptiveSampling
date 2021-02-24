@@ -48,13 +48,6 @@ using namespace DirectX;
 #include <algorithm>  // For std::min, std::max, and std::clamp.
 #include <random>
 
-DummyGame::Colour::Colour(float r, float g, float b)
-    : r(r)
-    , g(g)
-    , b(b)
-    , padding(0)
-{ }
-
 
 DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSync )
 : m_ScissorRect( CD3DX12_RECT( 0, 0, LONG_MAX, LONG_MAX ) )
@@ -71,7 +64,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_VSync( vSync )
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
-, m_cam( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -500, 100, 0 ), XMFLOAT2( width / (float)height, 1 ) )
+, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -500, 100, 0 ), XMFLOAT2( width / (float)height, 1 ) )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -294,8 +287,8 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
 
-    // Bind the payload size to the programs, SET MISS SHADER OUTPUT PAYLOAD TO 3x4=12 BYTES
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (4*3 + 2 + 1) );
+    // Bind the payload size to the programs
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*3 + 2 + 2) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -305,7 +298,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
         // Create the pipeline config, per bounce, 1 reflection, 1 refraction, 1 shadowray
-        PipelineConfig config( m_Bounces * 3 ); 
+        PipelineConfig config( m_Bounces * 2 ); 
         subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
@@ -617,8 +610,42 @@ bool DummyGame::LoadContent()
     auto  commandList  = commandQueue.GetCommandList();
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
-    auto earth      = commandList->LoadTextureFromFile( L"Assets/Textures/earth.dds" );
-    auto UV = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
+    
+
+    // DISPLAY MESHES IN RAY TRACING
+    #if 1
+    
+    //sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 1,1,1, 0 ) );
+
+    //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
+
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj");
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
+    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
+
+    // merge scenes
+    DirectX::XMFLOAT3 lightPositions[] = {
+        { 1120, 200, 445 }, { 1120, 200, -405 }, { -1190, 200, 445 }, { -1190, 200, -405 }
+    };
+    for (int i = 0; i < 4; ++i) {
+        auto m_RaySphere = commandList->CreateSphere( 45, 16u, lightPositions[i] );
+
+        auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+        sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 0.5 + Math::random_double() * 0.5,
+                                                        0.5 + Math::random_double() * 0.5,
+                                                        0.5 + Math::random_double() * 0.5, 
+                                                        0 ) 
+        );
+
+        m_RaySceneMesh->MergeScene( m_RaySphere );
+    }
+
+    #else   // Debug Scene
+
+    auto earth = commandList->LoadTextureFromFile( L"Assets/Textures/earth.dds" );
+    auto UV    = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
 
     auto brick_diff = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/brick_diff.png" );
     auto brick_norm = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/brick_norm.png" );
@@ -639,26 +666,8 @@ bool DummyGame::LoadContent()
     auto trans_mask_diff  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_diff.tga" );
     auto trans_mask_mask  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_mask.tga" );
 
-    // DISPLAY MESHES IN RAY TRACING
-    #if 0
-    auto m_RaySphere = commandList->CreateSphere( 30, 16u, DirectX::XMFLOAT3( -300, 100, 0) );
 
-    auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
-    sphereMat->SetDiffuseColor( DirectX::XMFLOAT4( 0.1, 0.7, 0.7, 0 ) );
-
-    //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
-
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj", 30 );
-    //m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj", 30 );
-
-    // merge scenes
-    m_RaySceneMesh->MergeScene( m_RaySphere );
-    #else   // Debug Scene
-
-    m_cam.pos = DirectX::XMFLOAT4( 0, 700, 700 , 0);
+    m_frameData.camPos = DirectX::XMFLOAT4( 0, 700, 700, 0 );
     m_Yaw     = 90;
     m_Pitch   = 45;
 
@@ -674,7 +683,8 @@ bool DummyGame::LoadContent()
     // Playboard
     auto playboard = commandList->CreatePlane( 400, 400, XMFLOAT3( 0, -30, 0 ) );
     auto tmpMatPlayboard    = playboard->GetRootNode()->GetMesh( 0 )->GetMaterial();
-    tmpMatPlayboard->SetTexture( Material::TextureType::Diffuse, UV );
+    tmpMatPlayboard->SetTexture( Material::TextureType::Diffuse, wood_diff );
+    tmpMatPlayboard->SetTexture( Material::TextureType::Normal, wood_norm );
     m_RaySceneMesh->MergeScene( playboard );
 
     // Added material spheres
@@ -714,14 +724,11 @@ bool DummyGame::LoadContent()
             tmpMat->SetTexture( Material::TextureType::Specular,    concrete_spec );
             break;
         case 3:
-            tmpMat->SetTexture( Material::TextureType::Diffuse, wood_diff );
-            tmpMat->SetTexture( Material::TextureType::Normal, wood_norm );
-            break;
-        case 4:
-            tmpMat->SetDiffuseColor( XMFLOAT4( Math::random_double(), Math::random_double(), Math::random_double(), 0 ) );
+            tmpMat->SetTexture( Material::TextureType::Diffuse, UV );
             break;
         default:
-            tmpMat->SetTexture( Material::TextureType::Diffuse, UV );
+        case 4:
+            tmpMat->SetDiffuseColor( XMFLOAT4( Math::random_double(), Math::random_double(), Math::random_double(), 0 ) );
             break;
         }
 
@@ -849,15 +856,15 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
     XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
     XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
 
-    m_cam.pos.x += moveForward * forward.x;
-    m_cam.pos.y += moveForward * forward.y;
-    m_cam.pos.z += moveForward * forward.z;
+    m_frameData.camPos.x += moveForward * forward.x;
+    m_frameData.camPos.y += moveForward * forward.y;
+    m_frameData.camPos.z += moveForward * forward.z;
 
-    m_cam.pos.x += moveVertically * right.x;
-    m_cam.pos.y += moveVertically * right.y;
-    m_cam.pos.z += moveVertically * right.z;
+    m_frameData.camPos.x += moveVertically * right.x;
+    m_frameData.camPos.y += moveVertically * right.y;
+    m_frameData.camPos.z += moveVertically * right.z;
 
-    m_cam.pos.y += moveUp;
+    m_frameData.camPos.y += moveUp;
 }
 
 void DummyGame::OnUpdate( UpdateEventArgs& e )
@@ -881,6 +888,12 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         frameCount = 0;
         totalTime  = 0.0;
+
+        if (m_Print) {
+            m_Print = false;
+            m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_frameData.camPos.x, m_frameData.camPos.y,
+                            m_frameData.camPos.z );
+        }
     }
 
     // Defacto update
@@ -888,23 +901,29 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         const float cam_dist = 1.0;
         XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
 
+        FrameData old = m_frameData;
+
         UpdateCamera( 
             ( m_Left - m_Right ) * speed * e.DeltaTime, 
             ( m_Up - m_Down ) * speed * e.DeltaTime,
             ( m_Backward - m_Forward ) * speed * e.DeltaTime 
         );
 
-        m_cam.lookAt = XMFLOAT4( 
-            m_cam.pos.x + cam_dist * camDir.x, 
-            m_cam.pos.y + cam_dist * camDir.y,
-            m_cam.pos.z + cam_dist * camDir.z,
-            0 
-        );
+        auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
+        DirectX::XMStoreFloat4( &m_frameData.camLookAt , lookAt);
+        if (!m_frameData.Equal(&old)) 
+        {
+            m_frameData.accumulatedFrames = 0;
+        }
+        else
+        {
+            m_frameData.accumulatedFrames += 1;
+        }
 
         void* pData;
         ThrowIfFailed( m_RayCamCB->Map( &pData ) );
         {
-            memcpy( pData, &m_cam, sizeof( CameraCB ) );
+            memcpy( pData, &m_frameData, sizeof( FrameData ) );
         }
         m_RayCamCB->Unmap();
 
@@ -912,10 +931,8 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 #if UPDATE_TRANSFORMS
 
         auto R = DirectX::XMMatrixRotationY( theta );
-        auto S = DirectX::XMMatrixScaling( 5,5,5 );
-        auto matrix      = DirectX::XMMatrixMultiply( R, S );
 
-        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, matrix );
+        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, R );
         m_InstanceTransforms[0].CalculateNormalInverse();
 
         UpdateConstantBuffer();
@@ -1099,6 +1116,9 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
             break;
         case KeyCode::Space:
             m_Up = 1.0f;
+            break;
+        case KeyCode::P:
+            m_Print = true;
             break;
         }
     }

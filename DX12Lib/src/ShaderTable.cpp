@@ -243,7 +243,9 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
             matPropList[i].Diffuse.y         = mat->GetDiffuseColor().y;
             matPropList[i].Diffuse.z         = mat->GetDiffuseColor().z;
 
-            matPropList[i].IndexOfReflection = mat->GetIndexOfRefraction();
+            matPropList[i].Emittance.x = mat->GetEmissiveColor().x;
+            matPropList[i].Emittance.y = mat->GetEmissiveColor().y;
+            matPropList[i].Emittance.z = mat->GetEmissiveColor().z;
 
             auto tex = mat->GetTexture( Material::TextureType::Diffuse );
             if ( tex )

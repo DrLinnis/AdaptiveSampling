@@ -41,21 +41,35 @@ class Window;  // From GameFramework.
 #define UPDATE_TRANSFORMS 1
 
 
-struct CameraCB
+struct FrameData
 {
-    CameraCB( DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 lookat, DirectX::XMFLOAT2 winSize )
-    : pos( pos.x, pos.y, pos.z, 0 )
-    , lookAt( lookat.x, lookat.y, lookat.z, 0 )
-    , lookUp( 0, 1, 0, 0 )
-    , windowSize( winSize.x, winSize.y)
+    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize )
+    : camPos( cameraPos.x, cameraPos.y, cameraPos.z, 0 )
+    , camLookAt( cameraLookAt.x, cameraLookAt.y, cameraLookAt.z, 0 )
+    , camLookUp( 0, 1, 0, 0 )
+    , camWinSize( cameraWinSize.x, cameraWinSize.y )
+    , accumulatedFrames(0)
+    , _padding(0)
     {}
 
-    DirectX::XMFLOAT4 pos;
-    DirectX::XMFLOAT4 lookAt;
-    DirectX::XMFLOAT4 lookUp;
-    DirectX::XMFLOAT2 windowSize;
+    bool Equal( FrameData* pOld ) 
+    { 
+        DirectX::XMFLOAT4 a, b, c;
+        DirectX::XMStoreFloat4(&a, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ), DirectX::XMLoadFloat4( &pOld->camPos ) ));
+        DirectX::XMStoreFloat4(&b, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ), DirectX::XMLoadFloat4( &pOld->camLookAt ) ));
+        DirectX::XMStoreFloat4(&c, DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ), DirectX::XMLoadFloat4( &pOld->camLookUp ) ));
 
-    DirectX::XMFLOAT2 _padding;
+        return a.x && b.x && c.x && a.y && b.y && c.y && a.z && b.z && c.z;
+    }
+
+    DirectX::XMFLOAT4 camPos;
+    DirectX::XMFLOAT4 camLookAt;
+    DirectX::XMFLOAT4 camLookUp;
+    DirectX::XMFLOAT2 camWinSize;
+
+    uint32_t accumulatedFrames;
+
+    float _padding;
 };
 
 struct InstanceTransforms
@@ -225,28 +239,14 @@ private:
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
 
-    struct Colour
-    {
-        Colour( float r, float g, float b );
-
-        float r, g, b, padding;
-    };
-
-    Colour m_SphereHintedColours[3] = { 
-        Colour( 0, 1, 0 ), 
-        Colour( 0.2, 0.8, 0.6 ),
-        Colour( 0.3, 0.2, 0.69 ) 
-    };
 
     // Tut 6
-    const uint32_t        m_nbrRayRenderTargets = 7;
+    const uint32_t        m_nbrRayRenderTargets = 5;
     dx12lib::RenderTarget m_RayRenderTarget;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
     std::vector<InstanceTransforms>                   m_InstanceTransforms;
 
-    // new helper functions
-    
     /*
         Create the ray tracing pipeline with settings as local root signatures, 
             ray depth, payload, etc etc.
@@ -318,12 +318,14 @@ private:
     float m_Pitch;
     float m_Yaw;
 
-    CameraCB m_cam;
+    FrameData m_frameData;
 
     int  m_Width;
     int  m_Height;
     bool m_VSync;
     bool m_Fullscreen;
+
+    bool m_Print;
 
     // Scale the HDR render target to a fraction of the window size.
     float m_RenderScale;

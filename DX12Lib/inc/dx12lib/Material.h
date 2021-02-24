@@ -104,34 +104,44 @@ struct alignas( 16 ) MaterialProperties
     // Total:                              ( 16 * 8 = 128 bytes )
 };
 
+#define LAMBERTIAN 0
+#define METAL 1
 
 struct alignas( 16 ) RayMaterialProp
 {
     RayMaterialProp(
         const DirectX::XMFLOAT3 diffuse = { 1, 1, 1 },
-        const float indexOfRefraction = 0.0f,
-        const int diffuseTextureIdx = -1,
-        const int normalTextureIdx = -1,
-        const int specularTextureIdx = -1,
-        const int maskTextureIdx = -1
+        const int type = LAMBERTIAN,
+        const float roughness = 1.0f,
+        const DirectX::XMFLOAT3 emittance = {0, 0, 0}
     )
         : Diffuse(diffuse)
-        , IndexOfReflection(indexOfRefraction)
-        , DiffuseTextureIdx(diffuseTextureIdx)
-        , NormalTextureIdx(normalTextureIdx)
-        , SpecularTextureIdx(specularTextureIdx)
-        , MaskTextureIdx(maskTextureIdx)
+        , Type(type)
+
+        , Roughness(roughness)
+        , Emittance(emittance)
+
+        , DiffuseTextureIdx(-1)
+        , NormalTextureIdx(-1)
+        , SpecularTextureIdx(-1)
+        , MaskTextureIdx(-1)
     { }
 
     DirectX::XMFLOAT3 Diffuse;  
-    float IndexOfReflection;    
-    //------------------------------------ ( 16 bytes )
-    unsigned int DiffuseTextureIdx;
-    unsigned int NormalTextureIdx;
-    unsigned int SpecularTextureIdx;
-    unsigned int MaskTextureIdx;
-    //------------------------------------ ( 16 bytes )
-    // Total:                              ( 16 * 2 = 32 bytes )
+    unsigned int Type;
+    // ------------------------------------ ( 16 bytes )
+
+    int DiffuseTextureIdx;
+    int NormalTextureIdx;
+    int SpecularTextureIdx;
+    int MaskTextureIdx;
+    // ------------------------------------ ( 16 bytes )
+    
+    float Roughness;    
+    DirectX::XMFLOAT3 Emittance;
+    // ------------------------------------ ( 16 bytes )
+
+    // Total:                              ( 16 * 3 = 48 bytes )
 };
 
 // clang-format on

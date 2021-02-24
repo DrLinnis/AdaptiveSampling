@@ -1,7 +1,15 @@
 
 // Define constants in code
 #define PI 3.1415926538
+#define PI2 6.283185307
+#define PI_2 1.570796327
+#define PI_4 0.7853981635
+#define InvPi 0.318309886
+#define InvPi2 0.159154943
 #define EPSILON 0.00001
+
+#define LAMBERTIAN 0
+#define METAL 1
 
 // PAYLOADS AND STRUCTS
 struct RayPayload
@@ -9,12 +17,11 @@ struct RayPayload
     float3 colour;
     float3 normal;
     float3 position;
-    float3 albedo;
     
-    float metalness;
+    float specular;
     int object;
-    
-    uint bounces;
+    uint rayBudget;
+    uint seed;
 };
 
 struct ShadowPayLoad
@@ -34,11 +41,18 @@ struct VertexAttributes
 struct RayMaterialProp
 {
     float3 Diffuse;
-    float IdxOfRef;
+    uint Type;
+    // 16 bytes: Material Colour and Type
+    
     int DiffuseTextureIdx;
     int NormalTextureIdx;
     int SpecularTextureIdx;
     int MaskTextureIdx;
+    // 16 bytes: Material Texture Indices
+    
+    float Roughness;
+    float3 Emittance;
+    // 16 bytes: Material properties
 };
 
 struct InstanceTransforms
@@ -50,6 +64,17 @@ struct InstanceTransforms
     // 4x4x4 Bytes == 16 aligned
 };
 
+struct PerFrameData
+{
+    float4 camOrigin;
+    float4 camLookAt;
+    float4 camLookUp;
+    float2 camWinSize;
+    
+    uint accumulatedFrames;
+    
+    float _padding;
+};
 
 // SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
@@ -68,58 +93,106 @@ Texture2D<float4> maskTex[]     : register(t1, space6);
 RWTexture2D<float4> gOutput[] : register(u0);
 
 // CBV
-cbuffer PerFrameCameraOrigin : register(b0)
-{
-    float4 cameraOrigin;
-    float4 cameraLookAt;
-    float4 cameraLookUp;
-    float2 cameraWinSize;
-    
-    float2 _padding;
-}
-
+ConstantBuffer<PerFrameData> frame : register(b0);
 ConstantBuffer<InstanceTransforms> instTrans : register(b1);
 
-
-// Helper functions
-uint3 GetIndices(uint geometryIdx, uint triangleIndex)
-{
-    uint indexByteStartAddress = triangleIndex * 3 * 4;
-    return indices[geometryIdx].Load3(indexByteStartAddress);
-}
+// Sampling
+SamplerState trilinearFilter : register(s0);
+SamplerState pointFilter : register(s1);
 
 
-RayMaterialProp GetMaterialProp(uint geometryIndex)
-{
-    RayMaterialProp result;
-    // From Geometry index to int32 location to byte location.
-    uint indexByteStartAddress = geometryIndex * sizeof(RayMaterialProp);
-    
-        result.Diffuse = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
-        indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
-        result.IdxOfRef = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
-        indexByteStartAddress += 4; // add one float
-        result.DiffuseTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
-        indexByteStartAddress += 4; // add one int
-        result.NormalTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
-        indexByteStartAddress += 4; // add one int
-        result.SpecularTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
-        indexByteStartAddress += 4; // add one int
-        result.MaskTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
-    
-    return result;
-}
 
-
+// Generic Helper functions
 float mod(float x, float y)
 {
     return x - y * floor(x / y);
 }
 
+float3 linearToSrgb(float3 c)
+{
+    // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+    float3 sq1 = sqrt(c);
+    float3 sq2 = sqrt(sq1);
+    float3 sq3 = sqrt(sq2);
+    float3 srgb = 0.662002687 * sq1 + 0.684122060 * sq2 - 0.323583601 * sq3 - 0.0225411470 * c;
+    return srgb;
+}
+
+float3 modelToWorldPosition(float3 pos)
+{
+    float3 result = mul(instTrans.rotScale, float4(pos, 0)).xyz;
+    result += instTrans.translate.xyz;
+    return result;
+}
+
+/*
+    Random Generator 
+    ( CODE FROM https://github.com/phgphg777/DXR-PathTracer )
+*/
+uint getNewSeed(uint param1, uint param2, uint numPermutation)
+{
+    uint s0 = 0;
+    uint v0 = param1;
+    uint v1 = param2;
+	
+    for (uint perm = 0; perm < numPermutation; perm++)
+    {
+        s0 += 0x9e3779b9;
+        v0 += ((v1 << 4) + 0xa341316c) ^ (v1 + s0) ^ ((v1 >> 5) + 0xc8013ea4);
+        v1 += ((v0 << 4) + 0xad90777d) ^ (v0 + s0) ^ ((v0 >> 5) + 0x7e95761e);
+    }
+
+    return v0;
+}
+
+float rnd(inout uint seed)
+{
+    seed = (1664525u * seed + 1013904223u);
+    return ((float) (seed & 0x00FFFFFF) / (float) 0x01000000);
+}
+
+// --> https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+float3 applyRotationMappingZToN(in float3 N, in float3 v)	
+{
+    float s = (N.z >= 0.0f) ? 1.0f : -1.0f;
+    v.z *= s;
+
+    float3 h = float3(N.x, N.y, N.z + s);
+    float k = dot(v, h) / (1.0f + abs(N.z));
+
+    return k * h - v;
+}
+
+float3 sample_hemisphere_cos(inout uint seed)
+{
+    float3 sampleDir;
+
+    float param1 = rnd(seed);
+    float param2 = rnd(seed);
+
+	// Uniformly sample disk.
+    float r = sqrt(param1);
+    float phi = PI2 * param2;
+    sampleDir.x = r * cos(phi);
+    sampleDir.y = r * sin(phi);
+
+	// Project up to hemisphere.
+    sampleDir.z = sqrt(max(0.0f, 1.0f - r * r));
+
+    return sampleDir;
+}
+
+
+// INTERPOLATION helper functions
+uint3 _getIndices(uint geometryIdx, uint triangleIndex)
+{
+    uint indexByteStartAddress = triangleIndex * 3 * 4;
+    return indices[geometryIdx].Load3(indexByteStartAddress);
+}
 
 VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
 {
-    uint3 triangleIndices = GetIndices(geometryIndex, primitiveIndex);
+    uint3 triangleIndices = _getIndices(geometryIndex, primitiveIndex);
     uint triangleVertexIndex = 0;
     
     VertexAttributes v;
@@ -164,14 +237,11 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
         );
     
     
-    v.position = mul(instTrans.rotScale, float4(v.position, 0)).xyz;
-    
-    v.position += instTrans.translate.xyz;
+    v.position = modelToWorldPosition(v.position);
     
     for (int i = 0; i < 3; ++i)
     {
-        vertPos[i] = mul(instTrans.rotScale, float4(vertPos[i], 0)).xyz;
-        vertPos[i] += instTrans.translate.xyz;
+        vertPos[i] = modelToWorldPosition(vertPos[i]);
     }
     
     // world space version
@@ -188,11 +258,7 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     return v;
 }
 
-
-
-SamplerState trilinearFilter : register(s0);
-SamplerState pointFilter : register(s1);
-
+// TEXTURE and MATERIAL related helper functions
 float4 TriSampleTex(Texture2D<float4> texArr[], uint index, float3 uvd)
 {
     float depth = uvd[2];
@@ -200,6 +266,37 @@ float4 TriSampleTex(Texture2D<float4> texArr[], uint index, float3 uvd)
 }
 
 
+RayMaterialProp GetMaterialProp(uint geometryIndex)
+{
+    RayMaterialProp result;
+    // From Geometry index to int32 location to byte location.
+    uint indexByteStartAddress = geometryIndex * sizeof(RayMaterialProp);
+    
+    result.Diffuse = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
+    indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
+    result.Type = GeometryMaterialMap.Load(indexByteStartAddress);
+    indexByteStartAddress += 4; // add one float
+    
+    result.DiffuseTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+    indexByteStartAddress += 4; // add one int
+    result.NormalTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+    indexByteStartAddress += 4; // add one int
+    result.SpecularTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+    indexByteStartAddress += 4; // add one int
+    result.MaskTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
+    indexByteStartAddress += 4; // add one int
+    
+    result.Roughness = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    indexByteStartAddress += 4; // add one float
+    result.Emittance = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
+    indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
+    
+    
+    return result;
+}
+
+
+// RAY GENERATION related helper functions
 ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
 {
     RayDesc ray;
@@ -221,17 +318,18 @@ ShadowPayLoad CalcShadowRay(float3 position, float3 direction)
 }
 
 
-RayPayload TracePath(float3 origin, float3 direction, uint bounce)
+RayPayload TracePath(float3 origin, float3 direction, uint rayBudget, uint seed)
 {
     RayPayload reflPayload;
     // return black if we are too far away
-    if (!bounce)
+    if (!rayBudget)
     {
         reflPayload.colour = 0;
         reflPayload.normal = 0;
         return reflPayload;
     }
-    reflPayload.bounces = bounce;
+    reflPayload.rayBudget = rayBudget;
+    reflPayload.seed = seed;
     
     RayDesc ray;
     ray.Origin = origin;
@@ -246,17 +344,9 @@ RayPayload TracePath(float3 origin, float3 direction, uint bounce)
 }
 
 
-float3 linearToSrgb(float3 c)
-{
-    // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
-    float3 sq1 = sqrt(c);
-    float3 sq2 = sqrt(sq1);
-    float3 sq3 = sqrt(sq2);
-    float3 srgb = 0.662002687 * sq1 + 0.684122060 * sq2 - 0.323583601 * sq3 - 0.0225411470 * c;
-    return srgb;
-}
-
-
+/*
+    GENERATE COLOUR based on index helper functions
+*/
 /* Following three functions generates pattern colour from single index*/
 int3 _getPattern( int index) {
     int n = (int) pow(index, 1 / 3); // cubic root
@@ -305,78 +395,11 @@ float3 GenColour(int id)
 }
 
 
-/* START OF REYGEN SHADER */
-[shader("raygeneration")]
-void rayGen()
-{
-    uint3 launchIndex = DispatchRaysIndex();
-    uint3 launchDim = DispatchRaysDimensions();
-
-    float2 crd = float2(launchIndex.xy);
-    float2 dims = float2(launchDim.xy);
-
-    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
-    float aspectRatio = dims.x / dims.y;
-
-    RayDesc ray;
-    ray.Origin = cameraOrigin;
-    
-    float focus_dist = length(cameraOrigin - cameraLookAt);
-    float3 w = normalize(cameraOrigin - cameraLookAt);
-    float3 u = normalize(cross(cameraLookUp.xyz, w));
-    float3 v = cross(w, u);
-    
-    float3 horizontal = focus_dist * cameraWinSize.x * u;
-    float3 vertical = focus_dist * cameraWinSize.y * v;
-    
-
-    ray.Direction = -normalize(cameraLookAt + d.x * horizontal + d.y * vertical - cameraOrigin.xyz);
-    
-    ray.TMin = 0;
-    ray.TMax = 100000;
-
-    RayPayload payload;
-    payload.bounces = 5;
-    TraceRay(gRtScene, 
-        0 /*rayFlags*/, 
-        0xFF, 
-        0 /* ray index*/,
-        2 /* Multiplier for Contribution to hit group index*/,
-        0,
-        ray,
-        payload
-    );
-    
-    //float3 col = linearToSrgb(payload.colour);
-    float3 depth = length(cameraOrigin - payload.position) / 10000;
-    float3 metal = payload.metalness;
-    
-    gOutput[0][launchIndex.xy] = float4(linearToSrgb(payload.colour), 1);
-    gOutput[1][launchIndex.xy] = float4(payload.albedo, 1);
-    gOutput[2][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
-    gOutput[3][launchIndex.xy] = float4(depth, 1);
-    gOutput[4][launchIndex.xy] = float4(payload.position / 1000, 1);
-    gOutput[5][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
-    gOutput[6][launchIndex.xy] = float4(metal, 1);
-
-}
-
-
-// Shadow rays
-[shader("closesthit")]
-void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
-{
-    payload.hitObject = true;
-}
-
-[shader("miss")]
-void shadowMiss(inout ShadowPayLoad payload)
-{
-    payload.hitObject = false;
-}
-
+/*
+    PBR/BDRF helper functions
+*/
 // Trowbridge-Reitx GGX - Normal Distribution Functions
-float DistributionGGX(float cosTheta, float alpha)
+float _distributionGGX(float cosTheta, float alpha)
 {
     float a2 = alpha * alpha;
     float NdotH = cosTheta;
@@ -390,7 +413,7 @@ float DistributionGGX(float cosTheta, float alpha)
 }
 
 // Geometry functions
-float GeometrySchlickGGX(float cosTheta, float k)
+float _geometrySchlickGGX(float cosTheta, float k)
 {
     float nom = cosTheta;
     float denom = max(cosTheta * (1.0 - k) + k, EPSILON);
@@ -398,32 +421,36 @@ float GeometrySchlickGGX(float cosTheta, float k)
     return nom / denom;
 }
   
-float GeometrySmith(float cosLight, float cosView, float k)
+float _geometrySmith(float cosLight, float cosView, float k)
 {
-    float ggx1 = GeometrySchlickGGX(cosView, k);
-    float ggx2 = GeometrySchlickGGX(cosLight, k);
+    float ggx1 = _geometrySchlickGGX(cosView, k);
+    float ggx2 = _geometrySchlickGGX(cosLight, k);
 	
     return ggx1 * ggx2;
 }
 
 //Fresnel function
-float3 FresnelSchlick(float3 F0, float cosOmega)
+float3 _fresnelSchlick(float3 F0, float cosOmega)
 {
     return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
 }
 
-float3 CookTorranceBRDF(float3 l, float3 n, float3 v, float3 albedo,
-                        float metalness, float IdxOfRef, float roughness)
+float3 CookTorranceBRDF(float3 n, float3 v, float3 pos, float3 albedo, uint rayBudget, float seed,
+                        float metalness, float roughness, float specular, uint type)
 {
+    // Path reflected ray
+    float3 l = sample_hemisphere_cos(seed); // ASSUME every material is diffuse
+    l = applyRotationMappingZToN(n, l);
+        
+    RayPayload Li = TracePath(pos, l, rayBudget - 1, seed);
+    
     float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
     F0 = lerp(F0, albedo, metalness);
     
-    
-    float alpha = 0.5;
-    float k_direct = (alpha + 1) * (alpha + 1) / 8;
+    float k_direct = (roughness + 1) * (roughness + 1) / 8;
    
     // Build halfway vector
-    float3 h = normalize(l + v); 
+    float3 h = normalize(l + v);
     
     float cosTheta = max(dot(n, h), 0); // angle between normal and halfway vector
     float cosOmega = max(dot(v, h), 0); // angle between view and halfway vector
@@ -431,22 +458,113 @@ float3 CookTorranceBRDF(float3 l, float3 n, float3 v, float3 albedo,
     float cosLight = max(dot(n, l), 0); // angle between light and normal
     float cosView = max(dot(n, v), 0); // angle between view and normal
     
-    float D = DistributionGGX(cosTheta, alpha);
+    float D = _distributionGGX(cosTheta, roughness);
     
-    float3 F = FresnelSchlick(F0, cosOmega); 
+    float3 F = specular * _fresnelSchlick(F0, cosOmega);
     
-    float G = GeometrySmith(cosLight, cosView, k_direct);    
+    float G = _geometrySmith(cosLight, cosView, k_direct);
     
     // Calc diffuse comp (REFRACT)
     float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
     
     float denom = max(4 * cosView * cosLight, EPSILON);
     
-    return kD * albedo / PI + D * F * G / denom;
-    //return D;
+    return (kD * albedo + D * F * G / denom) * Li.colour * cosLight;
 }
 
-// Standard rays
+
+/* 
+    START OF REYGEN SHADER 
+*/
+[shader("raygeneration")]
+void rayGen()
+{
+    uint3 launchIndex = DispatchRaysIndex();
+    uint3 launchDim = DispatchRaysDimensions();
+
+    uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
+    uint seed = getNewSeed(bufferOffset, frame.accumulatedFrames, 8);
+    
+    float2 crd = float2(launchIndex.xy) + float2(rnd(seed), rnd(seed));
+    float2 dims = float2(launchDim.xy);
+
+    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
+    float aspectRatio = dims.x / dims.y;
+
+    RayDesc ray;
+    ray.Origin = frame.camOrigin;
+    
+    float focus_dist = length(frame.camOrigin - frame.camLookAt);
+    float3 w = normalize(frame.camOrigin - frame.camLookAt);
+    float3 u = normalize(cross(frame.camLookUp.xyz, w));
+    float3 v = cross(w, u);
+    
+    float3 horizontal = focus_dist * frame.camWinSize.x * u;
+    float3 vertical = focus_dist * frame.camWinSize.y * v;
+    
+
+    ray.Direction = -normalize(frame.camLookAt + d.x * horizontal + d.y * vertical - frame.camOrigin.xyz);
+    
+    ray.TMin = 0;
+    ray.TMax = 100000;
+
+    RayPayload payload;
+    payload.rayBudget = 5;
+    payload.seed = seed;
+    TraceRay(gRtScene, 
+        0 /*rayFlags*/, 
+        0xFF, 
+        0 /* ray index*/,
+        2 /* Multiplier for Contribution to hit group index*/,
+        0,
+        ray,
+        payload
+    );
+    
+    float depth = length(frame.camOrigin - payload.position);
+    
+    /*
+        Rendered Image
+        Normal
+        WorldPos + Depth
+        Objects
+        Specular
+    */
+    
+    float3 newRadiance = linearToSrgb(payload.colour);
+    
+    float3 avrRadiance; 
+    if (frame.accumulatedFrames == 0)
+        avrRadiance = newRadiance;
+    else
+        avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
+    
+    gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
+    gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    gOutput[2][launchIndex.xy] = float4(payload.position, depth);
+    gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
+    gOutput[4][launchIndex.xy] = float4(payload.specular, payload.specular, payload.specular, 1);
+
+}
+
+/*
+    SHADOW rays
+*/
+[shader("closesthit")]
+void shadowChs(inout ShadowPayLoad payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    payload.hitObject = true;
+}
+
+[shader("miss")]
+void shadowMiss(inout ShadowPayLoad payload)
+{
+    payload.hitObject = false;
+}
+
+/*
+    STANDARD ray shader
+*/
 [shader("closesthit")] 
 void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
@@ -454,10 +572,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
-    const float p = 1 / (2 * PI);
-    
     float3 L = normalize(float3(0.5, 2.5, -0.5));
-    //float3 L = normalize(float3(0.5, 1, 0.5));;
     
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
@@ -465,11 +580,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     RayMaterialProp mat = GetMaterialProp(GeometryIndex());
     VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
     
-    
     // Alpha can be set by either mask or diffuse texture
-    
     float4 tex_rgba = float4(mat.Diffuse, 1);
-    
     
     if (mat.MaskTextureIdx >= 0) {
         float alpha = maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x;
@@ -496,24 +608,22 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 finalColour = 0;
     float3 finalNormal = 0;
     float3 finalPos = 0;
-    float3 finalAlbedo = 0;
     
-    float finalMetalness = 0;
+    float finalSpecular = 0;
     int finalObject = 0;
-    
     
     // Transparent pixel hit!
     if (tex_rgba.w == 0) 
     {
         // unfortunetly we must continue the ray and reduce depth or we will crash :(
-        RayPayload continouedRay = TracePath(v.position, rayDirW, payload.bounces - 1);
-        finalColour = continouedRay.colour;
-        finalNormal = continouedRay.normal;
-        finalPos = continouedRay.position;
-        finalAlbedo = continouedRay.albedo;
-        finalObject = continouedRay.object;
-        finalMetalness = continouedRay.metalness;
-
+        RayPayload contRay = TracePath(v.position, rayDirW, payload.rayBudget - 1, payload.seed);
+        
+        finalColour = contRay.colour;
+        finalNormal = contRay.normal;
+        finalPos = contRay.position;
+        
+        finalObject = contRay.object;
+        finalSpecular = contRay.specular;
     }
     else  // We have hit a normal object/pixel
     {
@@ -531,52 +641,33 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         }
         normal = normalize(mul(instTrans.normalRotScale, float4(normal, 0)).xyz);
         
-        // Reflection vector
-        float3 R = reflect(rayDirW, normal);
         // View Vector
         float3 V = -rayDirW;
         
-        float specIntensity = 0;
+        float specVal = 0;
         if (mat.SpecularTextureIdx >= 0)
         {
-            specIntensity = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).r;
+            specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).w;
         }
         
-        // Path reflected ray
-        RayPayload reflectedRay = TracePath(v.position, R, payload.bounces - 1);
         
+        float3 BRDF = CookTorranceBRDF(normal, V, v.position, albedo,
+                payload.rayBudget, payload.seed, 0, mat.Roughness, specVal, mat.Type);
         
-        float3 L0 = 0.5 * CookTorranceBRDF(R, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * reflectedRay.colour * dot(normal, R);
-        
-        //float3 L0 = CookTorranceBRDF(L, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * float3(.529, .808, .922) * dot(normal, L);
-        
-        //float3 L0 = 0;
-        
-        // Fire a shadow ray. 
-        ShadowPayLoad shadowPayload = CalcShadowRay(v.position, L);
-        
-        if (!shadowPayload.hitObject)
-            L0 = L0 + 0.5 * CookTorranceBRDF(L, normal, V, albedo, 0.3, mat.IdxOfRef, specIntensity) * float3(.529, .808, .922) * dot(normal, L);
-
-        
-        //finalColour = CookTorranceBRDF(L, normal, V, albedo, 0.5, mat.IdxOfRef, specIntensity) * dot(normal, L);
-        finalColour = L0;
-        
-        
+        finalColour = BRDF;
         finalNormal = normal;
         finalPos = v.position;
-        finalAlbedo = albedo;
         
         finalObject = GeometryIndex();
-        finalMetalness = specIntensity;
+        finalSpecular = specVal;
+        
     }
     
-    payload.colour = finalColour;
+    payload.colour = mat.Emittance + finalColour;
     payload.normal = finalNormal;
     payload.position = finalPos;
-    payload.albedo = finalAlbedo;
     
-    payload.metalness = finalMetalness;
+    payload.specular = finalSpecular;
     payload.object = finalObject;
 }
 
@@ -587,12 +678,11 @@ void standardMiss(inout RayPayload payload)
     float3 rayOriginW = WorldRayOrigin();
     
     // sky normal, depth, and colour
-    payload.colour = float3(.529, .808, .922); 
-    payload.albedo = float3(.529, .808, .922);
+    payload.colour = float3(.529, .808, .922);
     payload.normal = 0.5;
     payload.position = rayOriginW + 100000 * rayDirW;
     
-    payload.metalness = 0;
+    payload.specular = 0;
     payload.object = -1;
 
 }
