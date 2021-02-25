@@ -65,6 +65,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
 , m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -500, 100, 0 ), XMFLOAT2( width / (float)height, 1 ) )
+, m_Globals(5)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -77,8 +78,9 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
     m_Window->Resize += ResizeEvent::slot( &DummyGame::OnResize, this );
     m_Window->DPIScaleChanged += DPIScaleEvent::slot( &DummyGame::OnDPIScaleChanged, this );
 
-    
-
+    backgroundColour[0] = m_frameData.atmosphere.x;
+    backgroundColour[1] = m_frameData.atmosphere.y;
+    backgroundColour[2] = m_frameData.atmosphere.z;
 }
 
 DummyGame::~DummyGame()
@@ -137,14 +139,16 @@ void DummyGame::CreateRayTracingPipeline() {
     // Create the ray-gen root-signature and association
     {
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[3] = {};
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[4] = {};
         size_t                    rangeIdx           = 0;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                  m_nbrRayRenderTargets );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                  m_nbrRayRenderTargets + 1 );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                                 m_nbrRayRenderTargets + 2 );
 
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
@@ -177,13 +181,18 @@ void DummyGame::CreateRayTracingPipeline() {
     {
         std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
         // TLAS + Idx + Vert + MatProp + Diffuse
-        size_t rangeSize = 8;
+        size_t rangeSize = 9;
 
         ranges.resize( rangeSize );
 
         size_t                    rangeIdx = 0;
         size_t                    offset    = m_nbrRayRenderTargets + 1;
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 1, 0,
@@ -223,7 +232,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
         rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges.data() );
-        rayRootParams[1].InitAsConstantBufferView( 1 ); // 
+        rayRootParams[1].InitAsConstantBufferView( 2 ); 
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
@@ -293,7 +302,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
         // Create the pipeline config, per bounce, 1 reflection, 1 refraction
-        PipelineConfig config( m_Bounces * 2 ); 
+    PipelineConfig config( m_Globals.nbrBouncesPerPath * m_Globals.nbrRaysPerBounce ); 
         subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
@@ -354,8 +363,6 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, rayObjID );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color6, rayMetal );
 
-    m_FrameDataCB = m_Device->CreateMappableBuffer( 256 );
-
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
     uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
@@ -367,12 +374,14 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     srvTlasDesc.RaytracingAccelerationStructure.Location =  m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
 
 
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-    cbvDesc.SizeInBytes                     = 256;
-    cbvDesc.BufferLocation                  = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc[2] = {};
+    cbvDesc[0].SizeInBytes                     = 256;
+    cbvDesc[0].BufferLocation                  = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
-    m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &uavDesc, &srvTlasDesc,
-                                                       &cbvDesc, m_RaySceneMesh.get() );
+    cbvDesc[1].SizeInBytes                   = align_to( 256, sizeof( GlobalConstantData ) );
+    cbvDesc[1].BufferLocation                = m_GlobalCB->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &uavDesc, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
 }
 
 void FillTransformMatrix( FLOAT pDest[3][4], InstanceTransforms* pTrans) 
@@ -496,6 +505,18 @@ void DummyGame::UpdateConstantBuffer()
 
 void DummyGame::CreateConstantBuffer() 
 {
+    m_FrameDataCB = m_Device->CreateMappableBuffer( 256 );
+
+    m_GlobalCB = m_Device->CreateMappableBuffer( align_to( 256, sizeof( GlobalConstantData ) ) );
+
+    // Upload data
+    void* pData;
+    ThrowIfFailed( m_GlobalCB->Map( &pData ) );
+    {
+        memcpy( pData, &m_Globals, sizeof( GlobalConstantData ) );
+    }
+    m_GlobalCB->Unmap();
+
     m_InstanceTransformResources = m_Device->CreateMappableBuffer( sizeof( InstanceTransforms ) );
     UpdateConstantBuffer();
 }
@@ -612,13 +633,13 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    #if 1
+    #if 0
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" ); scene_scale = 100;
+    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
 
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );

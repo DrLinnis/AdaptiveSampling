@@ -49,7 +49,8 @@ struct FrameData
     , camLookUp( 0, 1, 0, 0 )
     , camWinSize( cameraWinSize.x, cameraWinSize.y )
     , accumulatedFrames(0)
-    , _padding(0)
+    , atmosphere( { .529, .808, .922, 0 } )
+    , nbrSamplesPerPixel(1)
     {}
 
     bool Equal( FrameData* pOld ) 
@@ -64,9 +65,6 @@ struct FrameData
         DirectX::XMStoreFloat4( &arr[3], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &atmosphere ),
                                                                  DirectX::XMLoadFloat4( &pOld->atmosphere ) ) );
         
-        
-
-
         for ( DirectX::XMFLOAT4 a : arr) {
             bool elements = a.x && a.y && a.z; 
             if ( !elements ) // If not all channels are equal
@@ -85,8 +83,26 @@ struct FrameData
     DirectX::XMFLOAT2 camWinSize;
 
     uint32_t accumulatedFrames;
+    uint32_t nbrSamplesPerPixel;
+};
 
-    float _padding;
+struct GlobalConstantData
+{
+    GlobalConstantData( uint32_t nbrBouncesPerPath, uint32_t nbrRaysPerBounce = 1 )
+    : nbrBouncesPerPath( nbrBouncesPerPath )
+    , nbrRaysPerBounce( nbrRaysPerBounce )
+    , nbrActiveLights( 0 )
+    { }
+
+    uint32_t nbrBouncesPerPath;
+    uint32_t nbrRaysPerBounce;
+
+    uint32_t nbrActiveLights;
+
+    float _padding = 0;
+
+    // Fill all elements with empty positions
+    DirectX::XMFLOAT4 lightPositions[10] = { DirectX::XMFLOAT4(0,0,0,0) };
 };
 
 struct InstanceTransforms
@@ -248,8 +264,8 @@ protected:
 private:
     // Added tutorial member:
 #if RAY_TRACER
-    
-    const unsigned int m_Bounces = 5;
+
+    GlobalConstantData m_Globals;
 
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
@@ -287,13 +303,14 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
     std::shared_ptr<dx12lib::MappableBuffer> m_FrameDataCB;
+    std::shared_ptr<dx12lib::MappableBuffer> m_GlobalCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_InstanceTransformResources;
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
 
 
     // Tut 6
-    const uint32_t        m_nbrRayRenderTargets = 5;
+    const uint32_t m_nbrRayRenderTargets = 5;
     dx12lib::RenderTarget m_RayRenderTarget;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
@@ -335,7 +352,7 @@ private:
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-    FLOAT backgroundColour[3] = { 0, 0, 0 };
+    FLOAT backgroundColour[3];
 
 
     // General

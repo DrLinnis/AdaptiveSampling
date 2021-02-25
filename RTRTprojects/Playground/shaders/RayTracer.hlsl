@@ -69,8 +69,19 @@ struct PerFrameData
     float2 camWinSize;
     
     uint accumulatedFrames;
+    uint nbrSamplesPerPixel;
+};
+
+struct ConstantData
+{
+    uint nbrBouncesPerPath;
+    uint nbrRaysPerBounce;
+    
+    uint nbrActiveLights;
     
     float _padding;
+    
+    float4 lightPositions[10];
 };
 
 // SRV
@@ -91,7 +102,8 @@ RWTexture2D<float4> gOutput[] : register(u0);
 
 // CBV
 ConstantBuffer<PerFrameData> frame : register(b0);
-ConstantBuffer<InstanceTransforms> instTrans : register(b1);
+ConstantBuffer<ConstantData> globals : register(b1);
+ConstantBuffer<InstanceTransforms> instTrans : register(b2);
 
 // Sampling
 SamplerState trilinearFilter : register(s0);
@@ -461,14 +473,14 @@ void rayGen()
     uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
     uint seed = getNewSeed(bufferOffset, frame.accumulatedFrames, 8);
     
-    float2 crd = float2(launchIndex.xy) + float2(rnd(seed), rnd(seed));
+    
     float2 dims = float2(launchDim.xy);
-
-    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
     float aspectRatio = dims.x / dims.y;
 
     RayDesc ray;
     ray.Origin = frame.camOrigin;
+    ray.TMin = 0;
+    ray.TMax = 100000;
     
     float focus_dist = length(frame.camOrigin - frame.camLookAt);
     float3 w = normalize(frame.camOrigin - frame.camLookAt);
@@ -478,26 +490,33 @@ void rayGen()
     float3 horizontal = focus_dist * frame.camWinSize.x * u;
     float3 vertical = focus_dist * frame.camWinSize.y * v;
     
-
-    ray.Direction = -normalize(frame.camLookAt + d.x * horizontal + d.y * vertical - frame.camOrigin.xyz);
     
-    ray.TMin = 0;
-    ray.TMax = 100000;
-
+    float2 crd = float2(launchIndex.xy);
+    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
+   
+    float3 newRadiance = 0;
+    
     RayPayload payload;
-    payload.rayBudget = 5;
-    payload.seed = seed;
-    TraceRay(gRtScene, 
-        0 /*rayFlags*/, 
-        0xFF, 
-        0 /* ray index*/,
-        1 /* Multiplier for Contribution to hit group index*/,
-        0,
-        ray,
-        payload
-    );
+    payload.rayBudget = globals.nbrBouncesPerPath;
     
-    float depth = length(frame.camOrigin - payload.position);
+    for (int i = 0; i < frame.nbrSamplesPerPixel; ++i)
+    {
+        float2 uv = d + (2.0f * float2(rnd(seed), rnd(seed)) - 1.0) / dims;
+        //+(2.0f * float2(rnd(payload.seed), rnd(payload.seed)) / dims - 1.0);
+        ray.Direction = -normalize(frame.camLookAt + uv.x * horizontal + uv.y * vertical - frame.camOrigin.xyz);
+        
+        payload.seed = seed;
+        TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF, 0 /* ray index*/,
+            1 /* Multiplier for Contribution to hit group index*/, 0,
+            ray, payload 
+        );
+        seed = payload.seed;
+        newRadiance += payload.colour;
+        
+
+    }
+    
+    newRadiance /= (float) frame.nbrSamplesPerPixel;
     
     /*
         Rendered Image
@@ -507,14 +526,15 @@ void rayGen()
         Specular
     */
     
-    float3 newRadiance = linearToSrgb(payload.colour);
+    
+    
+    float depth = length(frame.camOrigin - payload.position);
     
     float3 avrRadiance; 
     if (frame.accumulatedFrames == 0)
         avrRadiance = newRadiance;
     else
-        avrRadiance = newRadiance;
-    //lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
+        avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
     
     gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
     gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);

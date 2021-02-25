@@ -115,7 +115,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = nbrRenderTargets + 2 + 2 * nbrMeshes + 1 + nbrTextures;
+    desc.NumDescriptors = nbrRenderTargets + 3 + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -140,8 +140,12 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
         
 
 
-        // Per frame buffer - camera info etc
-        d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
+        // Per frame buffer - Constant globals buffer - camera info etc
+        d3d12Device->CreateConstantBufferView( &pCbv[0], heapHandle );
+
+        heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+
+        d3d12Device->CreateConstantBufferView( &pCbv[1], heapHandle );
 
         heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
