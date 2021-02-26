@@ -23,7 +23,7 @@ Resource::Resource(Device& device, const D3D12_RESOURCE_DESC& resourceDesc, cons
                                                          m_d3d12ClearValue.get(), IID_PPV_ARGS( &m_d3d12Resource ) ) );
 
     ResourceStateTracker::AddGlobalResourceState( m_d3d12Resource.Get(), initState );
-
+        
     CheckFeatureSupport();
 }
 

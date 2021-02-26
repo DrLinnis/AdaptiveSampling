@@ -132,6 +132,6 @@ void AccelerationBuffer::CreateTopLevelAS(
 
     pCommandList->BuildRaytracingAccelerationStructure( &asDesc );
 
-    pCommandList->UAVBarrier( pDes->pResult, true);
+    pCommandList->UAVBarrier( pDes->pResult);
 
 }

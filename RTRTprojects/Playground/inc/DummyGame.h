@@ -58,10 +58,13 @@ struct FrameData
         DirectX::XMFLOAT4 arr[4];
         DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ),
                                                                  DirectX::XMLoadFloat4( &pOld->camPos ) ) );
+
         DirectX::XMStoreFloat4( &arr[1], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ),
                                                                  DirectX::XMLoadFloat4( &pOld->camLookAt ) ) );
+
         DirectX::XMStoreFloat4( &arr[2], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ),
                                                                  DirectX::XMLoadFloat4( &pOld->camLookUp ) ) );
+
         DirectX::XMStoreFloat4( &arr[3], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &atmosphere ),
                                                                  DirectX::XMLoadFloat4( &pOld->atmosphere ) ) );
         
@@ -80,6 +83,7 @@ struct FrameData
     DirectX::XMFLOAT4 camPos;
     DirectX::XMFLOAT4 camLookAt;
     DirectX::XMFLOAT4 camLookUp;
+
     DirectX::XMFLOAT2 camWinSize;
 
     uint32_t accumulatedFrames;
@@ -110,72 +114,53 @@ struct InstanceTransforms
 
     void CalculateNormalInverse() 
     {
-        auto A         = DirectX::XMLoadFloat4x4( &RS );
+        auto A         = DirectX::XMLoadFloat3x4( &matrix );
         auto detA      = DirectX::XMMatrixDeterminant( A );
         auto Ainv      = DirectX::XMMatrixInverse( &detA, A );
         auto AinvTrans = DirectX::XMMatrixTranspose( Ainv );
-        DirectX::XMStoreFloat4x4( &normal_RS, AinvTrans );
+        DirectX::XMStoreFloat3x4( &normal_matrix, AinvTrans );
     }
 
     InstanceTransforms()
-    : RS(   1, 0, 0, 0,
+    : matrix( 1, 0, 0, 0,
             0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1)
-    , translate(0,0,0,0)
+            0, 0, 1, 0)
     {
         CalculateNormalInverse();
     }
 
-    #if 1
     InstanceTransforms( DirectX::XMFLOAT3 scale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
-    : RS( scale.x, 0, 0, 0, 
-        0, scale.y, 0, 0, 
-        0, 0, scale.z, 0,
-            0, 0,       0, 1)
-    , translate(pos.x, pos.y, pos.z, 0)
+    : matrix( scale.x, 0, 0, pos.x, 
+        0, scale.y, 0, pos.y, 
+        0, 0, scale.z, pos.z )
     {
         CalculateNormalInverse();
     }
-    #else
-    InstanceTransforms( DirectX::XMFLOAT3 scale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
-    : RS( scale.x, 0, 0, 0, 
-        0, 0, -scale.y, 0, 
-        0, scale.z, 0, 0,
-            0, 0,       0, 1)
-    , translate(pos.x, pos.y, pos.z, 0)
-    {
-        CalculateNormalInverse();
-    }
-    #endif
 
     InstanceTransforms( DirectX::XMFLOAT3X3 rotScale, DirectX::XMFLOAT3 pos = DirectX::XMFLOAT3( 0, 0, 0 ) )
-    : RS( rotScale._11, rotScale._12, rotScale._12, 0, 
-        rotScale._21, rotScale._22, rotScale._22, 0,
-        rotScale._31, rotScale._32, rotScale._32, 0,
-        0, 0, 0, 1 )
-    , translate( pos.x, pos.y, pos.z, 0 )
+    : matrix( rotScale._11, rotScale._12, rotScale._12, pos.x, 
+        rotScale._21, rotScale._22, rotScale._22, pos.y,
+          rotScale._31, rotScale._32, rotScale._32, pos.z )
     {
         CalculateNormalInverse();
     }
 
-    DirectX::XMFLOAT4X4 RS;
-    DirectX::XMFLOAT4X4 normal_RS;
-    DirectX::XMFLOAT4   translate;
+    DirectX::XMFLOAT3X4 matrix;
+    DirectX::XMFLOAT3X4 normal_matrix;
 
     // 4x4x4 Bytes == 16 aligned
 
     bool Equal( InstanceTransforms* pOld )
     {
-        DirectX::XMFLOAT4X4* thisMatrices[2] = { &this->RS, &this->normal_RS };
-        DirectX::XMFLOAT4X4* theyMatrices[2] = { &pOld->RS, &pOld->normal_RS };
+        DirectX::XMFLOAT3X4* thisMatrices[2] = { &this->matrix, &this->normal_matrix };
+        DirectX::XMFLOAT3X4* theyMatrices[2] = { &pOld->matrix, &pOld->normal_matrix };
             
         // Checking matrices
         for (int idx = 0; idx < 2; ++idx) 
         {
-            DirectX::XMFLOAT4X4* curr = thisMatrices[idx];
-            DirectX::XMFLOAT4X4* old  = theyMatrices[idx];
-            for ( int i = 0; i < 4; ++i )
+            DirectX::XMFLOAT3X4* curr = thisMatrices[idx];
+            DirectX::XMFLOAT3X4* old  = theyMatrices[idx];
+            for ( int i = 0; i < 3; ++i )
             {
                 for ( int j = 0; j < 4; ++j )
                 {
@@ -183,18 +168,6 @@ struct InstanceTransforms
                         return false;
                 }
             }
-        }
-
-        // checking vectors
-        DirectX::XMFLOAT4 arr[1];
-        DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &translate ),
-                                                                 DirectX::XMLoadFloat4( &pOld->translate ) ) );
-
-        for ( DirectX::XMFLOAT4 a: arr )
-        {
-            bool elements = a.x && a.y && a.z;
-            if ( !elements )
-                return false;
         }
 
         return true;
@@ -265,7 +238,10 @@ private:
     // Added tutorial member:
 #if RAY_TRACER
 
-    GlobalConstantData m_Globals;
+    
+    alignas( 16 ) FrameData m_frameData;
+    alignas( 16 ) GlobalConstantData m_Globals;
+
 
     std::shared_ptr<dx12lib::AccelerationBuffer> m_BLAS;
 
@@ -377,8 +353,8 @@ private:
 
     float cam_speed       = 300.0f;
 
-    float scene_rot_speed  = 0.0f;
-    float scene_rot_offset       = 0;
+    float scene_rot_speed   = 0.0f;
+    float scene_rot_offset  = 0;
     float scene_scale       = 1;
 
     // Camera controller
@@ -391,8 +367,6 @@ private:
 
     float m_Pitch;
     float m_Yaw;
-
-    FrameData m_frameData;
 
     int  m_Width;
     int  m_Height;

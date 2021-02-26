@@ -52,11 +52,8 @@ struct RayMaterialProp
 
 struct InstanceTransforms
 {
-    matrix<float, 4, 4> rotScale;
-    matrix<float, 4, 4> normalRotScale;
-    float4 translate;
-    
-    // 4x4x4 Bytes == 16 aligned
+    row_major matrix<float, 3, 4> modelToWorld;
+    row_major matrix<float, 3, 4> normalModelToWorld;
 };
 
 struct PerFrameData
@@ -129,9 +126,7 @@ float3 linearToSrgb(float3 c)
 
 float3 modelToWorldPosition(float3 pos)
 {
-    float3 result = mul(instTrans.rotScale, float4(pos, 0)).xyz;
-    result += instTrans.translate.xyz;
-    return result;
+    return mul(instTrans.modelToWorld, float4(pos, 1)).xyz;
 }
 
 /*
@@ -501,7 +496,8 @@ void rayGen()
     
     for (int i = 0; i < frame.nbrSamplesPerPixel; ++i)
     {
-        float2 uv = d + (2.0f * float2(rnd(seed), rnd(seed)) - 1.0) / dims;
+        float2 uv = d;
+        //+(2.0f * float2(rnd(seed), rnd(seed)) - 1.0) / dims;
         //+(2.0f * float2(rnd(payload.seed), rnd(payload.seed)) / dims - 1.0);
         ray.Direction = -normalize(frame.camLookAt + uv.x * horizontal + uv.y * vertical - frame.camOrigin.xyz);
         
@@ -621,7 +617,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(normal, TBN);
         }
-        normal = normalize(mul(instTrans.normalRotScale, float4(normal, 0)).xyz);
+        normal = normalize(mul(instTrans.normalModelToWorld, float4(normal, 0)).xyz);
         
         // View Vector
         float3 V = -rayDirW;

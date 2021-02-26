@@ -384,25 +384,6 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &uavDesc, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
 }
 
-void FillTransformMatrix( FLOAT pDest[3][4], InstanceTransforms* pTrans) 
-{
-    pDest[0][0] = pTrans->RS._11;
-    pDest[1][0] = pTrans->RS._21;
-    pDest[2][0] = pTrans->RS._31;
-
-    pDest[0][1] = pTrans->RS._12;
-    pDest[1][1] = pTrans->RS._22;
-    pDest[2][1] = pTrans->RS._32;
-
-    pDest[0][2] = pTrans->RS._13;
-    pDest[1][2] = pTrans->RS._23;
-    pDest[2][2] = pTrans->RS._33;
-
-    pDest[0][3] = pTrans->translate.x;
-    pDest[1][3] = pTrans->translate.y;
-    pDest[2][3] = pTrans->translate.z;
-}
-
 void DummyGame::CreateAccelerationStructure() 
 {
 
@@ -465,8 +446,7 @@ void DummyGame::CreateAccelerationStructure()
             pInstDesc[0].InstanceContributionToHitGroupIndex     = 0;
             pInstDesc[0].Flags                                   = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 
-            FillTransformMatrix( pInstDesc[0].Transform, &m_InstanceTransforms[0] );
-           
+            memcpy( &pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
 
             // select the BLAS we build on.
             pInstDesc[0].AccelerationStructure = blasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
@@ -492,13 +472,7 @@ void DummyGame::UpdateConstantBuffer()
     void* pData;
     ThrowIfFailed( m_InstanceTransformResources->Map( &pData ) );
     {
-        InstanceTransforms transposedInstTrans = m_InstanceTransforms[0];
-
-        XMStoreFloat4x4( &transposedInstTrans.RS, XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.RS ) ) );
-        XMStoreFloat4x4( &transposedInstTrans.normal_RS,
-                         XMMatrixTranspose( XMLoadFloat4x4( &transposedInstTrans.normal_RS ) ) );
-
-        memcpy( pData, &transposedInstTrans, sizeof( InstanceTransforms ) );
+        memcpy( pData, &m_InstanceTransforms[0], sizeof( InstanceTransforms ) );
     }
     m_InstanceTransformResources->Unmap();
 }
@@ -644,11 +618,23 @@ bool DummyGame::LoadContent()
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
-    DirectX::XMFLOAT3 lightPositions[] = {
-        { 1120, 200, 445 }, { 1120, 200, -405 }, { -1190, 200, 445 }, { -1190, 200, -405 }
-    };
+
+
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1120, 200, 445, 0 );
+    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 0 );
+    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( -1190, 200, 445, 0 );
+    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( -1190, 200, -405, 0 );
+    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 0, 2000, 0, 0 ); // sun, up?
+
     for (int i = 0; i < 4; ++i) {
-        auto m_RaySphere = commandList->CreateSphere( 45, 16u, lightPositions[i] );
+
+        auto pos         = DirectX::XMFLOAT3(
+            m_Globals.lightPositions[i].x, 
+            m_Globals.lightPositions[i].y,
+            m_Globals.lightPositions[i].z 
+        );
+        
+        auto m_RaySphere = commandList->CreateSphere( 45, 16u, pos );
 
         auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
         sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 0.5 + Math::random_double() * 0.5,
@@ -891,9 +877,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
     static double   totalTime  = 0.0;
+    static double   updateTimer         = 0;
     static double   accumalatedRotation = 0.0;
 
     totalTime += e.DeltaTime;
+    updateTimer += e.DeltaTime;
     accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
@@ -915,6 +903,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_frameData.camPos.x, m_frameData.camPos.y,
                             m_frameData.camPos.z );
         }
+
     }
 
     // Defacto update
@@ -929,24 +918,12 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         auto R  = DirectX::XMMatrixRotationY( accumalatedRotation + Math::Radians( scene_rot_offset ) );
         auto RS = DirectX::XMMatrixMultiply( R, S );
 
-        DirectX::XMStoreFloat4x4( &m_InstanceTransforms[0].RS, RS );
+        DirectX::XMStoreFloat3x4( &m_InstanceTransforms[0].matrix, RS );
         m_InstanceTransforms[0].CalculateNormalInverse();
 
         isAccumelatingFrames &= m_InstanceTransforms[0].Equal( &oldTransforms );
 
-        // update buffers
-        UpdateConstantBuffer();
-
-        D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
-        ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
-        {
-            FillTransformMatrix( pInstDesc[0].Transform, &m_InstanceTransforms[0] );
-        }
-        m_InstanceDescBuffer->Unmap();
-
 #endif
-
-
 
         const float cam_dist = 1.0;
         XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
@@ -957,10 +934,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         m_frameData.atmosphere.y = backgroundColour[1];
         m_frameData.atmosphere.z = backgroundColour[2];
 
+
         UpdateCamera( 
-            ( m_Left - m_Right ) * cam_speed * e.DeltaTime, 
-            ( m_Up - m_Down ) * cam_speed * e.DeltaTime,
-                      ( m_Backward - m_Forward ) * cam_speed * e.DeltaTime 
+            ( m_Left - m_Right ) * cam_speed * e.DeltaTime,
+            ( m_Up - m_Down ) * cam_speed * e.DeltaTime, 
+            ( m_Backward - m_Forward ) * cam_speed * e.DeltaTime 
         );
 
         auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
@@ -978,13 +956,42 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             m_frameData.accumulatedFrames += 1;
         }
 
-        // update buffers
-        void* pData;
-        ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
-        {
-            memcpy( pData, &m_frameData, sizeof( FrameData ) );
+        // 10 times each second
+        if (updateTimer > 0.01) {
+            updateTimer = 0;
+
+            // update buffers
+            static unsigned int updatingX = 0;
+            switch ( updatingX )
+            {
+            case 0:
+                void* pData;
+                ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
+                {
+                    memcpy( pData, &m_frameData, sizeof( FrameData ) );
+                }
+                m_FrameDataCB->Unmap();
+                break;
+            case 1:
+                D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
+                ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
+                {
+                    memcpy( pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
+                }
+                m_InstanceDescBuffer->Unmap();
+                break;
+            case 2:
+
+                UpdateConstantBuffer();
+
+                break;
+            }
+            //updatingX += 1;
+            if ( updatingX > 2 )
+                updatingX = 0;
         }
-        m_FrameDataCB->Unmap();
+        
+
     }
 
 
@@ -1012,10 +1019,15 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderFloat( "Scene Rotation Offset", &scene_rot_offset, -180, 180 );
         ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
 
+        int tmp = static_cast<int>( m_frameData.nbrSamplesPerPixel );
+        ImGui::SliderInt( "Samples Per Pixel", &tmp, 1, 10 );
+        m_frameData.nbrSamplesPerPixel = static_cast<uint32_t>( tmp );
+
         ImGui::End();
     }
 
-    if ( ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
+    static bool editAtmosphere = false;
+    if ( editAtmosphere && ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
     {
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
@@ -1045,10 +1057,13 @@ void DummyGame::OnRender()
             commandList->TransitionBarrier( resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
         }
 
+
 #if UPDATE_TRANSFORMS
+
         AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
                                               m_Instances, m_InstanceDescBuffer.get(), true );
-#endif
+
+    #endif
         /*
             Here we declare where the hitshader is, where the miss shader is, and where the raygen shader
         */
@@ -1238,3 +1253,4 @@ void DummyGame::OnMouseWheel( MouseWheelEventArgs& e )
 
     }
 }
+
