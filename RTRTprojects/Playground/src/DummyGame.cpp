@@ -64,7 +64,9 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_VSync( vSync )
 , m_Fullscreen( false )
 , m_RenderScale( 1.0f )
-, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -500, 100, 0 ), XMFLOAT2( width / (float)height, 1 ) )
+, m_CamWindow( width / (float)height, 1 )
+, m_CamPos( 50, 50, 0 )
+, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
 , m_Globals(5)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
@@ -81,6 +83,10 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
     backgroundColour[0] = m_frameData.atmosphere.x;
     backgroundColour[1] = m_frameData.atmosphere.y;
     backgroundColour[2] = m_frameData.atmosphere.z;
+
+    UpdateCamera( ( m_Left - m_Right ) * cam_speed , ( m_Up - m_Down ) * cam_speed ,
+                  ( m_Forward - m_Backward ) * cam_speed );
+
 }
 
 DummyGame::~DummyGame()
@@ -859,29 +865,38 @@ XMFLOAT3 CalculateDirectionVector(float yaw, float pitch) {
 
 void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward )
 {
+    const float cam_dist = 1.0;
+
     XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
     XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
 
-    m_frameData.camPos.x += moveForward * forward.x;
-    m_frameData.camPos.y += moveForward * forward.y;
-    m_frameData.camPos.z += moveForward * forward.z;
+    m_CamPos.x += moveForward * forward.x;
+    m_CamPos.y += moveForward * forward.y;
+    m_CamPos.z += moveForward * forward.z;
 
-    m_frameData.camPos.x += moveVertically * right.x;
-    m_frameData.camPos.y += moveVertically * right.y;
-    m_frameData.camPos.z += moveVertically * right.z;
+    m_CamPos.x += moveVertically * right.x;
+    m_CamPos.y += moveVertically * right.y;
+    m_CamPos.z += moveVertically * right.z;
 
-    m_frameData.camPos.y += moveUp;
+    m_CamPos.y += moveUp;
+
+    XMFLOAT3          camDir = CalculateDirectionVector( m_Yaw, m_Pitch );
+
+    auto              lookAt = DirectX::XMLoadFloat3( &m_CamPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
+    DirectX::XMFLOAT3 camLookAt;
+    DirectX::XMStoreFloat3( &camLookAt, lookAt );
+
+    m_frameData.UpdateCamera( m_CamPos, camLookAt, m_CamWindow );
+
 }
 
 void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
     static double   totalTime  = 0.0;
-    static double   updateTimer         = 0;
     static double   accumalatedRotation = 0.0;
 
     totalTime += e.DeltaTime;
-    updateTimer += e.DeltaTime;
     accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
@@ -900,8 +915,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         if (m_Print) {
             m_Print = false;
-            m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_frameData.camPos.x, m_frameData.camPos.y,
-                            m_frameData.camPos.z );
+            m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_CamPos.x, m_CamPos.y, m_CamPos.z );
         }
 
     }
@@ -925,8 +939,6 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
 #endif
 
-        const float cam_dist = 1.0;
-        XMFLOAT3    camDir   = CalculateDirectionVector( m_Yaw, m_Pitch );
 
         FrameData old = m_frameData;
 
@@ -934,15 +946,12 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         m_frameData.atmosphere.y = backgroundColour[1];
         m_frameData.atmosphere.z = backgroundColour[2];
 
-
         UpdateCamera( 
             ( m_Left - m_Right ) * cam_speed * e.DeltaTime,
             ( m_Up - m_Down ) * cam_speed * e.DeltaTime, 
-            ( m_Backward - m_Forward ) * cam_speed * e.DeltaTime 
+            ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime 
         );
 
-        auto lookAt = DirectX::XMLoadFloat4( &m_frameData.camPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
-        DirectX::XMStoreFloat4( &m_frameData.camLookAt , lookAt);
 
         isAccumelatingFrames &= m_frameData.Equal( &old );
 
@@ -956,40 +965,27 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             m_frameData.accumulatedFrames += 1;
         }
 
-        // 10 times each second
-        if (updateTimer > 0.01) {
-            updateTimer = 0;
 
-            // update buffers
-            static unsigned int updatingX = 0;
-            switch ( updatingX )
-            {
-            case 0:
-                void* pData;
-                ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
-                {
-                    memcpy( pData, &m_frameData, sizeof( FrameData ) );
-                }
-                m_FrameDataCB->Unmap();
-                break;
-            case 1:
-                D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
-                ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
-                {
-                    memcpy( pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
-                }
-                m_InstanceDescBuffer->Unmap();
-                break;
-            case 2:
 
-                UpdateConstantBuffer();
-
-                break;
-            }
-            //updatingX += 1;
-            if ( updatingX > 2 )
-                updatingX = 0;
+        // update buffers
+        void* pData;
+        ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
+        {
+            memcpy( pData, &m_frameData, sizeof( FrameData ) );
         }
+        m_FrameDataCB->Unmap();
+
+        
+        D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
+        ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
+        {
+            memcpy( pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
+        }
+        m_InstanceDescBuffer->Unmap();
+
+
+        UpdateConstantBuffer();
+
         
 
     }
@@ -1237,11 +1233,11 @@ void DummyGame::OnMouseMoved( MouseMotionEventArgs& e )
     {
         if ( e.LeftButton )
         {
-            m_Pitch -= e.RelY * mouseSpeed;
+            m_Pitch += e.RelY * mouseSpeed;
 
             m_Pitch = std::clamp( m_Pitch, -89.0f, 89.0f );
 
-            m_Yaw -= e.RelX * mouseSpeed;
+            m_Yaw += e.RelX * mouseSpeed;
         }
     }
 }

@@ -60,10 +60,7 @@ struct PerFrameData
 {
     float4 atmosphere;
     
-    float4 camOrigin;
-    float4 camLookAt;
-    float4 camLookUp;
-    float2 camWinSize;
+    row_major matrix<float, 3, 4> cameraPixelToWorld;
     
     uint accumulatedFrames;
     uint nbrSamplesPerPixel;
@@ -468,26 +465,18 @@ void rayGen()
     uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
     uint seed = getNewSeed(bufferOffset, frame.accumulatedFrames, 8);
     
-    
     float2 dims = float2(launchDim.xy);
-    float aspectRatio = dims.x / dims.y;
-
+    float2 pixel = float2(launchIndex.xy);
+    
+    float2 d = ((pixel / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
+    float4 pixelRay = float4(d.x, -d.y, 1, 0);
+    
+    float3 camOrigin = mul(frame.cameraPixelToWorld, float4(0, 0, 0, 1));
+    
     RayDesc ray;
-    ray.Origin = frame.camOrigin;
+    ray.Origin = camOrigin;
     ray.TMin = 0;
     ray.TMax = 100000;
-    
-    float focus_dist = length(frame.camOrigin - frame.camLookAt);
-    float3 w = normalize(frame.camOrigin - frame.camLookAt);
-    float3 u = normalize(cross(frame.camLookUp.xyz, w));
-    float3 v = cross(w, u);
-    
-    float3 horizontal = focus_dist * frame.camWinSize.x * u;
-    float3 vertical = focus_dist * frame.camWinSize.y * v;
-    
-    
-    float2 crd = float2(launchIndex.xy);
-    float2 d = ((crd / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
    
     float3 newRadiance = 0;
     
@@ -496,10 +485,10 @@ void rayGen()
     
     for (int i = 0; i < frame.nbrSamplesPerPixel; ++i)
     {
-        float2 uv = d;
-        //+(2.0f * float2(rnd(seed), rnd(seed)) - 1.0) / dims;
-        //+(2.0f * float2(rnd(payload.seed), rnd(payload.seed)) / dims - 1.0);
-        ray.Direction = -normalize(frame.camLookAt + uv.x * horizontal + uv.y * vertical - frame.camOrigin.xyz);
+        // Add random seed there
+        //float4 pixelRayRnd = pixelRay + float4(rnd(seed) * 2 - 1, rnd(seed) * 2 - 1, 0, 0);
+        
+        ray.Direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
         
         payload.seed = seed;
         TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF, 0 /* ray index*/,
@@ -508,23 +497,12 @@ void rayGen()
         );
         seed = payload.seed;
         newRadiance += payload.colour;
-        
-
     }
     
     newRadiance /= (float) frame.nbrSamplesPerPixel;
     
-    /*
-        Rendered Image
-        Normal
-        WorldPos + Depth
-        Objects
-        Specular
-    */
     
-    
-    
-    float depth = length(frame.camOrigin - payload.position);
+    float depth = length(camOrigin - payload.position);
     
     float3 avrRadiance; 
     if (frame.accumulatedFrames == 0)
@@ -532,7 +510,15 @@ void rayGen()
     else
         avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
     
+    #if 0 
+    if (frame.cameraPixelToWorld[0][0] == 0)
+        gOutput[0][launchIndex.xy] = float4(1, 0, 0, 0);
+    else
+        gOutput[0][launchIndex.xy] = float4(0, 1, 0, 0);
+    #else
     gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
+    #endif
+    
     gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[2][launchIndex.xy] = float4(payload.position, depth);
     gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);

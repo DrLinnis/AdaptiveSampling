@@ -40,34 +40,61 @@ class Window;  // From GameFramework.
 
 #define UPDATE_TRANSFORMS 1
 
+#define FOCAL_FOCUS 0.001
 
 struct FrameData
 {
-    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize )
-    : camPos( cameraPos.x, cameraPos.y, cameraPos.z, 0 )
-    , camLookAt( cameraLookAt.x, cameraLookAt.y, cameraLookAt.z, 0 )
-    , camLookUp( 0, 1, 0, 0 )
-    , camWinSize( cameraWinSize.x, cameraWinSize.y )
-    , accumulatedFrames(0)
-    , atmosphere( { .529, .808, .922, 0 } )
-    , nbrSamplesPerPixel(1)
-    {}
+    
+    void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize) { 
+        auto camPos = DirectX::XMLoadFloat3( &cameraPos );
+        auto               lookAt = DirectX::XMLoadFloat3( &cameraLookAt );
+        static auto up     = DirectX::XMVectorSet( 0, 1, 0, 0 );
+
+        auto LookDirection = DirectX::XMVectorSubtract( lookAt, camPos );
+
+        
+        auto focal_length = DirectX::XMVector3Length( LookDirection );
+        auto w = DirectX::XMVector3Normalize( LookDirection );
+        auto u = DirectX::XMVector3Normalize( DirectX::XMVector3Cross( up, w ) );
+        auto v = DirectX::XMVector3Cross( w, u );
+
+
+        
+        auto Horizontal = 
+            DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, u ), cameraWinSize.x );
+
+        auto Vertical = 
+            DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, v ), cameraWinSize.y );
+
+        auto FinalMatrix = DirectX::XMMATRIX( Horizontal, Vertical, LookDirection, camPos );
+
+        DirectX::XMStoreFloat3x4( &this->camPixelToWorld, FinalMatrix );
+    }
+
+    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize)
+        : accumulatedFrames(0)
+        , atmosphere( { .529, .808, .922, 0 } )
+        , nbrSamplesPerPixel(1)
+    {
+        UpdateCamera( cameraPos, cameraLookAt, cameraWinSize );
+    }
 
     bool Equal( FrameData* pOld ) 
     { 
-        DirectX::XMFLOAT4 arr[4];
-        DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camPos ),
-                                                                 DirectX::XMLoadFloat4( &pOld->camPos ) ) );
+        DirectX::XMFLOAT3X4* curr = &this->camPixelToWorld;
+        DirectX::XMFLOAT3X4* old  = &pOld->camPixelToWorld;
+        for ( int i = 0; i < 3; ++i )
+        {
+            for ( int j = 0; j < 4; ++j )
+            {
+                if ( curr->m[i][j] != old->m[i][j] )
+                    return false;
+            }
+        }
 
-        DirectX::XMStoreFloat4( &arr[1], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookAt ),
-                                                                 DirectX::XMLoadFloat4( &pOld->camLookAt ) ) );
-
-        DirectX::XMStoreFloat4( &arr[2], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &camLookUp ),
-                                                                 DirectX::XMLoadFloat4( &pOld->camLookUp ) ) );
-
-        DirectX::XMStoreFloat4( &arr[3], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &atmosphere ),
+        DirectX::XMFLOAT4 arr[1];
+        DirectX::XMStoreFloat4( &arr[0], DirectX::XMVectorEqual( DirectX::XMLoadFloat4( &atmosphere ),
                                                                  DirectX::XMLoadFloat4( &pOld->atmosphere ) ) );
-        
         for ( DirectX::XMFLOAT4 a : arr) {
             bool elements = a.x && a.y && a.z; 
             if ( !elements ) // If not all channels are equal
@@ -80,11 +107,7 @@ struct FrameData
 
     DirectX::XMFLOAT4 atmosphere;
 
-    DirectX::XMFLOAT4 camPos;
-    DirectX::XMFLOAT4 camLookAt;
-    DirectX::XMFLOAT4 camLookUp;
-
-    DirectX::XMFLOAT2 camWinSize;
+    DirectX::XMFLOAT3X4 camPixelToWorld;
 
     uint32_t accumulatedFrames;
     uint32_t nbrSamplesPerPixel;
@@ -350,6 +373,9 @@ private:
     D3D12_RECT m_ScissorRect;
 
     float lookat_dist = 10.0;
+
+    DirectX::XMFLOAT3 m_CamPos;
+    DirectX::XMFLOAT2 m_CamWindow;
 
     float cam_speed       = 300.0f;
 
