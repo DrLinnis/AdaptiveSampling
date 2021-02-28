@@ -14,7 +14,7 @@
 #define METAL 1
 
 #define RAY_PRIMARY 0
-#define RAY_LIGHTRAY 1
+#define RAY_LIGHT 1
 #define RAY_SECONDARY 2
 
 // PAYLOADS AND STRUCTS
@@ -425,6 +425,7 @@ float3 SampleNearestLightDirection(float3 pos)
     for (int i = 0; i < globals.nbrActiveLights; ++i)
     {
         float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
         float3 dir = lightPos - pos;
         float distSqred = dot(dir, dir);
         if (distSqred < bestDist)
@@ -625,6 +626,12 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     else // We have hit a normal object/pixel
     {
+        if (payload.rayMode == RAY_LIGHT)
+        {
+            payload.radiance = mat.Emittance;
+            return;
+        }
+        
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
         
@@ -655,8 +662,26 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float3 BRDF = CookTorranceBRDF(normal, R, V, v.position,
                     albedo, 0, mat.Roughness, specVal, mat.Type);
         
+        float3 L = SampleNearestLightDirection(v.position);
         
-        payload.colour = BRDF;
+        float3 BRDF_L = CookTorranceBRDF(normal, L, V, v.position,
+                    albedo, 0, mat.Roughness, specVal, mat.Type);
+        
+        RayDesc ray;
+        ray.Origin = v.position;
+        ray.Direction = L;
+        ray.TMin = T_HIT_MIN;
+        ray.TMax = 100000;
+        
+        RayPayload lightRay;
+        lightRay.seed = payload.seed;
+        lightRay.rayMode = RAY_LIGHT;
+        {
+            TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, ray, lightRay);
+        }
+        payload.seed = lightRay.seed;
+        
+        payload.colour = BRDF + BRDF_L * lightRay.radiance * InvPi;
         payload.radiance = mat.Emittance;
         payload.reflectDir = R;
         
