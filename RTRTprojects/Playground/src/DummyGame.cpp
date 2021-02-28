@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 50, 50, 0 )
 , m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
-, m_Globals(5)
+, m_Globals(5, 2)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -298,7 +298,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*3 + 2 + 2) );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 2 + 2) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -613,19 +613,20 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    #if 0
+    #if 1
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
-
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( -0.05, 1.979, 0.08, 0 );
+    m_Globals.nbrActiveLights   = 1;
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
 
-
+    m_Globals.nbrActiveLights   = 5;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1120, 200, 445, 0 );
     m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 0 );
     m_Globals.lightPositions[2] = DirectX::XMFLOAT4( -1190, 200, 445, 0 );
@@ -1022,7 +1023,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::End();
     }
 
-    static bool editAtmosphere = false;
+    static bool editAtmosphere = true;
     if ( editAtmosphere && ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
     {
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );

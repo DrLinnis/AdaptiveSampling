@@ -8,19 +8,28 @@
 #define InvPi2 0.159154943
 #define EPSILON 0.00001
 
+#define T_HIT_MIN 0.0001
+
 #define LAMBERTIAN 0
 #define METAL 1
+
+#define RAY_PRIMARY 0
+#define RAY_LIGHTRAY 1
+#define RAY_SECONDARY 2
 
 // PAYLOADS AND STRUCTS
 struct RayPayload
 {
+    float3 radiance;
     float3 colour;
-    float3 normal;
-    float3 position;
     
+    float3 normal;
+    float3 reflectDir;
+    float3 position;
     float specular;
     int object;
-    uint rayBudget;
+    
+    uint rayMode;
     uint seed;
 };
 
@@ -298,31 +307,61 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
 
 
 // TRACE helper functions
-RayPayload TracePath(float3 origin, float3 direction, uint rayBudget, uint seed)
+RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
 {
-    RayPayload reflPayload;
-    // return black if we are too far away
-    if (!rayBudget)
-    {
-        reflPayload.colour = 0;
-        reflPayload.normal = 0;
-        return reflPayload;
-    }
-    reflPayload.rayBudget = rayBudget;
-    reflPayload.seed = seed;
+    RayPayload result;
     
     RayDesc ray;
     ray.Origin = origin;
     ray.Direction = direction;
-    ray.TMin = 0.001;
+    ray.TMin = 0.0;
     ray.TMax = 100000;
     
-    TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF /*No culling*/, 0 /* ray index*/,
-        1 /* Multiplier for Contribution to hit group index*/, 0, ray, reflPayload
-    );
-    return reflPayload;
+    uint nbrOfBounces = 0;
+    
+    float3 radiance = 0;
+    float3 colour = 1.0f;
+    RayPayload currRay;
+    currRay.seed = seed;
+    currRay.rayMode = RAY_PRIMARY;
+    
+    // while (nbrOfBounces < globals.nbrBouncesPerPath)
+    while (nbrOfBounces < globals.nbrBouncesPerPath)
+    {
+        currRay.radiance = 0;
+        currRay.colour = 0;
+        
+        TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
+        ++nbrOfBounces;
+        
+        // Store the first Primary Ray normal/specular/object/position
+        if (currRay.rayMode == RAY_PRIMARY) 
+        {
+            result.normal   = currRay.normal;
+            result.specular = currRay.specular;
+            result.object   = currRay.object;
+            result.position = currRay.position;
+            
+            // Change to secondary ray for bounces
+            currRay.rayMode = RAY_SECONDARY;
+            
+            ray.TMin = T_HIT_MIN;
+        }
+        
+        radiance += colour * currRay.radiance;
+        colour *= currRay.colour;
+        
+        ray.Origin = currRay.position;
+        ray.Direction = currRay.reflectDir;
+        if (currRay.object == -1)
+            break;
+    }
+    
+    result.colour = radiance;
+    result.seed = currRay.seed;
+    
+    return result;
 }
-
 
 /*
     GENERATE COLOUR based on index helper functions
@@ -378,6 +417,27 @@ float3 GenColour(int id)
 /*
     PBR/BDRF helper functions
 */
+float3 SampleNearestLightDirection(float3 pos)
+{
+    float bestDist = pow(1 / EPSILON, 2);
+    float3 result = float3(0, 1, 0);
+    
+    for (int i = 0; i < globals.nbrActiveLights; ++i)
+    {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        float3 dir = lightPos - pos;
+        float distSqred = dot(dir, dir);
+        if (distSqred < bestDist)
+        {
+            bestDist = distSqred;
+            result = dir;
+        }
+    }
+    
+    return normalize(result);
+
+}
+
 // Trowbridge-Reitx GGX - Normal Distribution Functions
 float _distributionGGX(float cosTheta, float alpha)
 {
@@ -415,41 +475,35 @@ float3 _fresnelSchlick(float3 F0, float cosOmega)
     return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
 }
 
-float3 CookTorranceBRDF(float3 n, float3 v, float3 pos, float3 albedo, uint rayBudget, float seed,
-                        float metalness, float roughness, float specular, uint type)
+float3 CookTorranceBRDF(float3 N, float3 R, float3 V, float3 pos, float3 albedo,
+                    float metalness, float roughness, float specular, uint matType)
 {
-    // Path reflected ray
-    float3 l = sample_hemisphere_cos(seed); // ASSUME every material is diffuse
-    l = applyRotationMappingZToN(n, l);
-        
-    RayPayload Li = TracePath(pos, l, rayBudget - 1, seed);
-    
     float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
     F0 = lerp(F0, albedo, metalness);
     
     float k_direct = (roughness + 1) * (roughness + 1) / 8;
    
     // Build halfway vector
-    float3 h = normalize(l + v);
+    float3 H = normalize(R + V);
     
-    float cosTheta = max(dot(n, h), 0); // angle between normal and halfway vector
-    float cosOmega = max(dot(v, h), 0); // angle between view and halfway vector
+    float cosTheta = max(dot(N, H), 0); // angle between normal and halfway vector
+    float cosOmega = max(dot(V, H), 0); // angle between view and halfway vector
     
-    float cosLight = max(dot(n, l), 0); // angle between light and normal
-    float cosView = max(dot(n, v), 0); // angle between view and normal
+    float cosReflect = max(dot(N, R), 0); // angle between reflection and normal
+    float cosView = max(dot(N, V), 0); // angle between view and normal
     
     float D = _distributionGGX(cosTheta, roughness);
     
     float3 F = specular * _fresnelSchlick(F0, cosOmega);
     
-    float G = _geometrySmith(cosLight, cosView, k_direct);
+    float G = _geometrySmith(cosReflect, cosView, k_direct);
     
     // Calc diffuse comp (REFRACT)
     float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
     
-    float denom = max(4 * cosView * cosLight, EPSILON);
+    float denom = max(4 * cosView * cosReflect, EPSILON);
     
-    return (kD * albedo + D * F * G / denom) * Li.colour * cosLight;
+    return (kD * albedo + D * F * G / denom) * cosReflect;
 }
 
 
@@ -481,26 +535,20 @@ void rayGen()
     float3 newRadiance = 0;
     
     RayPayload payload;
-    payload.rayBudget = globals.nbrBouncesPerPath;
+    payload.seed = seed;
     
     for (int i = 0; i < frame.nbrSamplesPerPixel; ++i)
     {
         // Add random seed there
-        //float4 pixelRayRnd = pixelRay + float4(rnd(seed) * 2 - 1, rnd(seed) * 2 - 1, 0, 0);
+        float4 pixelRayRnd = pixelRay + float4(rnd(payload.seed) * 2 - 1, rnd(payload.seed) * 2 - 1, 0, 0);
+        float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
         
-        ray.Direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
+        payload = TraceFullPath(camOrigin, direction, payload.seed);
         
-        payload.seed = seed;
-        TraceRay(gRtScene, 0 /*rayFlags*/, 0xFF, 0 /* ray index*/,
-            1 /* Multiplier for Contribution to hit group index*/, 0,
-            ray, payload 
-        );
-        seed = payload.seed;
         newRadiance += payload.colour;
     }
     
     newRadiance /= (float) frame.nbrSamplesPerPixel;
-    
     
     float depth = length(camOrigin - payload.position);
     
@@ -510,15 +558,8 @@ void rayGen()
     else
         avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
     
-    #if 0 
-    if (frame.cameraPixelToWorld[0][0] == 0)
-        gOutput[0][launchIndex.xy] = float4(1, 0, 0, 0);
-    else
-        gOutput[0][launchIndex.xy] = float4(0, 1, 0, 0);
-    #else
+
     gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
-    #endif
-    
     gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[2][launchIndex.xy] = float4(payload.position, depth);
     gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
@@ -536,8 +577,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
-    float3 L = normalize(float3(0.5, 2.5, -0.5));
-    
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
     
@@ -547,7 +586,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // Alpha can be set by either mask or diffuse texture
     float4 tex_rgba = float4(mat.Diffuse, 1);
     
-    if (mat.MaskTextureIdx >= 0) {
+    if (mat.MaskTextureIdx >= 0)
+    {
         float alpha = maskTex[mat.MaskTextureIdx].SampleLevel(pointFilter, v.texCoord.xy, 0).x;
         tex_rgba.w *= alpha;
     }
@@ -569,27 +609,21 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
 
     }
     
-    float3 finalColour = 0;
-    float3 finalNormal = 0;
-    float3 finalPos = 0;
-    
-    float finalSpecular = 0;
-    int finalObject = 0;
     
     // Transparent pixel hit!
-    if (tex_rgba.w == 0) 
+    if (tex_rgba.w == 0)
     {
         // unfortunetly we must continue the ray and reduce depth or we will crash :(
-        RayPayload contRay = TracePath(v.position, rayDirW, payload.rayBudget - 1, payload.seed);
+        RayDesc ray;
+        ray.Origin = v.position;
+        ray.Direction = rayDirW;
+        ray.TMin = T_HIT_MIN;
+        ray.TMax = 100000;
+    
+        TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, payload );
         
-        finalColour = contRay.colour;
-        finalNormal = contRay.normal;
-        finalPos = contRay.position;
-        
-        finalObject = contRay.object;
-        finalSpecular = contRay.specular;
     }
-    else  // We have hit a normal object/pixel
+    else // We have hit a normal object/pixel
     {
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
@@ -614,25 +648,26 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).w;
         }
         
+        // ASSUME every material is diffuse
+        float3 R = sample_hemisphere_cos(payload.seed);
+        R = normalize(applyRotationMappingZToN(normal, R));
         
-        float3 BRDF = CookTorranceBRDF(normal, V, v.position, albedo,
-                payload.rayBudget, payload.seed, 0, mat.Roughness, specVal, mat.Type);
+        float3 BRDF = CookTorranceBRDF(normal, R, V, v.position,
+                    albedo, 0, mat.Roughness, specVal, mat.Type);
         
-        finalColour = BRDF;
-        finalNormal = normal;
-        finalPos = v.position;
         
-        finalObject = GeometryIndex();
-        finalSpecular = specVal;
+        payload.colour = BRDF;
+        payload.radiance = mat.Emittance;
+        payload.reflectDir = R;
         
+        if (payload.rayMode == RAY_PRIMARY)
+        {
+            payload.normal = normal;
+            payload.position = v.position;
+            payload.object = GeometryIndex();
+            payload.specular = specVal;
+        }
     }
-    
-    payload.colour = mat.Emittance + finalColour;
-    payload.normal = finalNormal;
-    payload.position = finalPos;
-    
-    payload.specular = finalSpecular;
-    payload.object = finalObject;
 }
 
 [shader("miss")]
@@ -642,7 +677,11 @@ void standardMiss(inout RayPayload payload)
     float3 rayOriginW = WorldRayOrigin();
     
     // sky normal, depth, and colour
+    payload.radiance = frame.atmosphere.xyz;
     payload.colour = frame.atmosphere.xyz;
+    
+    payload.reflectDir = 0.0;
+    
     payload.normal = 0.5;
     payload.position = rayOriginW + 100000 * rayDirW;
     
