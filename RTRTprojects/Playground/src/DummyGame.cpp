@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 50, 50, 0 )
 , m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
-, m_Globals(5, 2)
+, m_Globals(10)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -80,9 +80,6 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
     m_Window->Resize += ResizeEvent::slot( &DummyGame::OnResize, this );
     m_Window->DPIScaleChanged += DPIScaleEvent::slot( &DummyGame::OnDPIScaleChanged, this );
 
-    backgroundColour[0] = m_frameData.atmosphere.x;
-    backgroundColour[1] = m_frameData.atmosphere.y;
-    backgroundColour[2] = m_frameData.atmosphere.z;
 
     UpdateCamera( ( m_Left - m_Right ) * cam_speed , ( m_Up - m_Down ) * cam_speed ,
                   ( m_Forward - m_Backward ) * cam_speed );
@@ -298,7 +295,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 2 + 2) );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 3 + 3) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -613,18 +610,20 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    #if 1
+    #if 0
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( -0.05, 1.979, 0.08, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
     m_Globals.nbrActiveLights   = 1;
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
+
+    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 0 );
 
     m_Globals.nbrActiveLights   = 5;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1120, 200, 445, 0 );
@@ -679,10 +678,11 @@ bool DummyGame::LoadContent()
     auto trans_mask_diff  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_diff.tga" );
     auto trans_mask_mask  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_mask.tga" );
 
-
-    m_frameData.camPos = DirectX::XMFLOAT4( 0, 700, 700, 0 );
+    m_CamPos = DirectX::XMFLOAT3( 0, 200, -200 );
+    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 0 );
+    m_frameData.UpdateCamera( m_CamPos, DirectX::XMFLOAT3( 0, 0, 0 ), m_CamWindow );
     m_Yaw     = 90;
-    m_Pitch   = 45;
+    m_Pitch   = -45;
 
     // "Empty scene"
     m_RaySceneMesh = commandList->CreateSphere( 1 );
@@ -761,6 +761,11 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh->MergeScene( alphaPlane );
     
     #endif
+
+    
+    backgroundColour[0] = m_frameData.atmosphere.x;
+    backgroundColour[1] = m_frameData.atmosphere.y;
+    backgroundColour[2] = m_frameData.atmosphere.z;
 
 
     // Create a color buffer with sRGB for gamma correction.

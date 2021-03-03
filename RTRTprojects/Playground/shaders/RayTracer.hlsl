@@ -14,21 +14,27 @@
 #define METAL 1
 
 #define RAY_PRIMARY 0
-#define RAY_LIGHT 1
-#define RAY_SECONDARY 2
+#define RAY_SECONDARY 1
+
+#define RAY_LIGHT 2
 
 // PAYLOADS AND STRUCTS
 struct RayPayload
 {
-    float3 radiance;
+    // MC sampling
+    float prob;
     float3 colour;
-    
-    float3 normal;
     float3 reflectDir;
     float3 position;
+    float3 radiance;
+    
+    // For denoising
+    float3 normal;
     float specular;
     int object;
     
+    // For general
+    uint depth;
     uint rayMode;
     uint seed;
 };
@@ -57,6 +63,23 @@ struct RayMaterialProp
     float Roughness;
     float3 Emittance;
     // 16 bytes: Material properties
+};
+
+
+struct MaterialInfoBDRF
+{
+    // Basics
+    float3 view;
+    float3 normal;
+    float3 pos;
+    
+    // Material Type
+    uint type;
+    // Material props
+    float3 colour;
+    float metalness;
+    float roughness;
+    float specular;
 };
 
 struct InstanceTransforms
@@ -135,6 +158,23 @@ float3 modelToWorldPosition(float3 pos)
     return mul(instTrans.modelToWorld, float4(pos, 1)).xyz;
 }
 
+
+MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, in uint matType,
+                    in float3 colour, in float metalness, in float roughness, in float specular)
+{
+    MaterialInfoBDRF result;
+    
+    result.view = view;
+    result.normal = normal;
+    result.pos = pos;
+    result.type = matType;
+    result.colour = colour;
+    result.metalness = metalness;
+    result.roughness = roughness;
+    result.specular = specular;
+    return result;
+}
+
 /*
     Random Generator 
     ( CODE FROM https://github.com/phgphg777/DXR-PathTracer )
@@ -181,7 +221,7 @@ float3 sample_hemisphere_cos(inout uint seed)
     float param2 = rnd(seed);
 
 	// Uniformly sample disk.
-    float r = sqrt(param1);
+    float r = sqrt(param1 - EPSILON);
     float phi = PI2 * param2;
     sampleDir.x = r * cos(phi);
     sampleDir.y = r * sin(phi);
@@ -192,6 +232,29 @@ float3 sample_hemisphere_cos(inout uint seed)
     return sampleDir;
 }
 
+// My functions
+float3 SampleNearestLightDirection(float3 pos, float3 normal)
+{
+    float bestDist = pow(1 / EPSILON, 2);
+    float3 result = normal;
+    
+    for (int i = 0; i < globals.nbrActiveLights; ++i)
+    {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+        float distSqred = dot(dir, dir);
+        if (distSqred < bestDist)
+        {
+            bestDist = distSqred;
+            result = dir;
+        }
+    }
+    
+    //result = mul(instTrans.normalModelToWorld, float4(result, 0)).xyz;
+    
+    return normalize(result);
+}
 
 // INTERPOLATION helper functions
 uint3 _getIndices(uint geometryIdx, uint triangleIndex)
@@ -317,33 +380,29 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     ray.TMin = 0.0;
     ray.TMax = 100000;
     
-    uint nbrOfBounces = 0;
-    
     float3 radiance = 0;
     float3 colour = 1.0f;
     RayPayload currRay;
     currRay.seed = seed;
     currRay.rayMode = RAY_PRIMARY;
+    currRay.depth = globals.nbrBouncesPerPath;
     
-    // while (nbrOfBounces < globals.nbrBouncesPerPath)
-    while (nbrOfBounces < globals.nbrBouncesPerPath)
+    uint prevType;
+    while (currRay.depth > 0)
     {
         currRay.radiance = 0;
         currRay.colour = 0;
+        prevType = currRay.rayMode;
         
         TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
-        ++nbrOfBounces;
         
         // Store the first Primary Ray normal/specular/object/position
-        if (currRay.rayMode == RAY_PRIMARY) 
+        if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY) 
         {
             result.normal   = currRay.normal;
             result.specular = currRay.specular;
             result.object   = currRay.object;
             result.position = currRay.position;
-            
-            // Change to secondary ray for bounces
-            currRay.rayMode = RAY_SECONDARY;
             
             ray.TMin = T_HIT_MIN;
         }
@@ -353,8 +412,12 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
-        if (currRay.object == -1)
+        if (currRay.object == -1 || length(currRay.radiance) > 0)
+        {
             break;
+        }
+        
+
     }
     
     result.colour = radiance;
@@ -417,27 +480,6 @@ float3 GenColour(int id)
 /*
     PBR/BDRF helper functions
 */
-float3 SampleNearestLightDirection(float3 pos)
-{
-    float bestDist = pow(1 / EPSILON, 2);
-    float3 result = float3(0, 1, 0);
-    
-    for (int i = 0; i < globals.nbrActiveLights; ++i)
-    {
-        float3 lightPos = globals.lightPositions[i].xyz;
-        lightPos = modelToWorldPosition(lightPos);
-        float3 dir = lightPos - pos;
-        float distSqred = dot(dir, dir);
-        if (distSqred < bestDist)
-        {
-            bestDist = distSqred;
-            result = dir;
-        }
-    }
-    
-    return normalize(result);
-
-}
 
 // Trowbridge-Reitx GGX - Normal Distribution Functions
 float _distributionGGX(float cosTheta, float alpha)
@@ -476,38 +518,85 @@ float3 _fresnelSchlick(float3 F0, float cosOmega)
     return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
 }
 
-float3 CookTorranceBRDF(float3 N, float3 R, float3 V, float3 pos, float3 albedo,
-                    float metalness, float roughness, float specular, uint matType)
+// Cook Torrance BRDF
+void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
+                in MaterialInfoBDRF mat, in bool sampleLight, inout uint seed)
 {
-    float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
-    F0 = lerp(F0, albedo, metalness);
+    float3 brdfEval;
     
-    float k_direct = (roughness + 1) * (roughness + 1) / 8;
-   
-    // Build halfway vector
-    float3 H = normalize(R + V);
+    // Reflection dir, view vector, normal, half-vector
+    float3 R, V = mat.view, N = mat.normal, H;
     
-    float cosTheta = max(dot(N, H), 0); // angle between normal and halfway vector
-    float cosOmega = max(dot(V, H), 0); // angle between view and halfway vector
+    float cosNH, cosVH, cosNR, cosNV;
     
-    float cosReflect = max(dot(N, R), 0); // angle between reflection and normal
-    float cosView = max(dot(N, V), 0); // angle between view and normal
     
-    float D = _distributionGGX(cosTheta, roughness);
+    if (mat.type == LAMBERTIAN)
+    {
+        const float mix = 0.0;
+        
+        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+        float3 L = SampleNearestLightDirection(mat.pos, mat.normal);
+        
+        
+        if (sampleLight && dot(N, L) > 0  && rnd(seed) < mix)
+            R = L;
+        
+        R = normalize(R);
+        
+        cosNR = max(dot(N, R), 0);
+            
+        sampleProb = (1 - mix) * cosNR * InvPi;
+        brdfEval = mat.colour * InvPi;
+
+    }
     
-    float3 F = specular * _fresnelSchlick(F0, cosOmega);
+    else if (mat.type == METAL)
+    {
+        float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
+#if 0
+        float cosTheta = max(dot(N, H), 0); // angle between normal and halfway vector
+        float cosOmega = max(dot(V, H), 0); // angle between view and halfway vector
     
-    float G = _geometrySmith(cosReflect, cosView, k_direct);
+        float cosReflect = max(dot(N, R), 0); // angle between reflection and normal
+        float cosView = max(dot(N, V), 0); // angle between view and normal
+        
+        R = sample_hemisphere_cos(payload.seed);
+        float prob = R.z;
+        R = normalize(applyRotationMappingZToN(normal, R));
+        R = normalize(mul(instTrans.normalModelToWorld, float4(R, 0)).xyz);
     
-    // Calc diffuse comp (REFRACT)
-    float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
+        float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
+        F0 = lerp(F0, albedo, metalness);
     
-    float denom = max(4 * cosView * cosReflect, EPSILON);
+        
+        float D = _distributionGGX(cosTheta, roughness);
     
-    return (kD * albedo + D * F * G / denom) * cosReflect;
+        float3 F = specular * _fresnelSchlick(F0, cosOmega);
+    
+        float G = _geometrySmith(cosReflect, cosView, k_direct);
+    
+        // Calc diffuse comp (REFRACT)
+        float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
+    
+        float denom = max(4 * cosView * cosReflect, EPSILON);
+    
+        //return (kD * albedo + D * F * G / denom) * cosReflect;
+#endif
+    }
+    
+    else
+    {
+        // NOT SUPPOSE TO HAPPEN
+        R = N;
+        brdfCos = 0;
+        sampleProb = EPSILON;
+    }
+    
+    sampleDir = R;
+    brdfCos = brdfEval * cosNR;
 }
 
-
+#define RAW_SAMPLES 0
 /* 
     START OF REYGEN SHADER 
 */
@@ -554,7 +643,7 @@ void rayGen()
     float depth = length(camOrigin - payload.position);
     
     float3 avrRadiance; 
-    if (frame.accumulatedFrames == 0)
+    if (frame.accumulatedFrames == 0 || RAW_SAMPLES)
         avrRadiance = newRadiance;
     else
         avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
@@ -574,6 +663,9 @@ void rayGen()
 [shader("closesthit")] 
 void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
+    // Iterate depths
+    --payload.depth;
+    
     float hitT = RayTCurrent();
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
@@ -612,26 +704,18 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     
     
     // Transparent pixel hit!
-    if (tex_rgba.w == 0)
+    if (tex_rgba.w == 0 && payload.depth)
     {
-        // unfortunetly we must continue the ray and reduce depth or we will crash :(
         RayDesc ray;
         ray.Origin = v.position;
         ray.Direction = rayDirW;
         ray.TMin = T_HIT_MIN;
         ray.TMax = 100000;
     
-        TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, payload );
-        
+        TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, ray, payload);
     }
     else // We have hit a normal object/pixel
     {
-        if (payload.rayMode == RAY_LIGHT)
-        {
-            payload.radiance = mat.Emittance;
-            return;
-        }
-        
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
         
@@ -645,6 +729,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             normal = mul(normal, TBN);
         }
         normal = normalize(mul(instTrans.normalModelToWorld, float4(normal, 0)).xyz);
+        // Flip normals on two sided faces
+        if (dot(rayDirW, normal) > 0)
+            normal = -normal;
+        
         
         // View Vector
         float3 V = -rayDirW;
@@ -655,35 +743,13 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).w;
         }
         
-        // ASSUME every material is diffuse
-        float3 R = sample_hemisphere_cos(payload.seed);
-        R = normalize(applyRotationMappingZToN(normal, R));
         
-        float3 BRDF = CookTorranceBRDF(normal, R, V, v.position,
-                    albedo, 0, mat.Roughness, specVal, mat.Type);
+        // Create material and sample BDRF to payload output
+        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo, 0, mat.Roughness, specVal);
+        sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
-        float3 L = SampleNearestLightDirection(v.position);
-        
-        float3 BRDF_L = CookTorranceBRDF(normal, L, V, v.position,
-                    albedo, 0, mat.Roughness, specVal, mat.Type);
-        
-        RayDesc ray;
-        ray.Origin = v.position;
-        ray.Direction = L;
-        ray.TMin = T_HIT_MIN;
-        ray.TMax = 100000;
-        
-        RayPayload lightRay;
-        lightRay.seed = payload.seed;
-        lightRay.rayMode = RAY_LIGHT;
-        {
-            TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, ray, lightRay);
-        }
-        payload.seed = lightRay.seed;
-        
-        payload.colour = BRDF + BRDF_L * lightRay.radiance * InvPi;
+        payload.colour /= payload.prob;
         payload.radiance = mat.Emittance;
-        payload.reflectDir = R;
         
         if (payload.rayMode == RAY_PRIMARY)
         {
@@ -691,6 +757,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             payload.position = v.position;
             payload.object = GeometryIndex();
             payload.specular = specVal;
+            
+            payload.rayMode = RAY_SECONDARY;
+
         }
     }
 }
@@ -707,7 +776,7 @@ void standardMiss(inout RayPayload payload)
     
     payload.reflectDir = 0.0;
     
-    payload.normal = 0.5;
+    payload.normal = 0;
     payload.position = rayOriginW + 100000 * rayDirW;
     
     payload.specular = 0;
