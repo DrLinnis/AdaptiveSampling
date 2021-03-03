@@ -399,7 +399,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         // Store the first Primary Ray normal/specular/object/position
         if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY) 
         {
-            result.normal   = currRay.normal;
+            result.normal = currRay.reflectDir;
             result.specular = currRay.specular;
             result.object   = currRay.object;
             result.position = currRay.position;
@@ -533,7 +533,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     
     if (mat.type == LAMBERTIAN)
     {
-        const float mix = 0.0;
+        const float mix = 0.001;
         
         R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
         float3 L = SampleNearestLightDirection(mat.pos, mat.normal);
@@ -615,7 +615,7 @@ void rayGen()
     float2 pixel = float2(launchIndex.xy);
     
     float2 d = ((pixel / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
-    float4 pixelRay = float4(d.x, -d.y, 1, 0);
+    float4 pixelRay = float4(d.x, d.y, 1, 0);
     
     float3 camOrigin = mul(frame.cameraPixelToWorld, float4(0, 0, 0, 1));
     
@@ -755,7 +755,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         if (payload.rayMode == RAY_PRIMARY)
         {
-            payload.normal = payload.reflectDir;
+            payload.normal = normal;
             payload.position = v.position;
             payload.object = GeometryIndex();
             payload.specular = specVal;
@@ -771,6 +771,11 @@ void standardMiss(inout RayPayload payload)
 {
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
+    
+    float3 L = normalize(float3(0.5, 2.5, -0.5));
+    
+    float cosLightRay = max(dot(L, rayDirW), 0);
+    float scale = cosLightRay > 0.99 ? 100 : 1;
     
     // sky normal, depth, and colour
     payload.radiance = frame.atmosphere.w * frame.atmosphere.xyz;

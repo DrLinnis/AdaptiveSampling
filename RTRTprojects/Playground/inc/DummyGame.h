@@ -55,8 +55,8 @@ struct FrameData
         
         auto focal_length = DirectX::XMVector3Length( LookDirection );
         auto w = DirectX::XMVector3Normalize( LookDirection );
-        auto u = DirectX::XMVector3Normalize( DirectX::XMVector3Cross( up, w ) );
-        auto v = DirectX::XMVector3Cross( w, u );
+        auto u = DirectX::XMVector3Normalize( DirectX::XMVector3Cross( w, up ) );
+        auto v = DirectX::XMVector3Cross( u, w );
 
 
         
@@ -64,7 +64,7 @@ struct FrameData
             DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, u ), cameraWinSize.x );
 
         auto Vertical = 
-            DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, v ), cameraWinSize.y );
+            DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, v ), -cameraWinSize.y );
 
         auto FinalMatrix = DirectX::XMMATRIX( Horizontal, Vertical, LookDirection, camPos );
 

@@ -953,7 +953,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         m_frameData.atmosphere.z = backgroundColour[2];
 
         UpdateCamera( 
-            ( m_Left - m_Right ) * cam_speed * e.DeltaTime,
+            ( m_Right - m_Left ) * cam_speed * e.DeltaTime,
             ( m_Up - m_Down ) * cam_speed * e.DeltaTime, 
             ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime 
         );
@@ -1123,7 +1123,7 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color1 );
+    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
@@ -1248,7 +1248,7 @@ void DummyGame::OnMouseMoved( MouseMotionEventArgs& e )
 
             m_Pitch = std::clamp( m_Pitch, -89.0f, 89.0f );
 
-            m_Yaw += e.RelX * mouseSpeed;
+            m_Yaw -= e.RelX * mouseSpeed;
         }
     }
 }
