@@ -610,7 +610,7 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    #if 0
+    #if 1
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
@@ -623,7 +623,7 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
 
-    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 0 );
+    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
 
     m_Globals.nbrActiveLights   = 5;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1120, 200, 445, 0 );
@@ -679,7 +679,7 @@ bool DummyGame::LoadContent()
     auto trans_mask_mask  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_mask.tga" );
 
     m_CamPos = DirectX::XMFLOAT3( 0, 200, -200 );
-    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 0 );
+    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
     m_frameData.UpdateCamera( m_CamPos, DirectX::XMFLOAT3( 0, 0, 0 ), m_CamWindow );
     m_Yaw     = 90;
     m_Pitch   = -45;
@@ -1031,7 +1031,12 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     static bool editAtmosphere = true;
     if ( editAtmosphere && ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
     {
+
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
+
+        float atmosphereIntensity = m_frameData.atmosphere.w;
+        ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 100 );
+        m_frameData.atmosphere.w = atmosphereIntensity;
 
         ImGui::End();
     }
@@ -1118,7 +1123,7 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
-    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
+    auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color1 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
     commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );

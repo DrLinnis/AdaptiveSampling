@@ -412,7 +412,8 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
-        if (currRay.object == -1 || length(currRay.radiance) > 0)
+        
+        if (currRay.object == -1 || length(colour) < 0.05)
         {
             break;
         }
@@ -543,7 +544,8 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         
         R = normalize(R);
         
-        cosNR = max(dot(N, R), 0);
+        // Can't divide by zero
+        cosNR = max(dot(N, R), EPSILON);
             
         sampleProb = (1 - mix) * cosNR * InvPi;
         brdfEval = mat.colour * InvPi;
@@ -589,7 +591,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         // NOT SUPPOSE TO HAPPEN
         R = N;
         brdfCos = 0;
-        sampleProb = EPSILON;
+        sampleProb = 1;
     }
     
     sampleDir = R;
@@ -753,7 +755,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         if (payload.rayMode == RAY_PRIMARY)
         {
-            payload.normal = normal;
+            payload.normal = payload.reflectDir;
             payload.position = v.position;
             payload.object = GeometryIndex();
             payload.specular = specVal;
@@ -771,7 +773,7 @@ void standardMiss(inout RayPayload payload)
     float3 rayOriginW = WorldRayOrigin();
     
     // sky normal, depth, and colour
-    payload.radiance = frame.atmosphere.xyz;
+    payload.radiance = frame.atmosphere.w * frame.atmosphere.xyz;
     payload.colour = frame.atmosphere.xyz;
     
     payload.reflectDir = 0.0;
@@ -781,5 +783,6 @@ void standardMiss(inout RayPayload payload)
     
     payload.specular = 0;
     payload.object = -1;
-
+    
+    payload.rayMode = RAY_SECONDARY;
 }

@@ -73,7 +73,7 @@ struct FrameData
 
     FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize)
         : accumulatedFrames(0)
-        , atmosphere( { 0, 0, 0, 0} ) // { .529, .808, .922, 0 }
+        , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , nbrSamplesPerPixel(1)
     {
         UpdateCamera( cameraPos, cameraLookAt, cameraWinSize );
