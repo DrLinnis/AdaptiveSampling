@@ -75,6 +75,8 @@ struct MaterialInfoBDRF
     
     // Material Type
     uint type;
+    uint depth;
+    
     // Material props
     float3 colour;
     float metalness;
@@ -95,7 +97,8 @@ struct PerFrameData
     row_major matrix<float, 3, 4> cameraPixelToWorld;
     
     uint accumulatedFrames;
-    uint nbrSamplesPerPixel;
+    uint exponentSamplesPerPixel;
+    uint cpuGeneratedSeed;
 };
 
 struct ConstantData
@@ -118,10 +121,13 @@ ByteAddressBuffer vertices[]    : register(t1, space1);
 
 ByteAddressBuffer GeometryMaterialMap : register(t1, space2);
 
+
 Texture2D<float4> diffuseTex[]  : register(t1, space3);
 Texture2D<float4> normalsTex[]  : register(t1, space4);
 Texture2D<float4> specularTex[] : register(t1, space5);
 Texture2D<float4> maskTex[]     : register(t1, space6);
+
+
 
 // UAV
 RWTexture2D<float4> gOutput[] : register(u0);
@@ -160,7 +166,7 @@ float3 modelToWorldPosition(float3 pos)
 
 
 MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, in uint matType,
-                    in float3 colour, in float metalness, in float roughness, in float specular)
+        in float3 colour, in float metalness, in float roughness, in float specular, in uint depth)
 {
     MaterialInfoBDRF result;
     
@@ -172,6 +178,7 @@ MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, i
     result.metalness = metalness;
     result.roughness = roughness;
     result.specular = specular;
+    result.depth = depth;
     return result;
 }
 
@@ -221,7 +228,7 @@ float3 sample_hemisphere_cos(inout uint seed)
     float param2 = rnd(seed);
 
 	// Uniformly sample disk.
-    float r = sqrt(param1 - EPSILON);
+    float r = sqrt(param1);
     float phi = PI2 * param2;
     sampleDir.x = r * cos(phi);
     sampleDir.y = r * sin(phi);
@@ -399,7 +406,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         // Store the first Primary Ray normal/specular/object/position
         if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY) 
         {
-            result.normal = currRay.reflectDir;
+            result.normal = currRay.normal;
             result.specular = currRay.specular;
             result.object   = currRay.object;
             result.position = currRay.position;
@@ -413,7 +420,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (currRay.object == -1 || length(colour) < 0.05)
+        if (currRay.object == -1 || length(currRay.radiance) > 0)
         {
             break;
         }
@@ -421,7 +428,9 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
 
     }
     
+    //result.colour = colour;
     result.colour = radiance;
+    //result.colour = currRay.depth / (float) globals.nbrBouncesPerPath;
     result.seed = currRay.seed;
     
     return result;
@@ -533,21 +542,23 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     
     if (mat.type == LAMBERTIAN)
     {
-        const float mix = 0.001;
         
         R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+        
+#if 0
+        const float mix = 0.0;
         float3 L = SampleNearestLightDirection(mat.pos, mat.normal);
         
-        
-        if (sampleLight && dot(N, L) > 0  && rnd(seed) < mix)
+        if (sampleLight && dot(N, L) >= 0  && rnd(seed) < mix)
             R = L;
+#endif
         
         R = normalize(R);
         
         // Can't divide by zero
         cosNR = max(dot(N, R), EPSILON);
             
-        sampleProb = (1 - mix) * cosNR * InvPi;
+        sampleProb = cosNR * InvPi;
         brdfEval = mat.colour * InvPi;
 
     }
@@ -609,7 +620,7 @@ void rayGen()
     uint3 launchDim = DispatchRaysDimensions();
 
     uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
-    uint seed = getNewSeed(bufferOffset, frame.accumulatedFrames, 8);
+    uint seed = getNewSeed(bufferOffset, frame.cpuGeneratedSeed, 8);
     
     float2 dims = float2(launchDim.xy);
     float2 pixel = float2(launchIndex.xy);
@@ -629,7 +640,10 @@ void rayGen()
     RayPayload payload;
     payload.seed = seed;
     
-    for (int i = 0; i < frame.nbrSamplesPerPixel; ++i)
+    
+    int nbrSamples = 1 << frame.exponentSamplesPerPixel;
+    
+    for (int i = 0; i < nbrSamples; ++i)
     {
         // Add random seed there
         float4 pixelRayRnd = pixelRay + float4(rnd(payload.seed) * 2 - 1, rnd(payload.seed) * 2 - 1, 0, 0);
@@ -640,7 +654,7 @@ void rayGen()
         newRadiance += payload.colour;
     }
     
-    newRadiance /= (float) frame.nbrSamplesPerPixel;
+    newRadiance /= (float) nbrSamples;
     
     float depth = length(camOrigin - payload.position);
     
@@ -705,8 +719,15 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     
     
+    bool frontFace = false;
+    
+#if 0 
+    float3 tmpNormal = normalize(mul(instTrans.normalModelToWorld, float4(v.normal, 0)).xyz);
+    frontFace = dot(tmpNormal, rayDirW) > 0;
+#endif
+    
     // Transparent pixel hit!
-    if (tex_rgba.w == 0 && payload.depth)
+    if ((tex_rgba.w == 0 || frontFace) && payload.depth > 0)
     {
         RayDesc ray;
         ray.Origin = v.position;
@@ -747,21 +768,19 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         
         // Create material and sample BDRF to payload output
-        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo, 0, mat.Roughness, specVal);
+        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo, 0, mat.Roughness, specVal, payload.depth);
         sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
-        payload.colour /= payload.prob;
+        payload.position = v.position;
         payload.radiance = mat.Emittance;
+        payload.colour /= payload.prob;
         
         if (payload.rayMode == RAY_PRIMARY)
         {
             payload.normal = normal;
-            payload.position = v.position;
             payload.object = GeometryIndex();
             payload.specular = specVal;
-            
             payload.rayMode = RAY_SECONDARY;
-
         }
     }
 }
@@ -771,11 +790,6 @@ void standardMiss(inout RayPayload payload)
 {
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
-    
-    float3 L = normalize(float3(0.5, 2.5, -0.5));
-    
-    float cosLightRay = max(dot(L, rayDirW), 0);
-    float scale = cosLightRay > 0.99 ? 100 : 1;
     
     // sky normal, depth, and colour
     payload.radiance = frame.atmosphere.w * frame.atmosphere.xyz;

@@ -46,27 +46,33 @@ struct FrameData
 {
     
     void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize) { 
-        auto camPos = DirectX::XMLoadFloat3( &cameraPos );
-        auto               lookAt = DirectX::XMLoadFloat3( &cameraLookAt );
-        static auto up     = DirectX::XMVectorSet( 0, 1, 0, 0 );
+        auto camPos = 
+            DirectX::XMLoadFloat3( &cameraPos );
+        auto lookAt =
+            DirectX::XMLoadFloat3( &cameraLookAt );
+        static auto up = 
+            DirectX::XMVectorSet( 0, 1, 0, 0 );
 
-        auto LookDirection = DirectX::XMVectorSubtract( lookAt, camPos );
+        auto LookDirection =
+            DirectX::XMVectorSubtract( lookAt, camPos );
 
-        
-        auto focal_length = DirectX::XMVector3Length( LookDirection );
-        auto w = DirectX::XMVector3Normalize( LookDirection );
-        auto u = DirectX::XMVector3Normalize( DirectX::XMVector3Cross( w, up ) );
-        auto v = DirectX::XMVector3Cross( u, w );
+        auto focal_length = 
+            DirectX::XMVector3Length( LookDirection );
+        auto w =
+            DirectX::XMVector3Normalize( LookDirection );
+        auto u =
+            DirectX::XMVector3Normalize( DirectX::XMVector3Cross( w, up ) );
+        auto v =
+            DirectX::XMVector3Cross( u, w );
 
-
-        
         auto Horizontal = 
             DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, u ), cameraWinSize.x );
 
         auto Vertical = 
             DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, v ), -cameraWinSize.y );
 
-        auto FinalMatrix = DirectX::XMMATRIX( Horizontal, Vertical, LookDirection, camPos );
+        auto FinalMatrix =
+            DirectX::XMMATRIX( Horizontal, Vertical, LookDirection, camPos );
 
         DirectX::XMStoreFloat3x4( &this->camPixelToWorld, FinalMatrix );
     }
@@ -74,7 +80,7 @@ struct FrameData
     FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize)
         : accumulatedFrames(0)
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
-        , nbrSamplesPerPixel(1)
+        , exponentSamplesPerPixel( 0 )
     {
         UpdateCamera( cameraPos, cameraLookAt, cameraWinSize );
     }
@@ -110,7 +116,8 @@ struct FrameData
     DirectX::XMFLOAT3X4 camPixelToWorld;
 
     uint32_t accumulatedFrames;
-    uint32_t nbrSamplesPerPixel;
+    uint32_t exponentSamplesPerPixel;
+    uint32_t cpuGeneratedSeed;
 };
 
 struct GlobalConstantData

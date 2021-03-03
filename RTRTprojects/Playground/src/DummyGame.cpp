@@ -610,14 +610,16 @@ bool DummyGame::LoadContent()
 
     //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
 
-    #if 1
+    #if 0
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
+    #elif 1
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    scene_rot_offset            = 90;
     m_Globals.nbrActiveLights   = 1;
     #else
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
@@ -910,8 +912,6 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
     {
         g_FPS = frameCount / totalTime;
 
-        m_Logger->info( "FPS: {:.7}", g_FPS );
-
         wchar_t buffer[512];
         ::swprintf_s( buffer, L"HDR [FPS: %f]", g_FPS );
         m_Window->SetWindowTitle( buffer );
@@ -971,6 +971,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             m_frameData.accumulatedFrames += 1;
         }
 
+        m_frameData.cpuGeneratedSeed = static_cast<uint32_t>(Math::random_double() * 100);
 
 
         // update buffers
@@ -1021,9 +1022,9 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderFloat( "Scene Rotation Offset", &scene_rot_offset, -180, 180 );
         ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
 
-        int tmp = static_cast<int>( m_frameData.nbrSamplesPerPixel );
-        ImGui::SliderInt( "Samples Per Pixel", &tmp, 1, 10 );
-        m_frameData.nbrSamplesPerPixel = static_cast<uint32_t>( tmp );
+        int tmp = static_cast<int>( m_frameData.exponentSamplesPerPixel );
+        ImGui::SliderInt( "Samples Per Pixel Exponent (2^X)", &tmp, 0, 10 );
+        m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( tmp );
 
         ImGui::End();
     }
@@ -1035,7 +1036,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
         float atmosphereIntensity = m_frameData.atmosphere.w;
-        ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 100 );
+        ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
         m_frameData.atmosphere.w = atmosphereIntensity;
 
         ImGui::End();
