@@ -503,4 +503,11 @@ void dx12lib::Scene::MergeScene( std::shared_ptr<Scene> other )
         if ( tex )
             _opacity.insert( tex.get() );
     }
+
+    if ( !this->skybox )
+        this->skybox = other->skybox;
+}
+
+void dx12lib::Scene::SetSkybox(std::shared_ptr<dx12lib::Texture> skybox) {
+    this->skybox = skybox;
 }

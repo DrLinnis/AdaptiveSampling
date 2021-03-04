@@ -115,7 +115,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = nbrRenderTargets + 3 + 2 * nbrMeshes + 1 + nbrTextures;
+    desc.NumDescriptors = nbrRenderTargets + 4 + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -153,7 +153,24 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
 
         heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
     }
-    
+
+    // miss shader
+    {
+        auto resource = pMeshes->skybox.get();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC texCopy = {};
+        texCopy.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURECUBE;
+        texCopy.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        texCopy.Texture2D.MipLevels             = (UINT)-1;
+        texCopy.Texture2D.MostDetailedMip       = 0;
+        texCopy.Format = resource ? resource->GetD3D12ResourceDesc().Format : DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+
+
+        d3d12Device->CreateShaderResourceView( resource ? resource->GetD3D12Resource().Get() : nullptr, &texCopy, heapHandle );
+
+        heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+    }
 
     // Index and vertes buffers SRV
     {

@@ -108,7 +108,7 @@ struct ConstantData
     
     uint nbrActiveLights;
     
-    float _padding;
+    uint hasSkybox;
     
     float4 lightPositions[10];
 };
@@ -116,17 +116,18 @@ struct ConstantData
 // SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
 
-ByteAddressBuffer indices[]     : register(t1, space0);
-ByteAddressBuffer vertices[]    : register(t1, space1);
+TextureCube<float4> skybox : register(t1);
 
-ByteAddressBuffer GeometryMaterialMap : register(t1, space2);
+ByteAddressBuffer indices[]     : register(t2, space0);
+ByteAddressBuffer vertices[]    : register(t2, space1);
+
+ByteAddressBuffer GeometryMaterialMap : register(t2, space2);
 
 
-Texture2D<float4> diffuseTex[]  : register(t1, space3);
-Texture2D<float4> normalsTex[]  : register(t1, space4);
-Texture2D<float4> specularTex[] : register(t1, space5);
-Texture2D<float4> maskTex[]     : register(t1, space6);
-
+Texture2D<float4> diffuseTex[]  : register(t2, space3);
+Texture2D<float4> normalsTex[]  : register(t2, space4);
+Texture2D<float4> specularTex[] : register(t2, space5);
+Texture2D<float4> maskTex[]     : register(t2, space6);
 
 
 // UAV
@@ -791,9 +792,18 @@ void standardMiss(inout RayPayload payload)
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
+    float3 backgroundColour = 0;
+    
+    if (globals.hasSkybox)
+        backgroundColour = skybox.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
+    else
+        backgroundColour = frame.atmosphere.xyz;
+
     // sky normal, depth, and colour
-    payload.radiance = frame.atmosphere.w * frame.atmosphere.xyz;
-    payload.colour = frame.atmosphere.xyz;
+    payload.radiance = frame.atmosphere.w * backgroundColour;
+    payload.colour = backgroundColour;
+    
+    
     
     payload.reflectDir = 0.0;
     

@@ -198,15 +198,18 @@ void DummyGame::CreateRayTracingPipeline() {
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 1, 0,
+        // Invicible skybox register
+        offset += 1;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 2, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += m_TotalGeometryCount;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 1, 1,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 2, 1,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += m_TotalGeometryCount;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 2,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 2,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += 1;
 
@@ -216,19 +219,19 @@ void DummyGame::CreateRayTracingPipeline() {
         unsigned int nSpecularDesc = m_TotalSpecularTexCount > 0 ? m_TotalSpecularTexCount : 1;
         unsigned int nMaskDesc     = m_TotalMaskTexCount > 0 ? m_TotalMaskTexCount : 1;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nDiffuseDesc, 1, 3,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nDiffuseDesc, 2, 3,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += nDiffuseDesc;
 
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nNormalDesc, 1, 4,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nNormalDesc, 2, 4,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += nNormalDesc;
          
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nSpecularDesc, 1, 5,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nSpecularDesc, 2, 5,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += nSpecularDesc;
          
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nMaskDesc, 1, 6,
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, nMaskDesc, 2, 6,
                                     D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
         offset += nMaskDesc;
          
@@ -265,16 +268,42 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = planeHitRootAssociation.subobject;  // 5 Associate Root Sig to Miss and CHS
 
 
-        // Create the EMPTY-programs root-signature
+        // Create the MISS-program root-signature
         {
             D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
-            CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+            std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
+            // TLAS + Idx + Vert + MatProp + Diffuse
+            size_t rangeSize = 3;
 
-            rayRootParams[0].InitAsConstantBufferView( 0 );
+            ranges.resize( rangeSize );
+
+            size_t rangeIdx = 0;
+            size_t offset   = m_nbrRayRenderTargets;
+            // per frame data
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+            offset += 1;
+
+            // globals data
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+            offset += 1;
+
+            // offset for TLAS
+            offset += 1;
+
+            // always bind
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+            offset += 1;
+
+            CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+            rayRootParams[0].InitAsDescriptorTable( rangeIdx, ranges.data() );
+
+            CD3DX12_STATIC_SAMPLER_DESC samplers[2];
+            samplers[0].Init( 0 );
+            samplers[1].Init( 1, D3D12_FILTER_MIN_MAG_MIP_POINT );
 
             CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-            rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+            rootSignatureDescription.Init_1_1( 1, rayRootParams, 2, samplers, rootSignatureFlags );
 
             m_EmptyLocalRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
 
@@ -529,7 +558,6 @@ void DummyGame::CreateShaderTable()
 
     UINT64 descriptorHeapStart = m_RayShaderHeap->GetTableHeap()->GetGPUDescriptorHandleForHeapStart().ptr;
     UINT64 instanceTransformHeapStart = m_InstanceTransformResources->GetD3D12Resource()->GetGPUVirtualAddress();
-    UINT64 perFrameDataHeapStart      = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     // ray gen shader
     void* pRayGenShdr = pRtsoProps->GetShaderIdentifier( kRayGenShader );
@@ -557,7 +585,7 @@ void DummyGame::CreateShaderTable()
         memcpy( pData, pStandardMiss, shaderIdSize );
 
         // Entry 1.1 Parameter Constant Buffer pointer
-        memcpy( pData + shaderIdSize, &perFrameDataHeapStart, sizeof( UINT64 ) );  
+        memcpy( pData + shaderIdSize, &descriptorHeapStart, sizeof( UINT64 ) );  
 
     }
     m_MissShaderTable->Unmap();  // Unmap
@@ -584,6 +612,10 @@ void DummyGame::CreateShaderTable()
 
 #endif
 
+#define SAM_MIGUEL 0
+#define CORNELL_BOX 0
+#define SPONZA 0
+#define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
 {
@@ -602,26 +634,37 @@ bool DummyGame::LoadContent()
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
     
+    auto panoramaSkybox = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud.hdr" );
+    //auto panoramaSkybox = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud-diffuse.jpg" );
+
+    // m_GraceCathedralTexture = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
+
+    // Create a cubemap for the HDR panorama.
+    auto cubemapDesc  = panoramaSkybox->GetD3D12ResourceDesc();
+    cubemapDesc.Width = cubemapDesc.Height = 1024;
+    cubemapDesc.DepthOrArraySize           = 6;
+    cubemapDesc.MipLevels                  = 0;
+
+    auto cubeMapBackground = m_Device->CreateTexture( cubemapDesc );
+    cubeMapBackground->SetName( L"Skybox Cubemap" );
+
+    // Convert the 2D panorama to a 3D cubemap.
+    commandList->PanoToCubemap( cubeMapBackground, panoramaSkybox );
+
 
     // DISPLAY MESHES IN RAY TRACING
-    #if 1
-    
-    //sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 1,1,1, 0 ) );
-
-    //sphereMat->SetTexture( Material::TextureType::Diffuse, m_DummyTexture );
-
-    #if 0
+#if SAM_MIGUEL
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
-    #elif 1
+#elif CORNELL_BOX
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
     scene_rot_offset            = 90;
     m_Globals.nbrActiveLights   = 1;
-    #else
+#elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
 
@@ -653,11 +696,10 @@ bool DummyGame::LoadContent()
 
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
-    #endif
 
+    
+#elif DEBUG_SCENE
     // Debug scene
-    #else   // Debug Scene
-
     auto earth = commandList->LoadTextureFromFile( L"Assets/Textures/earth.dds" );
     auto UV    = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
 
@@ -762,8 +804,12 @@ bool DummyGame::LoadContent()
     tmpMatAlphaPlane->SetTexture( Material::TextureType::Diffuse, trans_alpha_diff );
     m_RaySceneMesh->MergeScene( alphaPlane );
     
-    #endif
+#endif
 
+    m_RaySceneMesh->SetSkybox( cubeMapBackground );
+
+
+    m_Globals.hasSkybox = m_RaySceneMesh->HasSkybox();
     
     backgroundColour[0] = m_frameData.atmosphere.x;
     backgroundColour[1] = m_frameData.atmosphere.y;

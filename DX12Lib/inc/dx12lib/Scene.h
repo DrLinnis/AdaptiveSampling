@@ -111,6 +111,11 @@ public:
         return _sceneScale;
     }
 
+    bool HasSkybox() const 
+    {
+        return skybox.get();
+    }
+
     /**
      * Get the AABB of the scene.
      * This returns the AABB of the root node of the scene.
@@ -122,6 +127,8 @@ public:
      * This will first visit the scene, then it will visit the root node of the scene.
      */
     virtual void Accept( Visitor& visitor );
+
+    void SetSkybox( std::shared_ptr<dx12lib::Texture> skybox );
 
     void MergeScene( std::shared_ptr<Scene> other );
 
@@ -171,6 +178,7 @@ private:
     std::set<dx12lib::Texture*> _specular;
     std::set<dx12lib::Texture*> _opacity;
 
+    std::shared_ptr<dx12lib::Texture> skybox;
     
     float _sceneScale = 1.0;
 

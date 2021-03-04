@@ -44,7 +44,6 @@ class Window;  // From GameFramework.
 
 struct FrameData
 {
-    
     void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize) { 
         auto camPos = 
             DirectX::XMLoadFloat3( &cameraPos );
@@ -126,6 +125,7 @@ struct GlobalConstantData
     : nbrBouncesPerPath( nbrBouncesPerPath )
     , nbrRaysPerBounce( nbrRaysPerBounce )
     , nbrActiveLights( 0 )
+    , hasSkybox( false )
     { }
 
     uint32_t nbrBouncesPerPath;
@@ -133,7 +133,7 @@ struct GlobalConstantData
 
     uint32_t nbrActiveLights;
 
-    float _padding = 0;
+    uint32_t hasSkybox;
 
     // Fill all elements with empty positions
     DirectX::XMFLOAT4 lightPositions[10] = { DirectX::XMFLOAT4(0,0,0,0) };
@@ -359,7 +359,6 @@ private:
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     FLOAT backgroundColour[3];
-
 
     // General
     std::shared_ptr<dx12lib::Device>    m_Device;
