@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 50, 50, 0 )
 , m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
-, m_Globals(10)
+, m_Globals(5)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -199,7 +199,7 @@ void DummyGame::CreateRayTracingPipeline() {
         offset += 1;
 
         // Invicible skybox register
-        offset += 1;
+        offset += 2;
 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_TotalGeometryCount, 2, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, offset );
@@ -274,7 +274,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
             std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
             // TLAS + Idx + Vert + MatProp + Diffuse
-            size_t rangeSize = 3;
+            size_t rangeSize = 4;
 
             ranges.resize( rangeSize );
 
@@ -291,8 +291,12 @@ void DummyGame::CreateRayTracingPipeline() {
             // offset for TLAS
             offset += 1;
 
-            // always bind
+            // always bind skybox(es)
+            // diffuse
             ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+            offset += 1;
+            // intensity
+            ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 1, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
             offset += 1;
 
             CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
@@ -614,7 +618,7 @@ void DummyGame::CreateShaderTable()
 
 #define SAM_MIGUEL 0
 #define CORNELL_BOX 0
-#define SPONZA 0
+#define SPONZA 1
 #define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
@@ -634,22 +638,34 @@ bool DummyGame::LoadContent()
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
     
-    auto panoramaSkybox = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud.hdr" );
-    //auto panoramaSkybox = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud-diffuse.jpg" );
+    auto panoramaSkyboxIntensity = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud.hdr" );
 
-    // m_GraceCathedralTexture = commandList->LoadTextureFromFile( L"Assets/Textures/UV_Test_Pattern.png" );
-
-    // Create a cubemap for the HDR panorama.
-    auto cubemapDesc  = panoramaSkybox->GetD3D12ResourceDesc();
+    // Create a cubemap for the intensity panorama.
+    auto cubemapDesc  = panoramaSkyboxIntensity->GetD3D12ResourceDesc();
     cubemapDesc.Width = cubemapDesc.Height = 1024;
     cubemapDesc.DepthOrArraySize           = 6;
     cubemapDesc.MipLevels                  = 0;
 
-    auto cubeMapBackground = m_Device->CreateTexture( cubemapDesc );
-    cubeMapBackground->SetName( L"Skybox Cubemap" );
+    auto cubeMapIntensityBackground = m_Device->CreateTexture( cubemapDesc );
+    cubeMapIntensityBackground->SetName( L"Skybox Cubemap Intensity" );
 
     // Convert the 2D panorama to a 3D cubemap.
-    commandList->PanoToCubemap( cubeMapBackground, panoramaSkybox );
+    commandList->PanoToCubemap( cubeMapIntensityBackground, panoramaSkyboxIntensity );
+
+    
+    auto panoramaSkyboxDiffuse = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud-diffuse.jpg" );
+
+    // Create a cubemap for the diffuse panorama.
+    auto cubemapDescDiffuse  = panoramaSkyboxDiffuse->GetD3D12ResourceDesc();
+    cubemapDescDiffuse.Width = cubemapDescDiffuse.Height = 1024;
+    cubemapDescDiffuse.DepthOrArraySize           = 6;
+    cubemapDescDiffuse.MipLevels                  = 0;
+
+    auto cubeMapDiffuseBackground = m_Device->CreateTexture( cubemapDescDiffuse );
+    cubeMapDiffuseBackground->SetName( L"Skybox Cubemap Diffuse" );
+
+    // Convert the 2D panorama to a 3D cubemap.
+    commandList->PanoToCubemap( cubeMapDiffuseBackground, panoramaSkyboxDiffuse );
 
 
     // DISPLAY MESHES IN RAY TRACING
@@ -659,6 +675,7 @@ bool DummyGame::LoadContent()
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif CORNELL_BOX
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
@@ -696,7 +713,7 @@ bool DummyGame::LoadContent()
 
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
-
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
     
 #elif DEBUG_SCENE
     // Debug scene
@@ -806,9 +823,7 @@ bool DummyGame::LoadContent()
     
 #endif
 
-    m_RaySceneMesh->SetSkybox( cubeMapBackground );
-
-
+    
     m_Globals.hasSkybox = m_RaySceneMesh->HasSkybox();
     
     backgroundColour[0] = m_frameData.atmosphere.x;
@@ -1075,10 +1090,8 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::End();
     }
 
-    static bool editAtmosphere = true;
-    if ( editAtmosphere && ImGui::Begin( "Atmosphere Sliders" ) )  // not demo window
+    if ( !m_Globals.hasSkybox && ImGui::Begin( "Atmosphere Sliders" ) ) 
     {
-
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
         float atmosphereIntensity = m_frameData.atmosphere.w;

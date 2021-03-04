@@ -116,7 +116,8 @@ struct ConstantData
 // SRV
 RaytracingAccelerationStructure gRtScene : register(t0);
 
-TextureCube<float4> skybox : register(t1);
+TextureCube<float4> skyboxDiffuse : register(t1, space0);
+TextureCube<float4> skyboxRadiance : register(t1, space1);
 
 ByteAddressBuffer indices[]     : register(t2, space0);
 ByteAddressBuffer vertices[]    : register(t2, space1);
@@ -404,24 +405,27 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
         
+        radiance += colour * currRay.radiance;
+        colour *= currRay.colour;
+        
         // Store the first Primary Ray normal/specular/object/position
-        if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY) 
+        if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY)
         {
             result.normal = currRay.normal;
             result.specular = currRay.specular;
-            result.object   = currRay.object;
+            result.object = currRay.object;
             result.position = currRay.position;
             
             ray.TMin = T_HIT_MIN;
+            
+            if (length(currRay.radiance) > 0)
+                radiance = currRay.colour;
         }
-        
-        radiance += colour * currRay.radiance;
-        colour *= currRay.colour;
         
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (currRay.object == -1 || length(currRay.radiance) > 0)
+        if (length(currRay.radiance) > 0)
         {
             break;
         }
@@ -792,16 +796,26 @@ void standardMiss(inout RayPayload payload)
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
     
-    float3 backgroundColour = 0;
+    float3 radiance = 0;
+    float3 colour = 0;
+    
+    //skyboxDiffuse && skyboxRadiance
     
     if (globals.hasSkybox)
-        backgroundColour = skybox.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
+    {
+        colour = skyboxDiffuse.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
+        radiance = skyboxRadiance.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
+    }
     else
-        backgroundColour = frame.atmosphere.xyz;
-
+    {
+        radiance = frame.atmosphere.w * frame.atmosphere.xyz;
+        colour = frame.atmosphere.xyz;
+    }
+        
+    
     // sky normal, depth, and colour
-    payload.radiance = frame.atmosphere.w * backgroundColour;
-    payload.colour = backgroundColour;
+    payload.radiance = radiance;
+    payload.colour = colour;
     
     
     

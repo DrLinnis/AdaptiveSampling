@@ -113,7 +113,7 @@ public:
 
     bool HasSkybox() const 
     {
-        return skybox.get();
+        return skyboxIntensity.get() && skyboxDiffuse.get();
     }
 
     /**
@@ -128,7 +128,8 @@ public:
      */
     virtual void Accept( Visitor& visitor );
 
-    void SetSkybox( std::shared_ptr<dx12lib::Texture> skybox );
+    void SetSkybox( std::shared_ptr<dx12lib::Texture> skyboxIntensity,
+        std::shared_ptr<dx12lib::Texture> skyboxDiffuse );
 
     void MergeScene( std::shared_ptr<Scene> other );
 
@@ -178,7 +179,7 @@ private:
     std::set<dx12lib::Texture*> _specular;
     std::set<dx12lib::Texture*> _opacity;
 
-    std::shared_ptr<dx12lib::Texture> skybox;
+    std::shared_ptr<dx12lib::Texture> skyboxIntensity, skyboxDiffuse;
     
     float _sceneScale = 1.0;
 
