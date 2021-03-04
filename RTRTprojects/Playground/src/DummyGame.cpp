@@ -616,10 +616,10 @@ void DummyGame::CreateShaderTable()
 
 #endif
 
-#define SAM_MIGUEL 0
+#define SAM_MIGUEL 1
 #define CORNELL_BOX 0
-#define SPONZA 1
-#define DEBUG_SCENE 1
+#define SPONZA 0
+#define DEBUG_SCENE 0
 
 bool DummyGame::LoadContent()
 {
@@ -898,9 +898,13 @@ void DummyGame::UnloadContent()
     m_TlasBuffers.pResult.reset();
     m_TlasBuffers.pInstanceDesc.reset();
     
+    m_FrameDataCB.reset();
+    m_GlobalCB.reset();
+    m_InstanceTransformResources.reset();
+
     m_RayGenRootSig.reset();
-    m_EmptyLocalRootSig.reset();
     m_StdHitRootSig.reset();
+    m_EmptyLocalRootSig.reset();
     m_GlobalRootSig.reset();
 
     m_RayPipelineState->GetD3D12PipelineState()->Release(); // not released properly when reseting variable.
@@ -910,16 +914,16 @@ void DummyGame::UnloadContent()
     m_MissShaderTable.reset();
     m_HitShaderTable.reset();
 
-    m_RayRenderTarget.Reset();
     m_RayShaderHeap.reset();
+    m_RayRenderTarget.Reset();
 
 #endif
+
 
     m_RenderTarget.Reset();
 
     m_GUI.reset();
     m_SwapChain.reset();
-
     m_Device.reset();
 }
 
@@ -1080,17 +1084,44 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 1000 );
         ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
 
-        ImGui::SliderFloat( "Scene Rotation Offset", &scene_rot_offset, -180, 180 );
+        ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
         ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
 
+
         int tmp = static_cast<int>( m_frameData.exponentSamplesPerPixel );
-        ImGui::SliderInt( "Samples Per Pixel Exponent (2^X)", &tmp, 0, 10 );
+        ImGui::SliderInt( "SPP Exponent (2^X)", &tmp, 0, 10 );
         m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( tmp );
 
         ImGui::End();
     }
 
-    if ( !m_Globals.hasSkybox && ImGui::Begin( "Atmosphere Sliders" ) ) 
+    if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
+    {
+        if (m_Globals.hasSkybox) 
+        {
+            float skyboxRotation = Math::Degrees( backgroundColour[0] );
+            ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
+            backgroundColour[0] = Math::Radians( skyboxRotation );
+
+            float skyboxIntensity = m_frameData.atmosphere.w;
+            ImGui::SliderFloat( "Skybox Intensity", &skyboxIntensity, 1, 10 );
+            m_frameData.atmosphere.w = skyboxIntensity;
+
+            ImGui::End();
+        }
+        else 
+        {
+            ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
+
+            float atmosphereIntensity = m_frameData.atmosphere.w;
+            ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
+            m_frameData.atmosphere.w = atmosphereIntensity;
+
+            ImGui::End();
+        }
+    }
+
+    if ( !m_Globals.hasSkybox ) 
     {
         ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
@@ -1102,6 +1133,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     }
 
 
+
     m_GUI->Render( commandList, renderTarget );
 }
 
@@ -1111,6 +1143,7 @@ void DummyGame::OnRender()
 
     auto& commandQueue = m_Device->GetCommandQueue( D3D12_COMMAND_LIST_TYPE_DIRECT );
     auto  commandList  = commandQueue.GetCommandList();
+
 
     /*
        Ray tracing calling.
@@ -1126,11 +1159,9 @@ void DummyGame::OnRender()
 
 
 #if UPDATE_TRANSFORMS
-
         AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
                                               m_Instances, m_InstanceDescBuffer.get(), true );
-
-    #endif
+#endif
         /*
             Here we declare where the hitshader is, where the miss shader is, and where the raygen shader
         */

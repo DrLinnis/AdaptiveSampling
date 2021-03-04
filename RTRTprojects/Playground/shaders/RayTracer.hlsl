@@ -803,8 +803,15 @@ void standardMiss(inout RayPayload payload)
     
     if (globals.hasSkybox)
     {
-        colour = skyboxDiffuse.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
-        radiance = skyboxRadiance.SampleLevel(trilinearFilter, rayDirW, 0).xyz;
+        float sinTheta = sin(frame.atmosphere.x);
+        float cosTheta = cos(frame.atmosphere.x);
+        
+        float3x3 rotationMatrix = float3x3(cosTheta, 0, sinTheta, 0, 1, 0, -sinTheta, 0, cosTheta);
+        
+        float3 sampleDir = mul(rotationMatrix, rayDirW);
+        
+        colour = skyboxDiffuse.SampleLevel(trilinearFilter, sampleDir, 0).xyz;
+        radiance = frame.atmosphere.w * skyboxRadiance.SampleLevel(trilinearFilter, sampleDir, 0).xyz;
     }
     else
     {
