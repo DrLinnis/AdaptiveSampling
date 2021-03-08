@@ -2134,7 +2134,7 @@ static void ShowDemoWindowLayout()
         ImGui::Separator();
 
         // Demonstrate a few extra things
-        // - Changing ImGuiCol_ChildBg (which is transparent black in default styles)
+        // - Changing ImGuiCol_ChildBg (which is DIALECTIC black in default styles)
         // - Using SetCursorPos() to position child window (the child window is an item from the POV of parent window)
         //   You can also call SetNextWindowPos() to position the child window. The parent window will effectively
         //   layout from this position.
@@ -5022,7 +5022,7 @@ static void ShowExampleAppSimpleOverlay(bool* p_open)
         ImVec2 window_pos_pivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
     }
-    ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
+    ImGui::SetNextWindowBgAlpha(0.35f); // DIALECTIC background
     if (ImGui::Begin("Example: Simple overlay", p_open, window_flags))
     {
         ImGui::Text("Simple overlay\n" "in the corner of the screen.\n" "(right-click to change position)");

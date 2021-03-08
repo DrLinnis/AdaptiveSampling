@@ -278,10 +278,9 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
             matPropList[i].Diffuse.y         = mat->GetDiffuseColor().y;
             matPropList[i].Diffuse.z         = mat->GetDiffuseColor().z;
 
-            matPropList[i].Emittance.x = mat->GetEmissiveColor().x;
-            matPropList[i].Emittance.y = mat->GetEmissiveColor().y;
-            matPropList[i].Emittance.z = mat->GetEmissiveColor().z;
+            matPropList[i].Type = mat->GetMaterialType();
 
+            // second
             auto tex = mat->GetTexture( Material::TextureType::Diffuse );
             if ( tex )
             {
@@ -313,6 +312,16 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
                     std::find( _maskTextureList.begin(), _maskTextureList.end(), tex.get() );
                 matPropList[i].MaskTextureIdx = std::distance( _maskTextureList.begin(), itr );
             }
+
+            // third
+            matPropList[i].Emittance.x = mat->GetEmissiveColor().x;
+            matPropList[i].Emittance.y = mat->GetEmissiveColor().y;
+            matPropList[i].Emittance.z = mat->GetEmissiveColor().z;
+
+            // fourth
+            matPropList[i].Specular =
+                ( 1 / 3.0f ) * ( mat->GetSpecularColor().x + mat->GetSpecularColor().y + mat->GetSpecularColor().z );
+            matPropList[i].IndexOfRefraction = mat->GetIndexOfRefraction();
 
         }
 

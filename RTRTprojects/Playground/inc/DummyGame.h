@@ -40,8 +40,6 @@ class Window;  // From GameFramework.
 
 #define UPDATE_TRANSFORMS 1
 
-#define FOCAL_FOCUS 0.001
-
 struct FrameData
 {
     void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize) { 

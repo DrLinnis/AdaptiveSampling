@@ -10,8 +10,9 @@
 
 #define T_HIT_MIN 0.0001
 
-#define LAMBERTIAN 0
-#define METAL 1
+#define LAMBERTIAN  0
+#define GLOSSY      1
+#define DIALECTIC 2
 
 #define RAY_PRIMARY 0
 #define RAY_SECONDARY 1
@@ -21,22 +22,23 @@
 // PAYLOADS AND STRUCTS
 struct RayPayload
 {
-    // MC sampling
-    float prob;
+    // Vectors
     float3 colour;
+    float3 normal;
     float3 reflectDir;
     float3 position;
     float3 radiance;
     
     // For denoising
-    float3 normal;
+    float prob;
     float specular;
     int object;
     
-    // For general
+    // Ray Properties
     uint depth;
     uint rayMode;
     uint seed;
+    bool mediumIoR;
 };
 
 struct VertexAttributes
@@ -60,9 +62,13 @@ struct RayMaterialProp
     int MaskTextureIdx;
     // 16 bytes: Material Texture Indices
     
-    float Roughness;
+    float Metalness;
     float3 Emittance;
     // 16 bytes: Material properties
+    
+    float Specular;
+    float IndexOfRefraction;
+    float2 _padding;
 };
 
 
@@ -81,7 +87,7 @@ struct MaterialInfoBDRF
     float3 colour;
     float metalness;
     float roughness;
-    float specular;
+    float ior; //index of refraction
 };
 
 struct InstanceTransforms
@@ -168,7 +174,7 @@ float3 modelToWorldPosition(float3 pos)
 
 
 MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, in uint matType,
-        in float3 colour, in float metalness, in float roughness, in float specular, in uint depth)
+        in float3 colour, in float metalness, in float roughness, in float ior, in uint depth)
 {
     MaterialInfoBDRF result;
     
@@ -179,7 +185,7 @@ MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, i
     result.colour = colour;
     result.metalness = metalness;
     result.roughness = roughness;
-    result.specular = specular;
+    result.ior = ior;
     result.depth = depth;
     return result;
 }
@@ -241,6 +247,25 @@ float3 sample_hemisphere_cos(inout uint seed)
     return sampleDir;
 }
 
+float3 sample_hemisphere_TrowbridgeReitzCos(in float alpha2, inout uint seed)
+{
+    float3 sampleDir;
+
+    float u = rnd(seed);
+    float v = rnd(seed);
+
+    float tan2theta = alpha2 * (u / (1 - u));
+    float cos2theta = 1 / (1 + tan2theta);
+    float sinTheta = sqrt(1 - cos2theta);
+    float phi = PI2 * v;
+
+    sampleDir.x = sinTheta * cos(phi);
+    sampleDir.y = sinTheta * sin(phi);
+    sampleDir.z = sqrt(cos2theta);
+
+    return sampleDir;
+}
+
 // My functions
 float3 SampleNearestLightDirection(float3 pos, float3 normal)
 {
@@ -274,6 +299,7 @@ uint3 _getIndices(uint geometryIdx, uint triangleIndex)
 
 VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
 {
+    int i;
     uint3 triangleIndices = _getIndices(geometryIndex, primitiveIndex);
     uint triangleVertexIndex = 0;
     
@@ -287,7 +313,7 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     float3 vertPos[3];
     float3 texels[3];
     
-    for (int i = 0; i < 3; ++i)
+    for (i = 0; i < 3; ++i)
     {
         // get byte address 
         triangleVertexIndex = triangleIndices[i] * sizeof(VertexAttributes);
@@ -321,7 +347,7 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     
     v.position = modelToWorldPosition(v.position);
     
-    for (int i = 0; i < 3; ++i)
+    for (i = 0; i < 3; ++i)
     {
         vertPos[i] = modelToWorldPosition(vertPos[i]);
     }
@@ -368,11 +394,15 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
     result.MaskTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
     indexByteStartAddress += 4; // add one int
     
-    result.Roughness = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    result.Metalness = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
     indexByteStartAddress += 4; // add one float
     result.Emittance = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
     indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
     
+    result.Specular = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    indexByteStartAddress += 4; // add one float
+    result.IndexOfRefraction = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    indexByteStartAddress += 4; // add one float
     
     return result;
 }
@@ -395,6 +425,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     currRay.seed = seed;
     currRay.rayMode = RAY_PRIMARY;
     currRay.depth = globals.nbrBouncesPerPath;
+    currRay.mediumIoR = 1.0f;
     
     uint prevType;
     while (currRay.depth > 0)
@@ -425,7 +456,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (length(currRay.radiance) > 0)
+        if (length(currRay.radiance) > 0 || length(colour) < 0.05)
         {
             break;
         }
@@ -433,9 +464,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
 
     }
     
-    //result.colour = colour;
     result.colour = radiance;
-    //result.colour = currRay.depth / (float) globals.nbrBouncesPerPath;
     result.seed = currRay.seed;
     
     return result;
@@ -544,10 +573,8 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     
     float cosNH, cosVH, cosNR, cosNV;
     
-    
     if (mat.type == LAMBERTIAN)
     {
-        
         R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
         
 #if 0
@@ -568,38 +595,60 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
 
     }
     
-    else if (mat.type == METAL)
+    else if (mat.type == GLOSSY)
     {
         float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
-#if 0
-        float cosTheta = max(dot(N, H), 0); // angle between normal and halfway vector
-        float cosOmega = max(dot(V, H), 0); // angle between view and halfway vector
-    
-        float cosReflect = max(dot(N, R), 0); // angle between reflection and normal
-        float cosView = max(dot(N, V), 0); // angle between view and normal
+        float alpha2 = mat.roughness * mat.roughness;
         
-        R = sample_hemisphere_cos(payload.seed);
-        float prob = R.z;
-        R = normalize(applyRotationMappingZToN(normal, R));
-        R = normalize(mul(instTrans.normalModelToWorld, float4(R, 0)).xyz);
+        H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
+        H = normalize(applyRotationMappingZToN(N, H));
+        
+        cosNH = max(dot(N, H), 0);
+        cosNV = max(dot(N, V), 0);
+        cosVH = max(dot(V, H), 0);
+        
+        R = normalize(2 * cosNH * H - V);
+        
+        // Can't divide by zero
+        cosNR = max(dot(N, R), EPSILON);
+        
     
         float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
-        F0 = lerp(F0, albedo, metalness);
+        F0 = lerp(F0, mat.colour, mat.metalness);
     
         
-        float D = _distributionGGX(cosTheta, roughness);
+        float D = _distributionGGX(cosNH, mat.roughness);
     
-        float3 F = specular * _fresnelSchlick(F0, cosOmega);
+        float3 F = _fresnelSchlick(F0, cosVH);
     
-        float G = _geometrySmith(cosReflect, cosView, k_direct);
+        float G = _geometrySmith(cosNR, cosNV, k_direct);
     
         // Calc diffuse comp (REFRACT)
-        float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), metalness);
+        float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), mat.metalness);
     
-        float denom = max(4 * cosView * cosReflect, EPSILON);
+        // Can't divide by zero
+        float denom = max(4 * cosNV * cosNR, EPSILON);
     
-        //return (kD * albedo + D * F * G / denom) * cosReflect;
-#endif
+            
+        sampleProb = D * cosNH / (4 * cosNV);
+        brdfEval = F * (D * G / denom);
+        
+    }
+    
+    else if (mat.type == DIALECTIC)
+    {
+        R = refract(V, N, mat.ior);
+        
+        if (length(R) == 0)
+            R = reflect(V, N);
+        
+        R = normalize(R);
+        
+        // Can't divide by zero
+        cosNR = max(dot(N, R), EPSILON);
+            
+        sampleProb = cosNR * InvPi;
+        brdfEval = (float3(1, 1, 1) - mat.colour) * InvPi;
     }
     
     else
@@ -608,6 +657,9 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         R = N;
         brdfCos = 0;
         sampleProb = 1;
+        cosNR = 0;
+        brdfEval = 0;
+
     }
     
     sampleDir = R;
@@ -731,7 +783,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     frontFace = dot(tmpNormal, rayDirW) > 0;
 #endif
     
-    // Transparent pixel hit!
+    // DIALECTIC pixel hit!
     if ((tex_rgba.w == 0 || frontFace) && payload.depth > 0)
     {
         RayDesc ray;
@@ -765,7 +817,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // View Vector
         float3 V = -rayDirW;
         
-        float specVal = 0;
+        float specVal = mat.Specular;
         if (mat.SpecularTextureIdx >= 0)
         {
             specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).w;
@@ -773,8 +825,18 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         
         // Create material and sample BDRF to payload output
-        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo, 0, mat.Roughness, specVal, payload.depth);
+        if (payload.mediumIoR == mat.IndexOfRefraction)
+            mat.IndexOfRefraction = 1.0f; // in X, and hit X again, assume try enter air. UGLY hack
+        
+        float divIoR = payload.mediumIoR / mat.IndexOfRefraction;
+        
+        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo,
+                        mat.Metalness, 1.0 - specVal, divIoR, payload.depth);
         sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
+        
+        if (mat.Type == DIALECTIC && dot(normal, payload.reflectDir) < 0)
+            payload.mediumIoR = mat.IndexOfRefraction;
+        
         
         payload.position = v.position;
         payload.radiance = mat.Emittance;
@@ -823,8 +885,6 @@ void standardMiss(inout RayPayload payload)
     // sky normal, depth, and colour
     payload.radiance = radiance;
     payload.colour = colour;
-    
-    
     
     payload.reflectDir = 0.0;
     

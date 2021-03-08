@@ -41,20 +41,24 @@ namespace dx12lib
 class Texture;
 
 
+#define LAMBERTIAN  0
+#define GLOSSY      1
+#define DIALECTIC 2
+
 // clang-format off
 struct alignas( 16 ) MaterialProperties
 {
     // The Material properties must be aligned to a 16-byte boundary.
     // To guarantee alignment, the MaterialProperties structure will be allocated in aligned memory.
     MaterialProperties( 
-        const DirectX::XMFLOAT4 diffuse  = { 1, 1, 1, 1 },
+        const DirectX::XMFLOAT3 diffuse  = { 1, 1, 1 },
         const DirectX::XMFLOAT4 specular = { 1, 1, 1, 1 }, 
         const float specularPower = 128.0f,
         const DirectX::XMFLOAT4 ambient  = { 0, 0, 0, 1 },
         const DirectX::XMFLOAT4 emissive = { 0, 0, 0, 1 },
         const DirectX::XMFLOAT4 reflectance = { 0, 0, 0, 0 }, const float opacity = 1.0f,
         const float indexOfRefraction = 0.0f, const float bumpIntensity = 1.0f,
-        const float alphaThreshold = 0.1f 
+        const float alphaThreshold = 0.1f, uint32_t type = LAMBERTIAN
     )
     : Diffuse( diffuse )
     , Specular( specular )
@@ -65,6 +69,7 @@ struct alignas( 16 ) MaterialProperties
     , SpecularPower( specularPower )
     , IndexOfRefraction( indexOfRefraction )
     , BumpIntensity( bumpIntensity )
+    , Type(type)
     , HasAmbientTexture( false )
     , HasEmissiveTexture( false )
     , HasDiffuseTexture( false )
@@ -75,7 +80,9 @@ struct alignas( 16 ) MaterialProperties
     , HasOpacityTexture( false )
     {}
 
-    DirectX::XMFLOAT4 Diffuse;
+    uint32_t Type;
+
+    DirectX::XMFLOAT3 Diffuse;
     //------------------------------------ ( 16 bytes )
     DirectX::XMFLOAT4 Specular;
     //------------------------------------ ( 16 bytes )
@@ -85,9 +92,9 @@ struct alignas( 16 ) MaterialProperties
     //------------------------------------ ( 16 bytes )
     DirectX::XMFLOAT4 Reflectance;
     //------------------------------------ ( 16 bytes )
-    float Opacity;                       // If Opacity < 1, then the material is transparent.
+    float Opacity;                       // If Opacity < 1, then the material is DIALECTIC.
     float SpecularPower;
-    float IndexOfRefraction;             // For transparent materials, IOR > 0.
+    float IndexOfRefraction;             // For DIALECTIC materials, IOR > 0.
     float BumpIntensity;                 // When using bump textures (height maps) we need
                                          // to scale the height values so the normals are visible.
     //------------------------------------ ( 16 bytes )
@@ -104,27 +111,32 @@ struct alignas( 16 ) MaterialProperties
     // Total:                              ( 16 * 8 = 128 bytes )
 };
 
-#define LAMBERTIAN 0
-#define METAL 1
 
 struct alignas( 16 ) RayMaterialProp
 {
     RayMaterialProp(
         const DirectX::XMFLOAT3 diffuse = { 1, 1, 1 },
         const int type = LAMBERTIAN,
-        const float roughness = 1.0f,
-        const DirectX::XMFLOAT3 emittance = {0, 0, 0}
+        const float metalness = 0.0f,
+        const DirectX::XMFLOAT3 emittance = {0, 0, 0},
+        const float specular = 0.0f,
+        const float indexOfRefraction = 1.0f
     )
-        : Diffuse(diffuse)
-        , Type(type)
+        : Diffuse( diffuse )
+        , Type( type )
 
-        , Roughness(roughness)
-        , Emittance(emittance)
+        , Metalness( metalness )
+        , Emittance( emittance )
+
+        , Specular( specular )
+        , IndexOfRefraction( indexOfRefraction )
 
         , DiffuseTextureIdx(-1)
         , NormalTextureIdx(-1)
         , SpecularTextureIdx(-1)
         , MaskTextureIdx(-1)
+
+        , _padding(0,0)
     { }
 
     DirectX::XMFLOAT3 Diffuse;  
@@ -137,11 +149,16 @@ struct alignas( 16 ) RayMaterialProp
     int MaskTextureIdx;
     // ------------------------------------ ( 16 bytes )
     
-    float Roughness;    
+    float Metalness; // define it as 1-Specular?   
     DirectX::XMFLOAT3 Emittance;
     // ------------------------------------ ( 16 bytes )
 
-    // Total:                              ( 16 * 3 = 48 bytes )
+    float Specular;
+    float IndexOfRefraction;
+    DirectX::XMFLOAT2 _padding;
+    // ------------------------------------ ( 16 bytes )
+
+    // Total:                              ( 16 * 4 = 48 bytes )
 };
 
 // clang-format on
@@ -171,8 +188,11 @@ public:
     const DirectX::XMFLOAT4& GetAmbientColor() const;
     void                     SetAmbientColor( const DirectX::XMFLOAT4& ambient );
 
-    const DirectX::XMFLOAT4& GetDiffuseColor() const;
-    void                     SetDiffuseColor( const DirectX::XMFLOAT4& diffuse );
+    const DirectX::XMFLOAT3& GetDiffuseColor() const;
+    void                     SetDiffuseColor( const DirectX::XMFLOAT3& diffuse );
+
+    uint32_t GetMaterialType() const;
+    void     SetMaterialType( uint32_t type );
 
     const DirectX::XMFLOAT4& GetEmissiveColor() const;
     void                     SetEmissiveColor( const DirectX::XMFLOAT4& emissive );
@@ -201,9 +221,9 @@ public:
     std::shared_ptr<Texture> GetTexture( TextureType ID ) const;
     void                     SetTexture( TextureType type, std::shared_ptr<Texture> texture );
 
-    // This material defines a transparent material
+    // This material defines a DIALECTIC material
     // if the opacity value is < 1, or there is an opacity map, or the diffuse texture has an alpha channel.
-    bool IsTransparent() const;
+    bool IsDIALECTIC() const;
 
     const MaterialProperties& GetMaterialProperties() const;
     void                      SetMaterialProperties( const MaterialProperties& materialProperties );

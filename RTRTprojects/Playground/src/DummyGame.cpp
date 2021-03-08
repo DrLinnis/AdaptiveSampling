@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 50, 50, 0 )
 , m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
-, m_Globals(5)
+, m_Globals(10)
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -328,7 +328,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 3 + 3) );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 3 + 4) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -388,16 +388,14 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto rayObjID = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
     rayObjID->SetName( L"RayGen object ID output texture" );
 
-    auto rayMetal = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
-    rayMetal->SetName( L"RayGen metalness output texture" );
+    auto raySpec = m_Device->CreateTexture( renderDesc, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE );
+    raySpec->SetName( L"RayGen specular output texture" );
 
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayAlbedo );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayNormals );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayDepth );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, rayPos );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, rayObjID );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color6, rayMetal );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPos );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, raySpec );
 
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -616,10 +614,10 @@ void DummyGame::CreateShaderTable()
 
 #endif
 
-#define SAM_MIGUEL 1
+#define SAM_MIGUEL 0
 #define CORNELL_BOX 0
-#define SPONZA 0
-#define DEBUG_SCENE 0
+#define SPONZA 1
+#define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
 {
@@ -677,10 +675,12 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif CORNELL_BOX
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
+    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" ); scene_scale = 100;
+    
+    m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
     scene_rot_offset            = 90;
-    m_Globals.nbrActiveLights   = 1;
+
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
@@ -740,7 +740,6 @@ bool DummyGame::LoadContent()
     auto trans_mask_mask  = commandList->LoadTextureFromFile( L"Assets/Textures/Selected_Textures/plant_mask.tga" );
 
     m_CamPos = DirectX::XMFLOAT3( 0, 200, -200 );
-    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
     m_frameData.UpdateCamera( m_CamPos, DirectX::XMFLOAT3( 0, 0, 0 ), m_CamWindow );
     m_Yaw     = 90;
     m_Pitch   = -45;
@@ -772,9 +771,9 @@ bool DummyGame::LoadContent()
         bool isSphere = Math::random_double() > 0.5;
 
         if ( isSphere )
-            tmpScene = commandList->CreateSphere( 10, 32u, XMFLOAT3( radius * std::cos( alpha ), 0, radius * std::sin( alpha ) ) );
+            tmpScene = commandList->CreateSphere( 10, 32u, XMFLOAT3( radius * std::cos( alpha ), -10, radius * std::sin( alpha ) ) );
         else
-            tmpScene = commandList->CreateCube( 20, XMFLOAT3( radius * std::cos( alpha ), 0, radius * std::sin( alpha ) ) );
+            tmpScene = commandList->CreateCube( 20, XMFLOAT3( radius * std::cos( alpha ), -10, radius * std::sin( alpha ) ) );
 
         auto tmpMat = tmpScene->GetRootNode()->GetMesh( 0 )->GetMaterial();
 
@@ -802,7 +801,7 @@ bool DummyGame::LoadContent()
             break;
         default:
         case 4:
-            tmpMat->SetDiffuseColor( XMFLOAT4( Math::random_double(), Math::random_double(), Math::random_double(), 0 ) );
+            tmpMat->SetDiffuseColor( XMFLOAT3( Math::random_double(), Math::random_double(), Math::random_double() ) );
             break;
         }
 
@@ -821,6 +820,16 @@ bool DummyGame::LoadContent()
     tmpMatAlphaPlane->SetTexture( Material::TextureType::Diffuse, trans_alpha_diff );
     m_RaySceneMesh->MergeScene( alphaPlane );
     
+
+    auto transparentSphere = commandList->CreateSphere( 10, 30, XMFLOAT3( 0, 300, 0 ) );
+    auto tmpMatTransparentSphere = transparentSphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    tmpMatTransparentSphere->SetMaterialType( DIALECTIC );
+    tmpMatTransparentSphere->SetDiffuseColor( DirectX::XMFLOAT3( 0.1, 0.1, 0.1 ) );
+    tmpMatTransparentSphere->SetIndexOfRefraction( 1.5 );
+    m_RaySceneMesh->MergeScene( transparentSphere );
+
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
 #endif
 
     
@@ -1097,7 +1106,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
 
     if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
     {
-        if (m_Globals.hasSkybox) 
+        if (m_Globals.hasSkybox == 1) 
         {
             float skyboxRotation = Math::Degrees( backgroundColour[0] );
             ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
@@ -1120,19 +1129,6 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
             ImGui::End();
         }
     }
-
-    if ( !m_Globals.hasSkybox ) 
-    {
-        ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
-
-        float atmosphereIntensity = m_frameData.atmosphere.w;
-        ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
-        m_frameData.atmosphere.w = atmosphereIntensity;
-
-        ImGui::End();
-    }
-
-
 
     m_GUI->Render( commandList, renderTarget );
 }

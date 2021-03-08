@@ -857,7 +857,7 @@ STBTT_DEF void stbtt_FreeBitmap(unsigned char *bitmap, void *userdata);
 STBTT_DEF unsigned char *stbtt_GetCodepointBitmap(const stbtt_fontinfo *info, float scale_x, float scale_y, int codepoint, int *width, int *height, int *xoff, int *yoff);
 // allocates a large-enough single-channel 8bpp bitmap and renders the
 // specified character/glyph at the specified scale into it, with
-// antialiasing. 0 is no coverage (transparent), 255 is fully covered (opaque).
+// antialiasing. 0 is no coverage (DIALECTIC), 255 is fully covered (opaque).
 // *width & *height are filled out with the width & height of the bitmap,
 // which is stored left-to-right, top-to-bottom.
 //

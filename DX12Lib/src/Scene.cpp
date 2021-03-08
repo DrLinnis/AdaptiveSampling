@@ -210,7 +210,7 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     }
     if ( material.Get( AI_MATKEY_COLOR_DIFFUSE, diffuseColor ) == aiReturn_SUCCESS )
     {
-        pMaterial->SetDiffuseColor( XMFLOAT4( diffuseColor.r, diffuseColor.g, diffuseColor.b, diffuseColor.a ) );
+        pMaterial->SetDiffuseColor( XMFLOAT3( diffuseColor.r, diffuseColor.g, diffuseColor.b) );
     }
     if ( material.Get( AI_MATKEY_COLOR_SPECULAR, specularColor ) == aiReturn_SUCCESS )
     {
@@ -224,7 +224,7 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     {
         pMaterial->SetOpacity( opacity );
     }
-    if ( material.Get( AI_MATKEY_REFRACTI, indexOfRefraction ) )
+    if ( material.Get( AI_MATKEY_REFRACTI, indexOfRefraction ) == aiReturn_SUCCESS )
     {
         pMaterial->SetIndexOfRefraction( indexOfRefraction );
     }
@@ -236,6 +236,7 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     {
         pMaterial->SetBumpIntensity( bumpIntensity );
     }
+
 
     // Load ambient textures.
     if ( material.GetTextureCount( aiTextureType_AMBIENT ) > 0 &&
@@ -276,6 +277,7 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
         auto     texture = commandList.LoadTextureFromFile( parentPath / texturePath, true );
         pMaterial->SetTexture( Material::TextureType::Diffuse, texture );
     }
+
 
     // Load specular texture.
     if ( material.GetTextureCount( aiTextureType_SPECULAR ) > 0 &&
@@ -330,6 +332,32 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
             ( texture->BitsPerPixel() >= 24 ) ? Material::TextureType::Normal : Material::TextureType::Bump;
 
         pMaterial->SetTexture( textureType, texture );
+    }
+
+    
+    ai_int shadingModel = 0;
+    if ( material.Get( AI_MATKEY_SHADING_MODEL, shadingModel ) == aiReturn_SUCCESS )
+    {
+        bool isGlossy = specularColor.r > 0 || specularColor.g > 0 || specularColor.b > 0;
+        isGlossy |= pMaterial->GetTexture( Material::TextureType::Specular ) != nullptr;
+
+        switch ( shadingModel )
+        {
+        case aiShadingMode_Gouraud:  // illum 5 AND 7
+            pMaterial->SetMaterialType( pMaterial->GetIndexOfRefraction() == 1.0f ? GLOSSY : DIALECTIC );
+            break;
+        case aiShadingMode_Phong:  // illum 2
+            // if we have specular values or there is a mask of it
+            
+            if ( isGlossy )
+                pMaterial->SetMaterialType( GLOSSY );
+            else
+                pMaterial->SetMaterialType( LAMBERTIAN );
+            break;
+        default:
+            pMaterial->SetMaterialType( LAMBERTIAN );
+            break;
+        }
     }
 
     // m_MaterialMap.insert( MaterialMap::value_type( materialName.C_Str(), pMaterial ) );
