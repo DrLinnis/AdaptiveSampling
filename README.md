@@ -9,6 +9,27 @@ shaders and RTRT.
 
     
 ### Meetings:
+##### Meeting notes 9/3:
+---
+Adaptive Sampling thesis implementation should be done in a single frame. It should
+also include some randomness - and not just sampling from a grid.
+
+Fireflys (white specs), explore mitigating with clamping or hope for denoising to fix
+it.
+
+Load OBJ files as pure lambertian, and add spheres manually which are metalic and 
+transparent.
+
+Black spec artifacts on walls might be caused from floating point precision issues.
+Explore solution where scale is smaller and using a LOD slider as a quick hack.
+A proper solution would be to use ray cones, but timing might not be the best.
+
+Take time to start the thesis writing, and start working on everything in parallel.
+
+##### Meeting notes 2/3:
+---
+Support Transparent materials, metalic, and perfectly diffuse (lambertian).
+
 ##### Meeting notes 23/2:
 ---
 Add support for sampling several more than X spp. E.g 1000 spp. Need to remove timeout
