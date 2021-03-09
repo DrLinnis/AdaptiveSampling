@@ -66,8 +66,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_RenderScale( 1.0f )
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 50, 50, 0 )
-, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1) )
-, m_Globals(10)
+, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1), 10 )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -460,7 +459,8 @@ void DummyGame::CreateAccelerationStructure()
 
             float scale             = m_RaySceneMesh->GetSceneScale();
 
-            m_InstanceTransforms[0] = InstanceTransforms( XMFLOAT3( scale, scale, scale ) );
+            m_InstanceTransforms[i] = InstanceTransforms( XMFLOAT3( scale, scale, scale ) );
+            m_InstanceTransforms[i].lodScaler = static_cast<float>(1 << lodScaleExp);
         }
 
     }
@@ -673,9 +673,12 @@ bool DummyGame::LoadContent()
 
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 300;
+    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 1;
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); 
+    scene_scale    = 1;
+    lodScaleExp    = 16;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 14.0f, 1.5f, -3.15, 0 );
@@ -722,7 +725,7 @@ bool DummyGame::LoadContent()
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
-
+    lodScaleExp            = 6;
     m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
 
     m_Globals.nbrActiveLights   = 5;
@@ -784,6 +787,8 @@ bool DummyGame::LoadContent()
 
     // "Empty scene"
     m_RaySceneMesh = commandList->CreateSphere( 1 );
+
+    lodScaleExp = 5;
 
     // Centre Sphere
     auto centreSphere = commandList->CreateSphere( 30 );
@@ -1052,6 +1057,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         DirectX::XMStoreFloat3x4( &m_InstanceTransforms[0].matrix, RS );
         m_InstanceTransforms[0].CalculateNormalInverse();
+        m_InstanceTransforms[0].lodScaler = static_cast<float>( 1 << lodScaleExp );
 
         isAccumelatingFrames &= m_InstanceTransforms[0].Equal( &oldTransforms );
 
@@ -1134,10 +1140,15 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
         ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
 
+        ImGui::SliderInt( "Lod Exp2 Scaler", &lodScaleExp, 1, 24 );
 
-        int tmp = static_cast<int>( m_frameData.exponentSamplesPerPixel );
-        ImGui::SliderInt( "SPP Exponent (2^X)", &tmp, 0, 10 );
-        m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( tmp );
+        int signedBounces = static_cast<int>( m_frameData.nbrBouncesPerPath );
+        ImGui::SliderInt( "Ray Bounce Budget", &signedBounces, 1, 50 );
+        m_frameData.nbrBouncesPerPath = static_cast<uint32_t>( signedBounces );
+
+        int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
+        ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
+        m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
 
         ImGui::End();
     }

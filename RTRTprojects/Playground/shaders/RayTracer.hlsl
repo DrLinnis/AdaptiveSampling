@@ -94,6 +94,8 @@ struct InstanceTransforms
 {
     row_major matrix<float, 3, 4> modelToWorld;
     row_major matrix<float, 3, 4> normalModelToWorld;
+    
+    float lodScaler;
 };
 
 struct PerFrameData
@@ -104,14 +106,12 @@ struct PerFrameData
     
     uint accumulatedFrames;
     uint exponentSamplesPerPixel;
+    uint nbrBouncesPerPath;
     uint cpuGeneratedSeed;
 };
 
 struct ConstantData
 {
-    uint nbrBouncesPerPath;
-    uint nbrRaysPerBounce;
-    
     uint nbrActiveLights;
     
     uint hasSkybox;
@@ -353,7 +353,7 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     }
     
     // world space version
-    float pA = length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
+    float pA = instTrans.lodScaler * length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
     
     v.texCoord[2] = 0.5 * log2(tA / pA);
   
@@ -424,7 +424,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     RayPayload currRay;
     currRay.seed = seed;
     currRay.rayMode = RAY_PRIMARY;
-    currRay.depth = globals.nbrBouncesPerPath;
+    currRay.depth = frame.nbrBouncesPerPath;
     currRay.mediumIoR = 1.0f;
     
     uint prevType;

@@ -74,8 +74,10 @@ struct FrameData
         DirectX::XMStoreFloat3x4( &this->camPixelToWorld, FinalMatrix );
     }
 
-    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize)
-        : accumulatedFrames(0)
+    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, 
+            DirectX::XMFLOAT2 cameraWinSize, uint32_t defaultBouncesPerPath)
+        : accumulatedFrames( 0 )
+        , nbrBouncesPerPath( defaultBouncesPerPath )
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , exponentSamplesPerPixel( 0 )
     {
@@ -104,6 +106,8 @@ struct FrameData
                 return false;
         }
 
+        if ( pOld->nbrBouncesPerPath != this->nbrBouncesPerPath )
+            return false;
 
         return true;
     }
@@ -112,22 +116,19 @@ struct FrameData
 
     DirectX::XMFLOAT3X4 camPixelToWorld;
 
+
     uint32_t accumulatedFrames;
     uint32_t exponentSamplesPerPixel;
+    uint32_t nbrBouncesPerPath;
     uint32_t cpuGeneratedSeed;
 };
 
 struct GlobalConstantData
 {
-    GlobalConstantData( uint32_t nbrBouncesPerPath, uint32_t nbrRaysPerBounce = 1 )
-    : nbrBouncesPerPath( nbrBouncesPerPath )
-    , nbrRaysPerBounce( nbrRaysPerBounce )
-    , nbrActiveLights( 0 )
+    GlobalConstantData( )
+    : nbrActiveLights( 0 )
     , hasSkybox( false )
     { }
-
-    uint32_t nbrBouncesPerPath;
-    uint32_t nbrRaysPerBounce;
 
     uint32_t nbrActiveLights;
 
@@ -153,6 +154,7 @@ struct InstanceTransforms
     : matrix( 1, 0, 0, 0,
             0, 1, 0, 0,
             0, 0, 1, 0)
+    , lodScaler( 1 )
     {
         CalculateNormalInverse();
     }
@@ -161,6 +163,7 @@ struct InstanceTransforms
     : matrix( scale.x, 0, 0, pos.x, 
         0, scale.y, 0, pos.y, 
         0, 0, scale.z, pos.z )
+    , lodScaler(1)
     {
         CalculateNormalInverse();
     }
@@ -169,12 +172,15 @@ struct InstanceTransforms
     : matrix( rotScale._11, rotScale._12, rotScale._12, pos.x, 
         rotScale._21, rotScale._22, rotScale._22, pos.y,
           rotScale._31, rotScale._32, rotScale._32, pos.z )
+    , lodScaler( 1 )
     {
         CalculateNormalInverse();
     }
 
     DirectX::XMFLOAT3X4 matrix;
     DirectX::XMFLOAT3X4 normal_matrix;
+
+    float lodScaler;
 
     // 4x4x4 Bytes == 16 aligned
 
@@ -197,6 +203,9 @@ struct InstanceTransforms
                 }
             }
         }
+
+        if ( this->lodScaler != pOld->lodScaler )
+            return false;
 
         return true;
     }
@@ -357,6 +366,7 @@ private:
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     FLOAT backgroundColour[3];
+    int lodScaleExp = 1;
 
     // General
     std::shared_ptr<dx12lib::Device>    m_Device;
