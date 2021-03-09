@@ -42,7 +42,7 @@ class Texture;
 
 
 #define LAMBERTIAN  0
-#define GLOSSY      1
+#define METAL      1
 #define DIALECTIC 2
 
 // clang-format off

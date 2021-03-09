@@ -11,7 +11,7 @@
 #define T_HIT_MIN 0.0001
 
 #define LAMBERTIAN  0
-#define GLOSSY      1
+#define METAL      1
 #define DIALECTIC 2
 
 #define RAY_PRIMARY 0
@@ -447,8 +447,6 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             result.object = currRay.object;
             result.position = currRay.position;
             
-            ray.TMin = T_HIT_MIN;
-            
             if (length(currRay.radiance) > 0)
                 radiance = currRay.colour;
         }
@@ -461,7 +459,8 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             break;
         }
         
-
+        // Only shoot from 0 on camera.
+        ray.TMin = T_HIT_MIN;
     }
     
     result.colour = radiance;
@@ -562,6 +561,32 @@ float3 _fresnelSchlick(float3 F0, float cosOmega)
     return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
 }
 
+
+#define IMPORTED_HELPER 1
+#if IMPORTED_HELPER
+
+float TrowbridgeReitz(in float cos2, in float alpha2)
+{
+    float x = alpha2 + (1 - cos2) / cos2;
+    return alpha2 / (PI * cos2 * cos2 * x * x);
+}
+
+float Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3 wn, in float alpha2)
+{
+    if (dot(wo, wm) < 0 || dot(wi, wm) < 0)
+        return 0.0f;
+
+    float cos2 = dot(wn, wo);
+    cos2 *= cos2;
+    float lambda1 = 0.5 * (-1 + sqrt(1 + alpha2 * (1 - cos2) / cos2));
+    cos2 = dot(wn, wi);
+    cos2 *= cos2;
+    float lambda2 = 0.5 * (-1 + sqrt(1 + alpha2 * (1 - cos2) / cos2));
+    return 1 / (1 + lambda1 + lambda2);
+}
+
+#endif
+
 // Cook Torrance BRDF
 void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
                 in MaterialInfoBDRF mat, in bool sampleLight, inout uint seed)
@@ -571,7 +596,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     // Reflection dir, view vector, normal, half-vector
     float3 R, V = mat.view, N = mat.normal, H;
     
-    float cosNH, cosVH, cosNR, cosNV;
+    float cosNH, cosVH, cosNR, cosNV, cosRH;
     
     if (mat.type == LAMBERTIAN)
     {
@@ -595,10 +620,10 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
 
     }
     
-    else if (mat.type == GLOSSY)
+    else if (mat.type == METAL)
     {
-        float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
-        float alpha2 = mat.roughness * mat.roughness;
+        float k_direct = (0.9 + 1) * (0.9 + 1) / 8;
+        float alpha2 = 0.9 * 0.9;
         
         H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
         H = normalize(applyRotationMappingZToN(N, H));
@@ -607,7 +632,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         cosNV = max(dot(N, V), 0);
         cosVH = max(dot(V, H), 0);
         
-        R = normalize(2 * cosNH * H - V);
+        R = normalize(2 * cosVH * H - V);
         
         // Can't divide by zero
         cosNR = max(dot(N, R), EPSILON);
@@ -616,13 +641,17 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
         F0 = lerp(F0, mat.colour, mat.metalness);
     
-        
+#if IMPORTED_HELPER
+        float D = TrowbridgeReitz(cosNH * cosNH, alpha2);
+        float G = Smith_TrowbridgeReitz(R, V, H, N, alpha2);
+        float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5 * mat.roughness);
+#else
         float D = _distributionGGX(cosNH, mat.roughness);
     
         float3 F = _fresnelSchlick(F0, cosVH);
     
         float G = _geometrySmith(cosNR, cosNV, k_direct);
-    
+#endif
         // Calc diffuse comp (REFRACT)
         float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), mat.metalness);
     
@@ -687,11 +716,7 @@ void rayGen()
     
     float3 camOrigin = mul(frame.cameraPixelToWorld, float4(0, 0, 0, 1));
     
-    RayDesc ray;
-    ray.Origin = camOrigin;
-    ray.TMin = 0;
-    ray.TMax = 100000;
-   
+    
     float3 newRadiance = 0;
     
     RayPayload payload;
@@ -712,6 +737,7 @@ void rayGen()
     }
     
     newRadiance /= (float) nbrSamples;
+    
     
     float depth = length(camOrigin - payload.position);
     
@@ -786,13 +812,11 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // DIALECTIC pixel hit!
     if ((tex_rgba.w == 0 || frontFace) && payload.depth > 0)
     {
-        RayDesc ray;
-        ray.Origin = v.position;
-        ray.Direction = rayDirW;
-        ray.TMin = T_HIT_MIN;
-        ray.TMax = 100000;
-    
-        TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, ray, payload);
+        payload.reflectDir = rayDirW;
+        payload.position = v.position;
+        payload.prob = 1.0f;
+        payload.colour = 1.0f;
+        payload.radiance = 0;
     }
     else // We have hit a normal object/pixel
     {
@@ -820,7 +844,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float specVal = mat.Specular;
         if (mat.SpecularTextureIdx >= 0)
         {
-            specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).w;
+            specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).r;
         }
         
         

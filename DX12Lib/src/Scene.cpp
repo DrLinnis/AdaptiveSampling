@@ -192,6 +192,7 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     aiColor4D   specularColor;
     aiColor4D   ambientColor;
     aiColor4D   emissiveColor;
+    aiColor4D   transpColor;
     float       opacity;
     float       indexOfRefraction;
     float       reflectivity;
@@ -228,15 +229,17 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     {
         pMaterial->SetIndexOfRefraction( indexOfRefraction );
     }
-    if ( material.Get( AI_MATKEY_REFLECTIVITY, reflectivity ) == aiReturn_SUCCESS )
+    if ( material.Get( AI_MATKEY_COLOR_TRANSPARENT, transpColor ) == aiReturn_SUCCESS )
     {
-        pMaterial->SetReflectance( XMFLOAT4( reflectivity, reflectivity, reflectivity, reflectivity ) );
+        pMaterial->SetReflectance( XMFLOAT4( transpColor.r, transpColor.g, transpColor.b, transpColor.a ) );
     }
     if ( material.Get( AI_MATKEY_BUMPSCALING, bumpIntensity ) == aiReturn_SUCCESS )
     {
         pMaterial->SetBumpIntensity( bumpIntensity );
     }
 
+    //AI_MATKEY_COLOR_REFLECTIVE
+    //AI_MATKEY_COLOR_TRANSPARENT
 
     // Load ambient textures.
     if ( material.GetTextureCount( aiTextureType_AMBIENT ) > 0 &&
@@ -338,23 +341,12 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     ai_int shadingModel = 0;
     if ( material.Get( AI_MATKEY_SHADING_MODEL, shadingModel ) == aiReturn_SUCCESS )
     {
-        bool isGlossy = specularColor.r > 0 || specularColor.g > 0 || specularColor.b > 0;
-        isGlossy |= pMaterial->GetTexture( Material::TextureType::Specular ) != nullptr;
-
         switch ( shadingModel )
         {
         case aiShadingMode_Gouraud:  // illum 5 AND 7
-            pMaterial->SetMaterialType( pMaterial->GetIndexOfRefraction() == 1.0f ? GLOSSY : DIALECTIC );
+            pMaterial->SetMaterialType( pMaterial->GetIndexOfRefraction() == 1.0f ? METAL : DIALECTIC );
             break;
-        case aiShadingMode_Phong:  // illum 2
-            // if we have specular values or there is a mask of it
-            
-            if ( isGlossy )
-                pMaterial->SetMaterialType( GLOSSY );
-            else
-                pMaterial->SetMaterialType( LAMBERTIAN );
-            break;
-        default:
+        case aiShadingMode_Phong:  // illum 2 and rest
             pMaterial->SetMaterialType( LAMBERTIAN );
             break;
         }

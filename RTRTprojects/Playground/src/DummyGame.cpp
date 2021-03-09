@@ -337,9 +337,8 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = configAssociation.subobject;  
 
 
-        // Create the pipeline config, per bounce, 1 reflection, 1 refraction
-    PipelineConfig config( m_Globals.nbrBouncesPerPath * m_Globals.nbrRaysPerBounce ); 
-        subobjects[index++] = config.subobject;  // 8
+    PipelineConfig config( 1 ); // only one recursive ray at a time
+    subobjects[index++] = config.subobject;  // 8
 
     // Create the GLOBAL root signature and store the empty signature
     {
@@ -616,7 +615,10 @@ void DummyGame::CreateShaderTable()
 
 #define SAM_MIGUEL 0
 #define CORNELL_BOX 0
-#define SPONZA 1
+#define CORNELL_MIRROR 0
+#define CORNELL_SPHERES 0
+#define CORNELL_WATER 0
+#define SPONZA 0
 #define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
@@ -672,11 +674,47 @@ bool DummyGame::LoadContent()
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 30;
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 30;
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); scene_scale = 300;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 14.0f, 1.5f, -3.15, 0 );
+    auto pos                    = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y, m_Globals.lightPositions[0].z );
+    auto m_RaySphere            = commandList->CreateSphere( 0.2, 16u, pos );
+
+    auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+    sphereMat->SetEmissiveColor( DirectX::XMFLOAT4(
+        25,25,25, 0 ) );
+
+    m_RaySceneMesh->MergeScene( m_RaySphere );
+
 #elif CORNELL_BOX
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" ); scene_scale = 100;
+    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
     
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    scene_rot_offset            = 90;
+
+#elif CORNELL_MIRROR
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
+    scene_scale    = 100;
+
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    scene_rot_offset            = 90;
+
+#elif CORNELL_SPHERES
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
+    scene_scale    = 100;
+
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    scene_rot_offset            = 90;
+
+#elif CORNELL_WATER
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" );
+    scene_scale    = 100;
+
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
     scene_rot_offset            = 90;
@@ -1090,7 +1128,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     
     if (ImGui::Begin( "Camera and Transform Sliders" ))// not demo window
     {
-        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 1000 );
+        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 2000 );
         ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
 
         ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
@@ -1210,6 +1248,14 @@ void DummyGame::OnRender()
     auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
 #if RAY_TRACER
+    /*
+    0. colour
+    1. normal
+    2. position
+    3. object
+    4. specular
+    */
+
     auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
     commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
