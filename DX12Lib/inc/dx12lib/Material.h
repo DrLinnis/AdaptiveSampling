@@ -41,9 +41,10 @@ namespace dx12lib
 class Texture;
 
 
-#define LAMBERTIAN  0
+#define LAMBERTIAN 0
 #define METAL      1
-#define DIALECTIC 2
+#define PLASTIC    2
+#define DIALECTIC  3
 
 // clang-format off
 struct alignas( 16 ) MaterialProperties
@@ -58,7 +59,7 @@ struct alignas( 16 ) MaterialProperties
         const DirectX::XMFLOAT4 emissive = { 0, 0, 0, 1 },
         const DirectX::XMFLOAT4 reflectance = { 0, 0, 0, 0 }, const float opacity = 1.0f,
         const float indexOfRefraction = 0.0f, const float bumpIntensity = 1.0f,
-        const float alphaThreshold = 0.1f, uint32_t type = LAMBERTIAN
+        const float alphaThreshold = 0.1f, uint32_t type = LAMBERTIAN, float roughness = 1.0
     )
     : Diffuse( diffuse )
     , Specular( specular )
@@ -70,6 +71,7 @@ struct alignas( 16 ) MaterialProperties
     , IndexOfRefraction( indexOfRefraction )
     , BumpIntensity( bumpIntensity )
     , Type(type)
+    , Roughness( roughness )
     , HasAmbientTexture( false )
     , HasEmissiveTexture( false )
     , HasDiffuseTexture( false )
@@ -80,6 +82,7 @@ struct alignas( 16 ) MaterialProperties
     , HasOpacityTexture( false )
     {}
 
+    float Roughness;
     uint32_t Type;
 
     DirectX::XMFLOAT3 Diffuse;
@@ -117,26 +120,25 @@ struct alignas( 16 ) RayMaterialProp
     RayMaterialProp(
         const DirectX::XMFLOAT3 diffuse = { 1, 1, 1 },
         const int type = LAMBERTIAN,
-        const float metalness = 0.0f,
         const DirectX::XMFLOAT3 emittance = {0, 0, 0},
-        const float specular = 0.0f,
+        const float reflectivity = 0.0f,
         const float indexOfRefraction = 1.0f
     )
         : Diffuse( diffuse )
         , Type( type )
 
-        , Metalness( metalness )
+        , Reflectivity( reflectivity )
         , Emittance( emittance )
 
-        , Specular( specular )
         , IndexOfRefraction( indexOfRefraction )
+        , Roughness( 1.0f )
+        , _padding( 0, 0 )
 
         , DiffuseTextureIdx(-1)
         , NormalTextureIdx(-1)
         , SpecularTextureIdx(-1)
         , MaskTextureIdx(-1)
 
-        , _padding(0,0)
     { }
 
     DirectX::XMFLOAT3 Diffuse;  
@@ -149,12 +151,12 @@ struct alignas( 16 ) RayMaterialProp
     int MaskTextureIdx;
     // ------------------------------------ ( 16 bytes )
     
-    float Metalness; // define it as 1-Specular?   
+    float Reflectivity;
     DirectX::XMFLOAT3 Emittance;
     // ------------------------------------ ( 16 bytes )
 
-    float Specular;
     float IndexOfRefraction;
+    float Roughness;
     DirectX::XMFLOAT2 _padding;
     // ------------------------------------ ( 16 bytes )
 
@@ -199,6 +201,9 @@ public:
 
     const DirectX::XMFLOAT4& GetSpecularColor() const;
     void                     SetSpecularColor( const DirectX::XMFLOAT4& specular );
+
+    float GetRoughness() const;
+    void  SetRoughness( float roughness );
 
     float GetSpecularPower() const;
     void  SetSpecularPower( float specularPower );

@@ -11,8 +11,9 @@
 #define T_HIT_MIN 0.0001
 
 #define LAMBERTIAN  0
-#define METAL      1
-#define DIALECTIC 2
+#define METAL       1
+#define PLASTIC     2
+#define DIALECTIC   3
 
 #define RAY_PRIMARY 0
 #define RAY_SECONDARY 1
@@ -62,12 +63,12 @@ struct RayMaterialProp
     int MaskTextureIdx;
     // 16 bytes: Material Texture Indices
     
-    float Metalness;
+    float Reflectivity;
     float3 Emittance;
     // 16 bytes: Material properties
     
-    float Specular;
     float IndexOfRefraction;
+    float Roughness;
     float2 _padding;
 };
 
@@ -85,7 +86,7 @@ struct MaterialInfoBDRF
     
     // Material props
     float3 colour;
-    float metalness;
+    float reflectivity;
     float roughness;
     float ior; //index of refraction
 };
@@ -174,7 +175,7 @@ float3 modelToWorldPosition(float3 pos)
 
 
 MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, in uint matType,
-        in float3 colour, in float metalness, in float roughness, in float ior, in uint depth)
+        in float3 colour, in float reflectivity, in float roughness, in float ior, in uint depth)
 {
     MaterialInfoBDRF result;
     
@@ -183,8 +184,8 @@ MaterialInfoBDRF MaterialInfo(in float3 view, in float3 normal, in float3 pos, i
     result.pos = pos;
     result.type = matType;
     result.colour = colour;
-    result.metalness = metalness;
     result.roughness = roughness;
+    result.reflectivity = reflectivity;
     result.ior = ior;
     result.depth = depth;
     return result;
@@ -394,14 +395,14 @@ RayMaterialProp GetMaterialProp(uint geometryIndex)
     result.MaskTextureIdx = GeometryMaterialMap.Load(indexByteStartAddress);
     indexByteStartAddress += 4; // add one int
     
-    result.Metalness = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    result.Reflectivity = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
     indexByteStartAddress += 4; // add one float
     result.Emittance = asfloat(GeometryMaterialMap.Load3(indexByteStartAddress));
     indexByteStartAddress += 3 * 4; // add 4 floats to byte counter
     
-    result.Specular = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
-    indexByteStartAddress += 4; // add one float
     result.IndexOfRefraction = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
+    indexByteStartAddress += 4; // add one float
+    result.Roughness = asfloat(GeometryMaterialMap.Load(indexByteStartAddress));
     indexByteStartAddress += 4; // add one float
     
     return result;
@@ -524,54 +525,13 @@ float3 GenColour(int id)
     PBR/BDRF helper functions
 */
 
-// Trowbridge-Reitx GGX - Normal Distribution Functions
-float _distributionGGX(float cosTheta, float alpha)
-{
-    float a2 = alpha * alpha;
-    float NdotH = cosTheta;
-    float NdotH2 = NdotH * NdotH;
-    
-    float nom = a2;
-    float denom = NdotH2 * (a2 - 1.0) + 1.0;
-    denom = PI * denom * denom;
-    
-    return nom / denom;
-}
-
-// Geometry functions
-float _geometrySchlickGGX(float cosTheta, float k)
-{
-    float nom = cosTheta;
-    float denom = max(cosTheta * (1.0 - k) + k, EPSILON);
-	
-    return nom / denom;
-}
-  
-float _geometrySmith(float cosLight, float cosView, float k)
-{
-    float ggx1 = _geometrySchlickGGX(cosView, k);
-    float ggx2 = _geometrySchlickGGX(cosLight, k);
-	
-    return ggx1 * ggx2;
-}
-
-//Fresnel function
-float3 _fresnelSchlick(float3 F0, float cosOmega)
-{
-    return F0 + (1.0 - F0) * pow(1.0 - cosOmega, 5.0);
-}
-
-
-#define IMPORTED_HELPER 1
-#if IMPORTED_HELPER
-
-float TrowbridgeReitz(in float cos2, in float alpha2)
+float _TrowbridgeReitz(in float cos2, in float alpha2)
 {
     float x = alpha2 + (1 - cos2) / cos2;
     return alpha2 / (PI * cos2 * cos2 * x * x);
 }
 
-float Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3 wn, in float alpha2)
+float _Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3 wn, in float alpha2)
 {
     if (dot(wo, wm) < 0 || dot(wi, wm) < 0)
         return 0.0f;
@@ -585,7 +545,6 @@ float Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3 
     return 1 / (1 + lambda1 + lambda2);
 }
 
-#endif
 
 // Cook Torrance BRDF
 void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
@@ -598,9 +557,11 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     
     float cosNH, cosVH, cosNR, cosNV, cosRH;
     
+    //float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
+    float alpha2 = mat.roughness * mat.roughness;
+    
     if (mat.type == LAMBERTIAN)
     {
-        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
         
 #if 0
         const float mix = 0.0;
@@ -609,6 +570,8 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         if (sampleLight && dot(N, L) >= 0  && rnd(seed) < mix)
             R = L;
 #endif
+        
+        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
         
         R = normalize(R);
         
@@ -622,8 +585,6 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     
     else if (mat.type == METAL)
     {
-        float k_direct = (0.9 + 1) * (0.9 + 1) / 8;
-        float alpha2 = 0.9 * 0.9;
         
         H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
         H = normalize(applyRotationMappingZToN(N, H));
@@ -632,36 +593,74 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         cosNV = max(dot(N, V), 0);
         cosVH = max(dot(V, H), 0);
         
-        R = normalize(2 * cosVH * H - V);
+        R = 2 * cosVH * H - V;
         
         // Can't divide by zero
         cosNR = max(dot(N, R), EPSILON);
         
     
-        float3 F0 = float3(0.04, 0.04, 0.04); // Fdialectric
-        F0 = lerp(F0, mat.colour, mat.metalness);
-    
-#if IMPORTED_HELPER
-        float D = TrowbridgeReitz(cosNH * cosNH, alpha2);
-        float G = Smith_TrowbridgeReitz(R, V, H, N, alpha2);
-        float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5 * mat.roughness);
-#else
-        float D = _distributionGGX(cosNH, mat.roughness);
-    
-        float3 F = _fresnelSchlick(F0, cosVH);
-    
-        float G = _geometrySmith(cosNR, cosNV, k_direct);
-#endif
-        // Calc diffuse comp (REFRACT)
-        float3 kD = lerp(float3(1, 1, 1) - F, float3(0, 0, 0), mat.metalness);
+        float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
+        float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
+        float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5);
     
         // Can't divide by zero
-        float denom = max(4 * cosNV * cosNR, EPSILON);
-    
+        float denomBRDF = max(4 * cosNV * cosNR, EPSILON);
+        float denomProb = max(4 * cosNV, EPSILON);
             
-        sampleProb = D * cosNH / (4 * cosNV);
-        brdfEval = F * (D * G / denom);
+        sampleProb = D * cosNH / denomProb;
+        brdfEval = (D * G / denomBRDF) * F;
         
+    }
+    
+    else if (mat.type == PLASTIC)
+    {
+        float r = mat.reflectivity;
+        if (rnd(seed) < r)
+        {
+            R = reflect(-V, N);
+            H = normalize(R + V);
+            
+            cosNH = max(dot(N, H), 0);
+            cosNV = max(dot(N, V), 0);
+            cosVH = max(dot(V, H), 0);
+        
+            // Can't divide by zero
+            cosNR = dot(N, R);
+        }
+        else
+        {
+            R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+        
+            R = normalize(R);
+        
+            // Can't divide by zero
+            cosNR = dot(N, R);
+            H = normalize(R + V);
+            
+            cosNH = max(dot(N, H), 0);
+            cosNV = max(dot(N, V), 0);
+            cosVH = max(dot(V, H), 0);
+        }
+        
+        if (cosNR < 0)
+        {
+            brdfEval = 0;
+            sampleProb = 1; //sampleProb = r * (D*HN / (4*abs(OH)));  if allowing sample negative hemisphere
+        }
+        else
+        {
+            float denomBRDF = max(4 * cosNV * cosNR, EPSILON);
+            float denomProb = max(4 * cosNV, EPSILON);
+            
+            float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
+            float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
+            float3 spec = ((D * G) / denomBRDF);
+            brdfEval = r * spec + (1 - r) * InvPi * mat.colour;
+            sampleProb = r * (D * cosNH / denomProb) + (1 - r) * (InvPi * cosNR);
+            
+
+        }
+
     }
     
     else if (mat.type == DIALECTIC)
@@ -669,7 +668,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         R = refract(V, N, mat.ior);
         
         if (length(R) == 0)
-            R = reflect(V, N);
+            R = reflect(-V, N);
         
         R = normalize(R);
         
@@ -841,7 +840,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // View Vector
         float3 V = -rayDirW;
         
-        float specVal = mat.Specular;
+        float specVal = mat.Reflectivity;
         if (mat.SpecularTextureIdx >= 0)
         {
             specVal = TriSampleTex(specularTex, mat.SpecularTextureIdx, v.texCoord).r;
@@ -855,7 +854,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float divIoR = payload.mediumIoR / mat.IndexOfRefraction;
         
         MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo,
-                        mat.Metalness, 1.0 - specVal, divIoR, payload.depth);
+                        specVal, mat.Roughness, divIoR, payload.depth);
         sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
         if (mat.Type == DIALECTIC && dot(normal, payload.reflectDir) < 0)

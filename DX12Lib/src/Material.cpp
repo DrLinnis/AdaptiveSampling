@@ -90,6 +90,18 @@ void Material::SetSpecularPower( float specularPower )
     m_MaterialProperties->SpecularPower = specularPower;
 }
 
+
+void Material::SetRoughness( float roughness )
+{
+    m_MaterialProperties->Roughness = roughness;
+}
+
+float Material::GetRoughness() const
+{
+    return m_MaterialProperties->Roughness;
+}
+
+
 const DirectX::XMFLOAT4& Material::GetReflectance() const
 {
     return m_MaterialProperties->Reflectance;

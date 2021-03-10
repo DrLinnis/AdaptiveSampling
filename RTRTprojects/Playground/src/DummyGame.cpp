@@ -616,9 +616,9 @@ void DummyGame::CreateShaderTable()
 #define SAM_MIGUEL 0
 #define CORNELL_BOX 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 0
+#define CORNELL_SPHERES 1
 #define CORNELL_WATER 0
-#define SPONZA 0
+#define SPONZA 1
 #define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
@@ -680,16 +680,37 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 
 
-    m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 14.0f, 1.5f, -3.15, 0 );
+    m_Globals.nbrActiveLights   = 9;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 15.55160, 3.359916, -9.547095, 0 );
+    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 0 );
+    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 0 );
+    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( 25.14169, 3.176208, -1.989974, 0 );
+    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 21.71185, 3.189476, 1.739486, 0 );
+    m_Globals.lightPositions[5] = DirectX::XMFLOAT4( 18.20104, 3.183240, 1.738785, 0 );
+    m_Globals.lightPositions[6] = DirectX::XMFLOAT4( 14.42395, 3.179192, 1.731135, 0 );
+    m_Globals.lightPositions[7] = DirectX::XMFLOAT4( 11.16639, 3.148412, 1.713052, 0 );
+    m_Globals.lightPositions[8] = DirectX::XMFLOAT4( 7.508241, 3.150581, 1.559817, 0 );
+
+
     auto pos                    = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y, m_Globals.lightPositions[0].z );
-    auto m_RaySphere            = commandList->CreateSphere( 0.2, 16u, pos );
+    auto m_RaySphere            = commandList->CreateSphere( 0.5, 16u, pos );
 
     auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
     sphereMat->SetEmissiveColor( DirectX::XMFLOAT4(
         25,25,25, 0 ) );
 
     m_RaySceneMesh->MergeScene( m_RaySphere );
+
+    for (int i = 1; i < 9; ++i) {
+        pos              = DirectX::XMFLOAT3( m_Globals.lightPositions[i].x, m_Globals.lightPositions[i].y,
+                                 m_Globals.lightPositions[i].z );
+        m_RaySphere = commandList->CreateSphere( 0.05, 16u, pos );
+
+        sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
+        sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 25, 25, 25, 0 ) );
+
+        m_RaySceneMesh->MergeScene( m_RaySphere );
+    }
 
 #elif CORNELL_BOX
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
@@ -746,9 +767,11 @@ bool DummyGame::LoadContent()
         auto m_RaySphere = commandList->CreateSphere( 45, 16u, pos );
 
         auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
-        sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 0.5 + Math::random_double() * 0.5,
-                                                        0.5 + Math::random_double() * 0.5,
-                                                        0.5 + Math::random_double() * 0.5, 
+        float scale     = 10;
+
+        sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 0.5 + Math::random_double() * scale,
+                                                        0.5 + Math::random_double() * scale,
+                                                        0.5 + Math::random_double() * scale, 
                                                         0 ) 
         );
 

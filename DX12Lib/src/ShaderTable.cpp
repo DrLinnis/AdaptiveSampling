@@ -319,10 +319,10 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
             matPropList[i].Emittance.z = mat->GetEmissiveColor().z;
 
             // fourth
-            matPropList[i].Specular =
+            matPropList[i].Reflectivity =
                 ( 1 / 3.0f ) * ( mat->GetSpecularColor().x + mat->GetSpecularColor().y + mat->GetSpecularColor().z );
             matPropList[i].IndexOfRefraction = mat->GetIndexOfRefraction();
-
+            matPropList[i].Roughness         = mat->GetRoughness();
         }
 
         

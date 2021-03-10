@@ -229,10 +229,6 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
     {
         pMaterial->SetIndexOfRefraction( indexOfRefraction );
     }
-    if ( material.Get( AI_MATKEY_COLOR_TRANSPARENT, transpColor ) == aiReturn_SUCCESS )
-    {
-        pMaterial->SetReflectance( XMFLOAT4( transpColor.r, transpColor.g, transpColor.b, transpColor.a ) );
-    }
     if ( material.Get( AI_MATKEY_BUMPSCALING, bumpIntensity ) == aiReturn_SUCCESS )
     {
         pMaterial->SetBumpIntensity( bumpIntensity );
@@ -337,17 +333,38 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
         pMaterial->SetTexture( textureType, texture );
     }
 
-    
+    bool isTransparent = false;
+    if ( material.Get( AI_MATKEY_COLOR_TRANSPARENT, transpColor ) == aiReturn_SUCCESS )
+    {
+        isTransparent = transpColor.r != 1 || transpColor.b != 1 || transpColor.g != 1;
+        
+    }
+
     ai_int shadingModel = 0;
     if ( material.Get( AI_MATKEY_SHADING_MODEL, shadingModel ) == aiReturn_SUCCESS )
     {
         switch ( shadingModel )
         {
         case aiShadingMode_Gouraud:  // illum 5 AND 7
-            pMaterial->SetMaterialType( pMaterial->GetIndexOfRefraction() == 1.0f ? METAL : DIALECTIC );
+            if ( isTransparent )
+            {
+                pMaterial->SetDiffuseColor( XMFLOAT3( transpColor.r, transpColor.g, transpColor.b ) );
+                pMaterial->SetMaterialType( DIALECTIC );
+            }
+            else {
+                pMaterial->SetMaterialType( PLASTIC );
+            }
             break;
         case aiShadingMode_Phong:  // illum 2 and rest
-            pMaterial->SetMaterialType( LAMBERTIAN );
+            if ( isTransparent )
+            {
+                pMaterial->SetDiffuseColor( XMFLOAT3( transpColor.r, transpColor.g, transpColor.b ) );
+                pMaterial->SetMaterialType( DIALECTIC );
+            }
+            else
+            {
+                pMaterial->SetMaterialType( LAMBERTIAN );
+            }
             break;
         }
     }
