@@ -613,10 +613,12 @@ void DummyGame::CreateShaderTable()
 
 #endif
 
+#define AMAZON_INTERIOR 0
+#define AMAZON_EXTERIOR 0
 #define SAM_MIGUEL 0
 #define CORNELL_BOX 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 1
+#define CORNELL_SPHERES 0
 #define CORNELL_WATER 0
 #define SPONZA 1
 #define DEBUG_SCENE 1
@@ -669,10 +671,17 @@ bool DummyGame::LoadContent()
 
 
     // DISPLAY MESHES IN RAY TRACING
-#if SAM_MIGUEL
-
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
-    // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
+#if AMAZON_INTERIOR
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
+    scene_scale = 1;
+    lodScaleExp = 16;
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+#elif AMAZON_EXTERIOR
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
+    scene_scale    = 1;
+    lodScaleExp    = 16;
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+#elif SAM_MIGUEL
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 1;
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); 
     scene_scale    = 1;
@@ -843,7 +852,7 @@ bool DummyGame::LoadContent()
 
         auto tmpMat = tmpScene->GetRootNode()->GetMesh( 0 )->GetMaterial();
 
-        int texture = (int) std::round( Math::random_double() * 4 );
+        int texture = (int) std::round( Math::random_double() * 5 );
         
         switch ( texture )
         {
@@ -865,10 +874,16 @@ bool DummyGame::LoadContent()
         case 3:
             tmpMat->SetTexture( Material::TextureType::Diffuse, UV );
             break;
+        case 5:
+            tmpMat->SetMaterialType( METALIC );
+            tmpMat->SetDiffuseColor( XMFLOAT3( Math::random_double(), Math::random_double(), Math::random_double() ) );
+            tmpMat->SetRoughness( 0.5 );
+            break;
         default:
         case 4:
             tmpMat->SetDiffuseColor( XMFLOAT3( Math::random_double(), Math::random_double(), Math::random_double() ) );
             break;
+
         }
 
         m_RaySceneMesh->MergeScene( tmpScene );

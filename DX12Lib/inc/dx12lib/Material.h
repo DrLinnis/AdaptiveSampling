@@ -42,7 +42,7 @@ class Texture;
 
 
 #define LAMBERTIAN 0
-#define METAL      1
+#define METALIC    1
 #define PLASTIC    2
 #define DIALECTIC  3
 

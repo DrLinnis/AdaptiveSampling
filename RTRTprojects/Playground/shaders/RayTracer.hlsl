@@ -11,7 +11,7 @@
 #define T_HIT_MIN 0.0001
 
 #define LAMBERTIAN  0
-#define METAL       1
+#define METALIC       1
 #define PLASTIC     2
 #define DIALECTIC   3
 
@@ -448,7 +448,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             result.object = currRay.object;
             result.position = currRay.position;
             
-            if (length(currRay.radiance) > 0)
+            if (length(currRay.radiance) > 0 && currRay.object == -1)
                 radiance = currRay.colour;
         }
         
@@ -583,7 +583,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
 
     }
     
-    else if (mat.type == METAL)
+    else if (mat.type == METALIC)
     {
         
         H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
@@ -657,8 +657,6 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
             float3 spec = ((D * G) / denomBRDF);
             brdfEval = r * spec + (1 - r) * InvPi * mat.colour;
             sampleProb = r * (D * cosNH / denomProb) + (1 - r) * (InvPi * cosNR);
-            
-
         }
 
     }
