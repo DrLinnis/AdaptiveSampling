@@ -35,7 +35,10 @@ std::shared_ptr<Texture> RenderTarget::GetTexture( AttachmentPoint attachmentPoi
 void RenderTarget::Resize( DirectX::XMUINT2 size )
 {
     m_Size = size;
-    for ( auto texture: m_Textures ) { if ( texture ) texture->Resize( m_Size.x, m_Size.y ); }
+    for ( auto texture: m_Textures ) {
+        if ( texture ) 
+            texture->Resize( m_Size.x, m_Size.y );
+    }
 }
 void RenderTarget::Resize( uint32_t width, uint32_t height )
 {

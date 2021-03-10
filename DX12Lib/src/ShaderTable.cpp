@@ -19,16 +19,18 @@
 
 using namespace dx12lib;
 
-ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                                                  const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource, 
                                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
 : m_Device( device )
 {
-    assert( pOutputUav || pRayTlasSrv || pCbv );
+    assert( pRayTlasSrv || pCbv );
 
     auto d3d12Device          = m_Device.GetD3D12Device();
     auto d3d12Resource = outputResource ? outputResource->GetD3D12Resource() : nullptr;
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
 
     if ( outputResource )
     {
@@ -49,7 +51,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::sha
     
     D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 
-    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, pOutputUav, heapHandle );
+    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, &uavDesc, heapHandle );
 
     heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 
@@ -82,15 +84,39 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device, const D3D12_CO
 }
 
 
+void ShaderTableResourceView::UpdateShaderTableUAV( const uint32_t      nbrRenderTargets,
+                                                    const RenderTarget* pRenderTargets )
+{
+    // Create an off-screen render for the compute shader
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+
+    auto device = m_Device.GetD3D12Device();
+
+    for ( int i = 0; i < nbrRenderTargets; ++i )
+    {
+        auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
+
+        device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(), nullptr, &uavDesc, heapHandle );
+
+        heapHandle.ptr += device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+    }
+}
+
 ShaderTableResourceView::ShaderTableResourceView( Device& device, 
                                                   const uint32_t nbrRenderTargets,
-                                                  const RenderTarget*                     pRenderTargets,
-                                                  const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                                                  const RenderTarget*                     pRenderTargets, 
                                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
 : m_Device( device )
 {
-    assert( pOutputUav || pRayTlasSrv || pCbv );
+    assert( pRayTlasSrv || pCbv );
+
+    // Create an off-screen render for the compute shader
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
 
     auto d3d12Device   = m_Device.GetD3D12Device();
     auto nbrMeshes     = pMeshes->m_Meshes.size();
@@ -131,8 +157,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
         {
             auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
 
-            d3d12Device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(),
-                nullptr, pOutputUav, heapHandle );
+            d3d12Device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(), nullptr, &uavDesc, heapHandle );
 
             heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
 

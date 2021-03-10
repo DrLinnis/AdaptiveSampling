@@ -36,7 +36,7 @@ void SceneVisitor::Visit( dx12lib::SceneNode& sceneNode )
 void SceneVisitor::Visit( Mesh& mesh )
 {
     auto material = mesh.GetMaterial();
-    if ( material->IsTransparent() == m_TransparentPass )
+    if ( material->IsDIALECTIC() == m_TransparentPass )
     {
         m_LightingPSO.SetMaterial( material );
 

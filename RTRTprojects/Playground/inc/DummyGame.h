@@ -321,6 +321,7 @@ private:
 
     dx12lib::AccelerationStructure m_TlasBuffers = {};
 
+    D3D12_DISPATCH_RAYS_DESC m_RaytraceDesc = {};
 
     // Tut 6
     const uint32_t m_nbrRayRenderTargets = 5;
@@ -360,6 +361,11 @@ private:
     */
     void UpdateConstantBuffer();
 
+    /*
+        Update dispatch ray description
+    */
+    void UpdateDispatchRaysDesc();
+
 #endif
 
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );
@@ -379,9 +385,6 @@ private:
     std::shared_ptr<dx12lib::Scene> m_RaySceneMesh;
     
     std::shared_ptr<dx12lib::Texture> m_DummyTexture;
-
-    // Render target
-    dx12lib::RenderTarget m_RenderTarget;
 
     D3D12_VIEWPORT m_Viewport;
     D3D12_RECT m_ScissorRect;
@@ -417,6 +420,8 @@ private:
 
     // Scale the HDR render target to a fraction of the window size.
     float m_RenderScale;
+
+    bool m_IsLoading;
 
     Logger m_Logger;
 };

@@ -33,16 +33,16 @@ public:
         return m_SrvUavHeap.Get();
     }
 
+    void UpdateShaderTableUAV( const uint32_t nbrRenderTargets, const RenderTarget* pRenderTargets );
+
 protected:
-    ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                             const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+    ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource, 
                              const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                              const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
 
     ShaderTableResourceView( Device& device, 
                              const uint32_t nbrRenderTargets, 
-                             const RenderTarget* pRenderTargets,
-                             const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                             const RenderTarget* pRenderTargets, 
                              const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                              const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv ,
                              Scene* pMeshes);
@@ -63,20 +63,18 @@ private:
 class MakeShaderTableView : public ShaderTableResourceView
 {
 public:
-    MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource,
-                         const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+    MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource, 
                          const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                          const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
-    : ShaderTableResourceView( device, outputResource, pOutputUav, pRayTlasSrv, pCbv )
+    : ShaderTableResourceView( device, outputResource, pRayTlasSrv, pCbv )
     {}
 
     MakeShaderTableView( Device& device, 
                          const uint32_t nbrRenderTargets,
-                         const RenderTarget* pRenderTargets,
-                         const D3D12_UNORDERED_ACCESS_VIEW_DESC* pOutputUav,
+                         const RenderTarget* pRenderTargets, 
                          const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                          const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
-    : ShaderTableResourceView( device, nbrRenderTargets, pRenderTargets, pOutputUav, pRayTlasSrv, pCbv, pMeshes )
+    : ShaderTableResourceView( device, nbrRenderTargets, pRenderTargets, pRayTlasSrv, pCbv, pMeshes )
     {}
 
     MakeShaderTableView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv )

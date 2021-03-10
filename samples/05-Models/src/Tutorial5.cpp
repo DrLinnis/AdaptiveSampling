@@ -374,8 +374,10 @@ void Tutorial5::OnResize( ResizeEventArgs& e )
     m_Camera.set_Projection( 45.0f, m_Width / (float)m_Height, 0.1f, 100.0f );
     m_Viewport = CD3DX12_VIEWPORT( 0.0f, 0.0f, static_cast<float>( m_Width ), static_cast<float>( m_Height ) );
 
-    m_RenderTarget.Resize( m_Width, m_Height );
+    auto desc = m_RenderTarget.GetTexture( AttachmentPoint::Color0 )->GetD3D12ResourceDesc();
 
+    m_RenderTarget.Resize( m_Width, m_Height );
+    desc = m_RenderTarget.GetTexture( AttachmentPoint::Color0 )->GetD3D12ResourceDesc();
     m_SwapChain->Resize( m_Width, m_Height );
 }
 
