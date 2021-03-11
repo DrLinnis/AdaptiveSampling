@@ -533,7 +533,7 @@ void DummyGame::OnRender()
     commandList->SetViewport( m_Viewport );
     commandList->SetScissorRect( m_ScissorRect );
 
-    
+    commandList->SetRenderTarget( m_RenderTarget );
     
 
      // Floor plane.

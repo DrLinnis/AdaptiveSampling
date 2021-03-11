@@ -15,5 +15,23 @@ RWTexture2D<float4> output : register( u0, space1 );
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main( ComputeShaderInput IN ) 
 { 
-    output[IN.DispatchThreadID.xy] = float4(10, 10, 10, 1);
+    float4 result = 0;
+#if 0
+    
+    for (int dx = -1; dx <= 1; ++dx)
+    {
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            result += gbuffer[0][IN.DispatchThreadID.xy + uint2(dx, dy)];
+        }
+    }
+    
+    result /= 9;
+    
+#else
+    result = gbuffer[0][IN.DispatchThreadID.xy];
+#endif
+    
+    output[IN.DispatchThreadID.xy] = clamp(result, 0, 1);
+
 }

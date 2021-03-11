@@ -966,7 +966,7 @@ bool DummyGame::LoadContent()
 
     // Create a color buffer with sRGB for gamma correction.
     
-    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
     backBufferFormat = Texture::GetUAVCompatableFormat( backBufferFormat );
 
     // Start loading resources while the rest of the resources are created.
@@ -999,11 +999,10 @@ bool DummyGame::LoadContent()
         ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Denoiser.cso", &cs ) );
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
-        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0 );
 
-        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
-                        m_nbrRayRenderTargets);
+        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                        m_nbrRayRenderTargets );
+        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
         rayRootParams[0].InitAsDescriptorTable( 2, ranges );
@@ -1029,8 +1028,6 @@ bool DummyGame::LoadContent()
     }
 
 #endif
-
-
 
     m_IsLoading = false;
     return true;
@@ -1333,14 +1330,12 @@ void DummyGame::OnRender()
     {
 #if RAY_TRACER /* Ray tracing calling. */
         {
-            //commandList->SetRenderTarget( RenderTarget ); // Is it even needed?
 
     #if UPDATE_TRANSFORMS
             AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
                                                   m_Instances, m_InstanceDescBuffer.get(), true );
     #endif
             
-
             // Set global root signature
             commandList->SetComputeRootSignature( m_GlobalRootSig );
 
@@ -1362,17 +1357,18 @@ void DummyGame::OnRender()
 
         5. SDR denoised
         */
-
         auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color5 );
 
         // Set global root signature
         commandList->SetComputeRootSignature( m_DenoiserRootSig );
 
         // Set pipeline and heaps for shader table
-        commandList->SetPipelineState( m_DenoiserPipelineState, true, m_RayShaderHeap );
+        commandList->SetPipelineState( m_DenoiserPipelineState, false, m_RayShaderHeap);
 
         // Start denoiser shader
         #if 1
+        auto d3d12Command = commandList->GetD3D12CommandList();
+        d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
         commandList->Dispatch( (m_Width / 8), (m_Height / 8), 1, true); 
         #else
         commandList->ClearTexture( outputImage, clearColor );

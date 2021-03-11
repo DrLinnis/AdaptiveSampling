@@ -1126,12 +1126,21 @@ std::shared_ptr<Scene> CommandList::CreatePlane( float width, float height, XMFL
 
     // clang-format off
     // Define a plane that is aligned with the X-Z plane and the normal is facing up in the Y-axis.
+    #if 0 // XZ plane
     VertexCollection vertices = {
-        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),  // 0
-        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
-        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),  // 2
-        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) )  // 3
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, 0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, offset.y, -0.5f * height + offset.z ), XMFLOAT3( 0.0f, 0.0f, -1.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
     };
+#else
+    VertexCollection vertices = {
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, 0.5f * height + offset.y, offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 0.0f, 0.0f ) ),  // 0
+        Vertex( XMFLOAT3( 0.5f * width + offset.x, 0.5f * height + offset.y,  offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 0.0f, 0.0f ) ),   // 1
+        Vertex( XMFLOAT3( 0.5f * width + offset.x,  -0.5f * height + offset.y,offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 1.0f, 1.0f, 0.0f ) ),  // 2
+        Vertex( XMFLOAT3( -0.5f * width + offset.x, -0.5f * height + offset.y, offset.z ), XMFLOAT3( 0.0f, 1.0f, 0.0f ), XMFLOAT3( 0.0f, 1.0f, 0.0f ) )  // 3
+    };
+#endif
     // clang-format on
     IndexCollection indices = { 1, 3, 0, 2, 3, 1 };
 
@@ -1699,6 +1708,7 @@ void CommandList::SetRenderTarget( const RenderTarget& renderTarget )
         depthStencilDescriptor = depthTexture->GetDepthStencilView();
 
         TrackResource( depthTexture );
+
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE* pDSV = depthStencilDescriptor.ptr != 0 ? &depthStencilDescriptor : nullptr;
