@@ -366,6 +366,12 @@ private:
     */
     void UpdateDispatchRaysDesc();
 
+
+    // denoiser compute shader
+    std::shared_ptr<dx12lib::Texture> m_FilteredOutput;
+    std::shared_ptr<dx12lib::RootSignature> m_DenoiserRootSig;
+    std::shared_ptr<dx12lib::PipelineStateObject> m_DenoiserPipelineState; 
+
 #endif
 
     void UpdateCamera( float moveVertically, float moveUp, float moveForward );

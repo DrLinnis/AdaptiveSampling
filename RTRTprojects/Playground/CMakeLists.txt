@@ -12,15 +12,7 @@ set( SRC_FILES
 )
 
 set( COMPUTER_SHADER_FILES
-    shaders/PostProcess.hlsl
-)
-
-set( VERTEX_SHADER_FILES 
-    shaders/Vertex.hlsl
-)
-
-set( PIXEL_SHADER_FILES
-    shaders/Pixel.hlsl
+    shaders/Denoiser.hlsl
 )
 
 set( RAY_TRACING_SHADER_FILES
@@ -29,8 +21,6 @@ set( RAY_TRACING_SHADER_FILES
 
 
 set( SHADER_FILES
-    ${VERTEX_SHADER_FILES}
-    ${PIXEL_SHADER_FILES}
     ${COMPUTER_SHADER_FILES}
     ${RAY_TRACING_SHADER_FILES}
 )
@@ -52,16 +42,6 @@ set_source_files_properties( ${SHADER_FILES}
         VS_SHADER_MODEL 6.5
         VS_TOOL_OVERRIDE "None"
  )
-
-set_source_files_properties( ${VERTEX_SHADER_FILES}
-    PROPERTIES 
-        VS_SHADER_TYPE Vertex
-)
-
-set_source_files_properties( ${PIXEL_SHADER_FILES}
-    PROPERTIES 
-        VS_SHADER_TYPE Pixel
-)
 
 set_source_files_properties( ${COMPUTER_SHADER_FILES}
     PROPERTIES 

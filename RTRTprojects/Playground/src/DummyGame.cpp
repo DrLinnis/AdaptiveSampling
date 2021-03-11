@@ -144,14 +144,19 @@ void DummyGame::CreateRayTracingPipeline() {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[4] = {};
         size_t                    rangeIdx           = 0;
+        UINT                      offset    = 0; 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
-                                 D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                 m_nbrRayRenderTargets );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                 m_nbrRayRenderTargets + 1 );
-        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                                 m_nbrRayRenderTargets + 2 );
+                                 D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += m_nbrRayRenderTargets;
+        // Add extra offset for storing the final image output SVR
+        offset += 1;
+
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
 
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
@@ -189,7 +194,8 @@ void DummyGame::CreateRayTracingPipeline() {
         ranges.resize( rangeSize );
 
         size_t                    rangeIdx = 0;
-        size_t                    offset    = m_nbrRayRenderTargets + 1;
+        // The slot after the rendertargets + denoised output 
+        size_t                    offset    = (m_nbrRayRenderTargets + 1) + 1;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
@@ -279,7 +285,7 @@ void DummyGame::CreateRayTracingPipeline() {
             ranges.resize( rangeSize );
 
             size_t rangeIdx = 0;
-            size_t offset   = m_nbrRayRenderTargets;
+            size_t offset   = (m_nbrRayRenderTargets + 1);
             // per frame data
             ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
             offset += 1;
@@ -389,11 +395,21 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto raySpec = m_Device->CreateTexture( renderDesc, nullptr );
     raySpec->SetName( L"RayGen specular output texture" );
 
+    
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPos );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, raySpec );
+
+
+    D3D12_RESOURCE_DESC renderDescFiltered =
+        CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
+    renderDescFiltered.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    m_FilteredOutput = m_Device->CreateTexture( renderDescFiltered, nullptr );
+
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, m_FilteredOutput );
 
    
     // Create SRV for TLAS after the UAV above. 
@@ -411,6 +427,8 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     cbvDesc[1].BufferLocation                = m_GlobalCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
+
+
 }
 
 void DummyGame::CreateAccelerationStructure() 
@@ -639,9 +657,9 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define AMAZON_INTERIOR 0
 #define AMAZON_EXTERIOR 0
 #define SAM_MIGUEL 0
-#define CORNELL_BOX 1
+#define CORNELL_BOX 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 0
+#define CORNELL_SPHERES 1
 #define CORNELL_WATER 0
 #define SPONZA 0
 #define DEBUG_SCENE 1
@@ -948,7 +966,7 @@ bool DummyGame::LoadContent()
 
     // Create a color buffer with sRGB for gamma correction.
     
-    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
     backBufferFormat = Texture::GetUAVCompatableFormat( backBufferFormat );
 
     // Start loading resources while the rest of the resources are created.
@@ -975,7 +993,45 @@ bool DummyGame::LoadContent()
 
     UpdateDispatchRaysDesc();
 
+    {
+        // Load compute shader
+        ComPtr<ID3DBlob> cs;
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Denoiser.cso", &cs ) );
+
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
+        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
+                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+
+        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1,
+                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+
+        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+        rayRootParams[0].InitAsDescriptorTable( 2, ranges );
+
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+
+        m_DenoiserRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+        // Create Pipeline State Object (PSO) for compute shader
+        struct DenoiserPipelineState
+        {
+            CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+            CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
+        } denoiserPipelineStateStream;
+
+        denoiserPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+        denoiserPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( cs.Get() );
+
+        m_DenoiserPipelineState = m_Device->CreatePipelineStateObject( denoiserPipelineStateStream );
+    }
+
 #endif
+
+
+
     m_IsLoading = false;
     return true;
 }
@@ -1304,9 +1360,6 @@ void DummyGame::OnRender()
         }
 #endif
 
-        auto& swapChainRT         = m_SwapChain->GetRenderTarget();
-        auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
-        commandList->TransitionBarrier( swapChainBackBuffer, D3D12_RESOURCE_STATE_RESOLVE_DEST );
 
 #if RAY_TRACER
 
@@ -1318,15 +1371,26 @@ void DummyGame::OnRender()
         4. specular
         */
 
-        auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color0 );
-        commandList->TransitionBarrier( outputImage, D3D12_RESOURCE_STATE_COPY_SOURCE );
 
-        commandList->FlushResourceBarriers();
+        // start denoiser
+        commandList->SetPipelineState( m_DenoiserPipelineState );
+        commandList->SetComputeRootSignature( m_DenoiserRootSig );
 
+        commandList->Dispatch( m_Width, m_Height, 1 ); 
+        
+        auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color5 );
+
+        commandList->UAVBarrier( outputImage );
+
+        auto& swapChainRT         = m_SwapChain->GetRenderTarget();
+        auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
+
+        // Copy to swapchain
         commandList->CopyResource( swapChainBackBuffer, outputImage );
 #else
         commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 #endif
+
     }
     
     // Render GUI.

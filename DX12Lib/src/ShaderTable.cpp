@@ -95,7 +95,7 @@ void ShaderTableResourceView::UpdateShaderTableUAV( const uint32_t      nbrRende
 
     auto device = m_Device.GetD3D12Device();
 
-    for ( int i = 0; i < nbrRenderTargets; ++i )
+    for ( int i = 0; i < nbrRenderTargets + 1; ++i )
     {
         auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
 
@@ -125,7 +125,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     auto nbrTextures = pMeshes->GetDiffuseTextureCount() + pMeshes->GetNormalTextureCount() 
         + pMeshes->GetSpecularTextureCount() + pMeshes->GetMaskTextureCount();
 
-    for (int i = 0; i < nbrRenderTargets; ++i) 
+    for (int i = 0; i < nbrRenderTargets + 1; ++i) 
     {
         AttachmentPoint point           = static_cast<AttachmentPoint>( i );
         auto            textureResource = pRenderTargets->GetTexture( point );
@@ -141,7 +141,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = nbrRenderTargets + 5 + 2 * nbrMeshes + 1 + nbrTextures;
+    desc.NumDescriptors = (nbrRenderTargets + 1) + 5 + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -153,7 +153,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     // ray gen root sig + TLAS
     {
         // Output targets
-        for ( int i = 0; i < nbrRenderTargets; ++i )
+        for ( int i = 0; i < nbrRenderTargets + 1; ++i )
         {
             auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
 
