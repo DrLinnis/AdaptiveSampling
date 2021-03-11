@@ -352,16 +352,16 @@ void main( ComputeShaderInput IN )
     // Flip image vertically to ease calculations
     Ray camRay = getRay(CameraPos.xyz, CameraLookAt.xyz, CameraUp.xyz, 0.05, uv, TimeSeed);
     
-#if 1
+#if 0
     output[IN.DispatchThreadID.xy] = ray_colour(camRay.pos, camRay.dir, uv, camRay.newSeed);
 #else
-#if 1
+#if 0
     float3 colour = MaterialList[SphereList[0].MatIdx].Colour;
     colour = random_colour(uv, TimeSeed);
     output[IN.DispatchThreadID.xy] = float4(colour, 1.0f);
 #else
-    float val = random_float(uv, TimeSeed);
-    output[IN.DispatchThreadID.xy] = float4(val, val, val, 1.0f);
+    float val = 1;
+    output[IN.DispatchThreadID.xy] = float4(val, 0, val, 1.0f);
 #endif
 #endif
 

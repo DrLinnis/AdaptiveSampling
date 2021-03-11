@@ -966,7 +966,7 @@ bool DummyGame::LoadContent()
 
     // Create a color buffer with sRGB for gamma correction.
     
-    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     backBufferFormat = Texture::GetUAVCompatableFormat( backBufferFormat );
 
     // Start loading resources while the rest of the resources are created.
@@ -1000,10 +1000,10 @@ bool DummyGame::LoadContent()
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
         ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0 );
 
-        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE );
+        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
+                        m_nbrRayRenderTargets);
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
         rayRootParams[0].InitAsDescriptorTable( 2, ranges );
@@ -1315,9 +1315,9 @@ void DummyGame::OnRender()
 
     auto RenderTarget = m_IsLoading ? m_SwapChain->GetRenderTarget() : m_RayRenderTarget;
 
+    FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
     if (m_IsLoading) 
     {
-        FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
         auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
@@ -1333,7 +1333,7 @@ void DummyGame::OnRender()
     {
 #if RAY_TRACER /* Ray tracing calling. */
         {
-            commandList->SetRenderTarget( RenderTarget );
+            //commandList->SetRenderTarget( RenderTarget ); // Is it even needed?
 
     #if UPDATE_TRANSFORMS
             AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
@@ -1350,18 +1350,8 @@ void DummyGame::OnRender()
             // Dispatch Rays
             commandList->DispatchRays( &m_RaytraceDesc );
 
-            /*
-            for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
-            {
-                auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
-                commandList->TransitionBarrier( resource, D3D12_RESOURCE_STATE_COPY_SOURCE );
-            }
-            */
         }
 #endif
-
-
-#if RAY_TRACER
 
         /*
         0. colour
@@ -1369,16 +1359,24 @@ void DummyGame::OnRender()
         2. position
         3. object
         4. specular
+
+        5. SDR denoised
         */
 
+        auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color5 );
 
-        // start denoiser
-        commandList->SetPipelineState( m_DenoiserPipelineState );
+        // Set global root signature
         commandList->SetComputeRootSignature( m_DenoiserRootSig );
 
-        commandList->Dispatch( m_Width, m_Height, 1 ); 
-        
-        auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color5 );
+        // Set pipeline and heaps for shader table
+        commandList->SetPipelineState( m_DenoiserPipelineState, true, m_RayShaderHeap );
+
+        // Start denoiser shader
+        #if 1
+        commandList->Dispatch( (m_Width / 8), (m_Height / 8), 1, true); 
+        #else
+        commandList->ClearTexture( outputImage, clearColor );
+        #endif
 
         commandList->UAVBarrier( outputImage );
 
@@ -1387,9 +1385,8 @@ void DummyGame::OnRender()
 
         // Copy to swapchain
         commandList->CopyResource( swapChainBackBuffer, outputImage );
-#else
-        commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
-#endif
+
+        //commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 
     }
     

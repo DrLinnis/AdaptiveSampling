@@ -112,7 +112,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
 : m_Device( device )
 {
-    assert( pRayTlasSrv || pCbv );
+    assert( pRayTlasSrv || pCbv || pMeshes );
 
     // Create an off-screen render for the compute shader
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -125,23 +125,12 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     auto nbrTextures = pMeshes->GetDiffuseTextureCount() + pMeshes->GetNormalTextureCount() 
         + pMeshes->GetSpecularTextureCount() + pMeshes->GetMaskTextureCount();
 
-    for (int i = 0; i < nbrRenderTargets + 1; ++i) 
-    {
-        AttachmentPoint point           = static_cast<AttachmentPoint>( i );
-        auto            textureResource = pRenderTargets->GetTexture( point );
-        if ( textureResource )
-        {
-            auto d3d12ResourceDesc = textureResource->GetD3D12ResourceDesc();
-
-            // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
-            assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
-        }
-    }
-    
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+    // per frame buffer, globals buffer, TLAS, Radiance and Diffuse skybox
+    size_t                     uniques = 5;
     // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = (nbrRenderTargets + 1) + 5 + 2 * nbrMeshes + 1 + nbrTextures;
+    desc.NumDescriptors = ( nbrRenderTargets + 1 ) + uniques + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -156,6 +145,9 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
         for ( int i = 0; i < nbrRenderTargets + 1; ++i )
         {
             auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
+            auto d3d12ResourceDesc = textureResource->GetD3D12ResourceDesc();
+
+            assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
 
             d3d12Device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(), nullptr, &uavDesc, heapHandle );
 

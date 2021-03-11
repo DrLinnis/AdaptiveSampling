@@ -1408,12 +1408,13 @@ void CommandList::SetScissorRects( const std::vector<D3D12_RECT>& scissorRects )
     m_d3d12CommandList->RSSetScissorRects( static_cast<UINT>( scissorRects.size() ), scissorRects.data() );
 }
 
-void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& pipelineState )
+void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& pipelineState, bool forceSetState,
+                                    std::shared_ptr<ShaderTableResourceView> shaderTable )
 {
     assert( pipelineState );
 
     auto d3d12PipelineStateObject = pipelineState->GetD3D12PipelineState().Get();
-    if ( m_PipelineState != d3d12PipelineStateObject )
+    if ( m_PipelineState != d3d12PipelineStateObject || forceSetState)
     {
         m_PipelineState = d3d12PipelineStateObject;
 
@@ -1421,6 +1422,9 @@ void CommandList::SetPipelineState( const std::shared_ptr<PipelineStateObject>& 
 
         TrackResource( d3d12PipelineStateObject );
     }
+
+    if ( shaderTable )
+        SetDescriptorHeap( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, shaderTable->GetTableHeap() );
 }
 
 void dx12lib::CommandList::SetPipelineState1( const std::shared_ptr<RT_PipelineStateObject>& pipelineState,
@@ -1728,13 +1732,15 @@ void CommandList::DrawIndexed( uint32_t indexCount, uint32_t instanceCount, uint
     m_d3d12CommandList->DrawIndexedInstanced( indexCount, instanceCount, startIndex, baseVertex, startInstance );
 }
 
-void CommandList::Dispatch( uint32_t numGroupsX, uint32_t numGroupsY, uint32_t numGroupsZ )
+void CommandList::Dispatch( uint32_t numGroupsX, uint32_t numGroupsY, uint32_t numGroupsZ, bool justDispatch )
 {
-    FlushResourceBarriers();
+    if (!justDispatch) {
+        FlushResourceBarriers();
 
-    for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
-    {
-        m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this );
+        for ( int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i )
+        {
+            m_DynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch( *this );
+        }
     }
 
     m_d3d12CommandList->Dispatch( numGroupsX, numGroupsY, numGroupsZ );

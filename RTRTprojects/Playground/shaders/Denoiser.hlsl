@@ -9,11 +9,11 @@ struct ComputeShaderInput
     uint  GroupIndex : SV_GroupIndex;              // Flattened local index of the thread within a thread group.
 };
 
-RWTexture2D<float4> input[] : register( u0, space0);
+RWTexture2D<float4> gbuffer[] : register( u0, space0);
 RWTexture2D<float4> output : register( u0, space1 );
 
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main( ComputeShaderInput IN ) 
 { 
-    output[IN.DispatchThreadID.xy] = float4(1, 0, 1, 1);
+    output[IN.DispatchThreadID.xy] = float4(10, 10, 10, 1);
 }

@@ -467,7 +467,9 @@ public:
     /**
      * Set the pipeline state object on the command list.
      */
-    void SetPipelineState( const std::shared_ptr<PipelineStateObject>& pipelineState );
+    void SetPipelineState( const std::shared_ptr<PipelineStateObject>& pipelineState, 
+                           bool forceSetState = false, 
+                           std::shared_ptr<ShaderTableResourceView> shaderTable = nullptr);
 
     /**
      * Set the pipeline state object on the command list.
@@ -574,7 +576,7 @@ public:
     /**
      * Dispatch a compute shader.
      */
-    void Dispatch( uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1 );
+    void Dispatch( uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1, bool justDispatch = false );
 
     /**
      * Dispatch rays for ray tracing.
