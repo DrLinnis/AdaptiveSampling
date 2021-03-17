@@ -9,6 +9,38 @@ shaders and RTRT.
 
     
 ### Meetings:
+##### Meeting notes 16/3:
+---
+Discussed what Adaptive Sampling is in the context of RTRT. It is not anti-alisasing,
+sampling more than one time per pixel. It is more trying to lower the 1spp to fewer,
+if a region (e.g. 2x2 tile) has similar looking colours. 
+
+In goals document I hint that this would be a Spatio-Temporal sampling, but this is not
+the case. Instead a good name would be spatio adaptive sampling. This wont affect how 
+the thesis is examined.
+
+Glossary list is a good thing if I have one. 
+
+It is ok to reuse some paragraphs from the goals document.
+
+Related work is basically a history lesson in the field. We can reference
+another persons work for "a more intensive peice".
+
+we should reference VRS in related work.
+
+We should reference <link> and explain why it is different. They focus on their
+own hardware, and we focus on nvidia and DXR.
+
+I dont have to over reference for background and theory, but I can reference real 
+time rendering.
+
+I can skip talking about interpolation in the thesis.
+
+Rename the materials to Diffuse, Transparent, Specular. No need to be of both types.
+
+Finish SVGF, and then I am done with the basic RTRT - and I can move onto adaptive
+sampling.
+
 ##### Meeting notes 9/3:
 ---
 Adaptive Sampling thesis implementation should be done in a single frame. It should
