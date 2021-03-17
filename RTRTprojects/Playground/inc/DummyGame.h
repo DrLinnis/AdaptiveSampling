@@ -327,6 +327,12 @@ private:
     const uint32_t m_nbrRayRenderTargets = 5;
     dx12lib::RenderTarget m_RayRenderTarget;
 
+    const uint32_t        m_nbrHistoryRenderTargets = 4;
+    dx12lib::RenderTarget m_HistoryRenderTarget;
+
+    const uint32_t        m_nbrFilterRenderTargets = 1;
+    dx12lib::RenderTarget m_FilterRenderTarget;
+
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
     std::vector<InstanceTransforms>                   m_InstanceTransforms;
 
@@ -368,7 +374,6 @@ private:
 
 
     // denoiser compute shader
-    std::shared_ptr<dx12lib::Texture> m_FilteredOutput;
     std::shared_ptr<dx12lib::RootSignature> m_DenoiserRootSig;
     std::shared_ptr<dx12lib::PipelineStateObject> m_DenoiserPipelineState; 
 

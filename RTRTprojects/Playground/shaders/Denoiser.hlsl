@@ -9,29 +9,50 @@ struct ComputeShaderInput
     uint  GroupIndex : SV_GroupIndex;              // Flattened local index of the thread within a thread group.
 };
 
-RWTexture2D<float4> gbuffer[] : register( u0, space0);
-RWTexture2D<float4> output : register( u0, space1 );
+RWTexture2D<float4> rayBuffer[] : register( u0, space0);
+RWTexture2D<float4> historyBuffer[] : register( u0, space1 );
+RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
+
+#define RAW_SAMPLES 0
 
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main( ComputeShaderInput IN ) 
 { 
     float4 result = 0;
-#if 0
     
-    for (int dx = -1; dx <= 1; ++dx)
+#if RAW_SAMPLES
+    result = rayBuffer[0][IN.DispatchThreadID.xy];
+#else
+    int layers = 0;
+    float4 newRadiance = 0;
+    
+    // average new radiance
+    for (int dx = -layers; dx <= layers; ++dx)
     {
-        for (int dy = -1; dy <= 1; ++dy)
+        for (int dy = -layers; dy <= layers; ++dy)
         {
-            result += gbuffer[0][IN.DispatchThreadID.xy + uint2(dx, dy)];
+            newRadiance += rayBuffer[0][IN.DispatchThreadID.xy + uint2(dx, dy)];
         }
     }
     
-    result /= 9;
+    newRadiance /= (2 * layers + 1) * (2 * layers + 1);
     
-#else
-    result = gbuffer[0][IN.DispatchThreadID.xy];
+    float4 integratedColour = historyBuffer[0][IN.DispatchThreadID.xy];
+    
+    uint accumulatedFrames = (uint) newRadiance.w;
+    
+    float4 avrRadiance = 0;
+    if (accumulatedFrames == 0)
+        avrRadiance = newRadiance;
+    else
+        avrRadiance = lerp(integratedColour, newRadiance, 1.f / (accumulatedFrames + 1.0f));
+    
+    historyBuffer[0][IN.DispatchThreadID.xy] = avrRadiance;
+    
+    result = avrRadiance;
+    
 #endif
     
-    output[IN.DispatchThreadID.xy] = clamp(result, 0, 1);
+    filterBuffer[0][IN.DispatchThreadID.xy] = clamp(result, 0, 1);
 
 }

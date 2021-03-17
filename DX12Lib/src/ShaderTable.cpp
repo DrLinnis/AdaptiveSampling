@@ -19,72 +19,8 @@
 
 using namespace dx12lib;
 
-ShaderTableResourceView::ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource, 
-                                                  const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
-                                                  const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
-: m_Device( device )
-{
-    assert( pRayTlasSrv || pCbv );
-
-    auto d3d12Device          = m_Device.GetD3D12Device();
-    auto d3d12Resource = outputResource ? outputResource->GetD3D12Resource() : nullptr;
-
-    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-    uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
-
-    if ( outputResource )
-    {
-        auto d3d12ResourceDesc = outputResource->GetD3D12ResourceDesc();
-
-        // Resource must be created with the D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS flag.
-        assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
-    }
-
-    D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    desc.NumDescriptors             = 3;
-    desc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-
-    ThrowIfFailed( d3d12Device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_SrvUavHeap ) ) );
-    m_SrvUavHeap->SetName( L"DXR Descriptor Heap" );
-    
-    D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
-
-    d3d12Device->CreateUnorderedAccessView( d3d12Resource.Get(), nullptr, &uavDesc, heapHandle );
-
-    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
-
-    d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
-
-    heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
-
-    d3d12Device->CreateShaderResourceView( nullptr, pRayTlasSrv, heapHandle );
-
-}
-
-ShaderTableResourceView::ShaderTableResourceView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv )
-: m_Device( device )
-{
-    assert( pCbv );
-
-    auto d3d12Device   = m_Device.GetD3D12Device();
-
-    D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    desc.NumDescriptors             = 1;
-    desc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    desc.Flags                      = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-    ThrowIfFailed( d3d12Device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_SrvUavHeap ) ) );
-    m_SrvUavHeap->SetName( L"DXR Descriptor Heap" );
-
-    D3D12_CPU_DESCRIPTOR_HANDLE heapHandle = m_SrvUavHeap->GetCPUDescriptorHandleForHeapStart();
-
-    d3d12Device->CreateConstantBufferView( pCbv, heapHandle );
-}
-
-
-void ShaderTableResourceView::UpdateShaderTableUAV( const uint32_t      nbrRenderTargets,
+void ShaderTableResourceView::UpdateShaderTableUAV( const UINT offset,
+                                                    const uint32_t      nbrRenderTargets,
                                                     const RenderTarget* pRenderTargets )
 {
     // Create an off-screen render for the compute shader
@@ -95,7 +31,9 @@ void ShaderTableResourceView::UpdateShaderTableUAV( const uint32_t      nbrRende
 
     auto device = m_Device.GetD3D12Device();
 
-    for ( int i = 0; i < nbrRenderTargets + 1; ++i )
+    heapHandle.ptr += offset * device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+
+    for ( int i = 0; i < nbrRenderTargets; ++i )
     {
         auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
 
@@ -106,8 +44,7 @@ void ShaderTableResourceView::UpdateShaderTableUAV( const uint32_t      nbrRende
 }
 
 ShaderTableResourceView::ShaderTableResourceView( Device& device, 
-                                                  const uint32_t nbrRenderTargets,
-                                                  const RenderTarget*                     pRenderTargets, 
+                                                  const uint32_t nbrTotalRenderTargets,
                                                   const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                                                   const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
 : m_Device( device )
@@ -130,7 +67,7 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     // per frame buffer, globals buffer, TLAS, Radiance and Diffuse skybox
     size_t                     uniques = 5;
     // UAV targets, PER FRAME CBV, SRV TLAS, SRV per idxBuff & vertBuff, MaterialList, SRV textures
-    desc.NumDescriptors = ( nbrRenderTargets + 1 ) + uniques + 2 * nbrMeshes + 1 + nbrTextures;
+    desc.NumDescriptors = nbrTotalRenderTargets + uniques + 2 * nbrMeshes + 1 + nbrTextures;
     desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -142,18 +79,8 @@ ShaderTableResourceView::ShaderTableResourceView( Device& device,
     // ray gen root sig + TLAS
     {
         // Output targets
-        for ( int i = 0; i < nbrRenderTargets + 1; ++i )
-        {
-            auto textureResource = pRenderTargets->GetTexture( static_cast<AttachmentPoint>( i ) );
-            auto d3d12ResourceDesc = textureResource->GetD3D12ResourceDesc();
-
-            assert( ( d3d12ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) != 0 );
-
-            d3d12Device->CreateUnorderedAccessView( textureResource->GetD3D12Resource().Get(), nullptr, &uavDesc, heapHandle );
-
-            heapHandle.ptr += d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
-
-        }
+        heapHandle.ptr += nbrTotalRenderTargets *
+                          d3d12Device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
         
 
 

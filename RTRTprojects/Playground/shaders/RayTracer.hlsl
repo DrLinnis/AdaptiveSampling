@@ -565,13 +565,15 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         
 #if 0
         const float mix = 0.0;
+        
         float3 L = SampleNearestLightDirection(mat.pos, mat.normal);
         
-        if (sampleLight && dot(N, L) >= 0  && rnd(seed) < mix)
+        if (sampleLight && dot(N, L) >= 0 && rnd(seed) < 0.5)
             R = L;
 #endif
         
         R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+        
         
         R = normalize(R);
         
@@ -692,7 +694,6 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     brdfCos = brdfEval * cosNR;
 }
 
-#define RAW_SAMPLES 0
 /* 
     START OF REYGEN SHADER 
 */
@@ -725,7 +726,10 @@ void rayGen()
     for (int i = 0; i < nbrSamples; ++i)
     {
         // Add random seed there
-        float4 pixelRayRnd = pixelRay + float4(rnd(payload.seed) * 2 - 1, rnd(payload.seed) * 2 - 1, 0, 0);
+        float dx = rnd(payload.seed) - 0.5;
+        float dy = rnd(payload.seed) - 0.5;
+        
+        float4 pixelRayRnd = pixelRay + float4(dx, dy, 0, 0);
         float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
         
         payload = TraceFullPath(camOrigin, direction, payload.seed);
@@ -737,15 +741,8 @@ void rayGen()
     
     
     float depth = length(camOrigin - payload.position);
-    
-    float3 avrRadiance; 
-    if (frame.accumulatedFrames == 0 || RAW_SAMPLES)
-        avrRadiance = newRadiance;
-    else
-        avrRadiance = lerp(gOutput[0][launchIndex.xy].xyz, newRadiance, 1.f / (frame.accumulatedFrames + 1.0f));
-    
 
-    gOutput[0][launchIndex.xy] = float4(avrRadiance, 1);
+    gOutput[0][launchIndex.xy] = float4(newRadiance, frame.accumulatedFrames);
     gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[2][launchIndex.xy] = float4(payload.position, depth);
     gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);

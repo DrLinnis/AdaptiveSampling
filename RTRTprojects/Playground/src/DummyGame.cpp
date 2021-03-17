@@ -148,8 +148,9 @@ void DummyGame::CreateRayTracingPipeline() {
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += m_nbrRayRenderTargets;
-        // Add extra offset for storing the final image output SVR
-        offset += 1;
+        // Add extra offset for storing the filter and history outputs.
+        offset += m_nbrHistoryRenderTargets;
+        offset += m_nbrFilterRenderTargets;
 
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
@@ -195,7 +196,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
         size_t                    rangeIdx = 0;
         // The slot after the rendertargets + denoised output 
-        size_t                    offset    = (m_nbrRayRenderTargets + 1) + 1;
+        size_t offset = ( m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets ) + 1;
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
@@ -285,7 +286,7 @@ void DummyGame::CreateRayTracingPipeline() {
             ranges.resize( rangeSize );
 
             size_t rangeIdx = 0;
-            size_t offset   = (m_nbrRayRenderTargets + 1);
+            size_t offset   = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
             // per frame data
             ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
             offset += 1;
@@ -383,11 +384,8 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto rayNormals = m_Device->CreateTexture( renderDesc, nullptr );
     rayNormals->SetName( L"RayGen normal output texture" );
 
-    auto rayDepth = m_Device->CreateTexture( renderDesc, nullptr );
-    rayDepth->SetName( L"RayGen depth output texture" );
-
-    auto rayPos = m_Device->CreateTexture( renderDesc, nullptr );
-    rayPos->SetName( L"RayGen position output texture" );
+    auto rayPosDepth = m_Device->CreateTexture( renderDesc, nullptr );
+    rayPosDepth->SetName( L"RayGen position/depth output texture" );
 
     auto rayObjID = m_Device->CreateTexture( renderDesc, nullptr );
     rayObjID->SetName( L"RayGen object ID output texture" );
@@ -398,20 +396,39 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPos );
+    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPosDepth );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, raySpec );
 
+    auto integratedColour = m_Device->CreateTexture( renderDesc, nullptr );
+    integratedColour->SetName( L"History integrated colour output texture" );
+
+    auto oldNormals = m_Device->CreateTexture( renderDesc, nullptr );
+    oldNormals->SetName( L"RayGen normal output texture" );
+
+    auto oldPosDepth = m_Device->CreateTexture( renderDesc, nullptr );
+    oldPosDepth->SetName( L"History position/depth output texture" );
+
+    auto oldObjID = m_Device->CreateTexture( renderDesc, nullptr );
+    oldObjID->SetName( L"History object ID output texture" );
+
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color0, integratedColour );
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color1, oldNormals );
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color2, oldPosDepth );
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
 
     D3D12_RESOURCE_DESC renderDescFiltered =
         CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
     renderDescFiltered.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 
-    m_FilteredOutput = m_Device->CreateTexture( renderDescFiltered, nullptr );
+    auto filteredOutput = m_Device->CreateTexture( renderDescFiltered, nullptr );
+    filteredOutput->SetName( L"Denoiser SDR filtered image" );
 
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color5, m_FilteredOutput );
+    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color0, filteredOutput );
 
    
+    auto totalNbrRenderTargets = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
+
     // Create SRV for TLAS after the UAV above. 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvTlasDesc          = {};
     srvTlasDesc.ViewDimension                        = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
@@ -426,8 +443,15 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     cbvDesc[1].SizeInBytes                   = align_to( 256, sizeof( GlobalConstantData ) );
     cbvDesc[1].BufferLocation                = m_GlobalCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
-    m_RayShaderHeap = m_Device->CreateShaderTableView( m_nbrRayRenderTargets, &m_RayRenderTarget, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
-
+    m_RayShaderHeap =
+        m_Device->CreateShaderTableView( totalNbrRenderTargets, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
+    UINT offset = 0;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrRayRenderTargets, &m_RayRenderTarget );
+    offset += m_nbrRayRenderTargets;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrHistoryRenderTargets, &m_HistoryRenderTarget );
+    offset += m_nbrHistoryRenderTargets;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrFilterRenderTargets, &m_FilterRenderTarget );
+    offset += m_nbrFilterRenderTargets;
 
 }
 
@@ -998,14 +1022,19 @@ bool DummyGame::LoadContent()
         ComPtr<ID3DBlob> cs;
         ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Denoiser.cso", &cs ) );
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[3];
 
-        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                        m_nbrRayRenderTargets );
-        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
+                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+
+        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1,
+                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, m_nbrRayRenderTargets );
+
+        ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2,
+                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, m_nbrRayRenderTargets + m_nbrHistoryRenderTargets );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-        rayRootParams[0].InitAsDescriptorTable( 2, ranges );
+        rayRootParams[0].InitAsDescriptorTable( 3, ranges );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -1045,10 +1074,18 @@ void DummyGame::OnResize( ResizeEventArgs& e )
     m_Viewport = CD3DX12_VIEWPORT( 0.0f, 0.0f, static_cast<float>( m_Width ), static_cast<float>( m_Height ) );
 
     m_RayRenderTarget.Resize( m_Width, m_Height );
+    m_HistoryRenderTarget.Resize( m_Width, m_Height );
+    m_FilterRenderTarget.Resize( m_Width, m_Height );
 
     m_SwapChain->Resize( m_Width, m_Height );
 
-    m_RayShaderHeap->UpdateShaderTableUAV( m_nbrRayRenderTargets, &m_RayRenderTarget );
+    UINT offset = 0;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrRayRenderTargets, &m_RayRenderTarget );
+    offset += m_nbrRayRenderTargets;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrHistoryRenderTargets, &m_HistoryRenderTarget );
+    offset += m_nbrHistoryRenderTargets;
+    m_RayShaderHeap->UpdateShaderTableUAV( offset, m_nbrFilterRenderTargets, &m_FilterRenderTarget );
+    offset += m_nbrFilterRenderTargets;
 
     UpdateDispatchRaysDesc();
 
@@ -1090,6 +1127,8 @@ void DummyGame::UnloadContent()
 
     m_RayShaderHeap.reset();
     m_RayRenderTarget.Reset();
+    m_FilterRenderTarget.Reset();
+    m_HistoryRenderTarget.Reset();
 
 #endif
 
@@ -1208,7 +1247,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             m_frameData.accumulatedFrames += 1;
         }
 
-        m_frameData.cpuGeneratedSeed = static_cast<uint32_t>(Math::random_double() * 100);
+        m_frameData.cpuGeneratedSeed = static_cast<uint32_t>(Math::random_double() * 256);
 
 
         // update buffers
@@ -1357,7 +1396,7 @@ void DummyGame::OnRender()
 
         5. SDR denoised
         */
-        auto outputImage = m_RayRenderTarget.GetTexture( AttachmentPoint::Color5 );
+        auto outputImage = m_FilterRenderTarget.GetTexture( AttachmentPoint::Color0 );
 
         // Set global root signature
         commandList->SetComputeRootSignature( m_DenoiserRootSig );

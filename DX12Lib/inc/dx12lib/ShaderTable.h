@@ -33,22 +33,14 @@ public:
         return m_SrvUavHeap.Get();
     }
 
-    void UpdateShaderTableUAV( const uint32_t nbrRenderTargets, const RenderTarget* pRenderTargets );
+    void UpdateShaderTableUAV( const UINT offset, const uint32_t nbrRenderTargets, const RenderTarget* pRenderTargets );
 
 protected:
-    ShaderTableResourceView( Device& device, const std::shared_ptr<Resource>& outputResource, 
-                             const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
-                             const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv );
-
     ShaderTableResourceView( Device& device, 
-                             const uint32_t nbrRenderTargets, 
-                             const RenderTarget* pRenderTargets, 
+                             const uint32_t nbrTotalRenderTargets, 
                              const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                              const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv ,
                              Scene* pMeshes);
-
-    ShaderTableResourceView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv );
-
     virtual ~ShaderTableResourceView() = default;
 
 private:
@@ -63,23 +55,13 @@ private:
 class MakeShaderTableView : public ShaderTableResourceView
 {
 public:
-    MakeShaderTableView( Device& device, const std::shared_ptr<Resource>& outputResource, 
-                         const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
-                         const D3D12_CONSTANT_BUFFER_VIEW_DESC*  pCbv )
-    : ShaderTableResourceView( device, outputResource, pRayTlasSrv, pCbv )
-    {}
-
     MakeShaderTableView( Device& device, 
-                         const uint32_t nbrRenderTargets,
-                         const RenderTarget* pRenderTargets, 
+                         const uint32_t nbrTotalRenderTargets,
                          const D3D12_SHADER_RESOURCE_VIEW_DESC*  pRayTlasSrv,
                          const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv, Scene* pMeshes )
-    : ShaderTableResourceView( device, nbrRenderTargets, pRenderTargets, pRayTlasSrv, pCbv, pMeshes )
+    : ShaderTableResourceView( device, nbrTotalRenderTargets, pRayTlasSrv, pCbv, pMeshes )
     {}
 
-    MakeShaderTableView( Device& device, const D3D12_CONSTANT_BUFFER_VIEW_DESC* pCbv )
-    : ShaderTableResourceView( device, pCbv )
-    {}
 
     virtual ~MakeShaderTableView() {}
 };
