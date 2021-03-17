@@ -123,6 +123,53 @@ struct FrameData
     uint32_t cpuGeneratedSeed;
 };
 
+struct DenoiserFilterData
+{
+    DirectX::XMFLOAT3X4 oldCameraWorldToClip;
+    DirectX::XMFLOAT3X4 newCameraWorldToClip;
+
+    void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, DirectX::XMFLOAT2 cameraWinSize )
+    {
+        auto oldCam = DirectX::XMLoadFloat3x4( &pOld->camPixelToWorld );
+        auto newCam = DirectX::XMLoadFloat3x4( &pNew->camPixelToWorld );
+
+        auto centerFloat = DirectX::XMFLOAT4( 0, 0, 1, 1 );
+        auto camPosFloat           = DirectX::XMFLOAT4( 0, 0, 0, 1 );
+        auto upFloat          = DirectX::XMFLOAT4( 0, 1, 0, 1 );
+
+        auto centre     = DirectX::XMLoadFloat4( &centerFloat );
+        auto camPos     = DirectX::XMLoadFloat4( &camPosFloat );
+        auto up         = DirectX::XMLoadFloat4( &upFloat );
+
+
+        auto oldPos = DirectX::XMVector4Transform( camPos, oldCam );
+        auto newPos = DirectX::XMVector4Transform( camPos, newCam );
+
+        auto oldLookAt = DirectX::XMVector4Transform( centre, oldCam );
+        auto newLookAt = DirectX::XMVector4Transform( centre, newCam );
+
+        auto oldFocal = DirectX::XMVector3Length( DirectX::XMVectorSubtract( oldLookAt, oldPos ) );
+        auto newFocal = DirectX::XMVector3Length( DirectX::XMVectorSubtract( newLookAt, newPos ) );
+
+        float oldFocalLength, newFocalLength;
+        DirectX::XMStoreFloat( &oldFocalLength, oldFocal );
+        DirectX::XMStoreFloat( &newFocalLength, newFocal );
+
+        auto oldView = DirectX::XMMatrixLookAtLH( oldPos, oldLookAt, up );
+        auto newView = DirectX::XMMatrixLookAtLH( newPos, newLookAt, up );
+
+        auto oldProject = DirectX::XMMatrixPerspectiveLH( cameraWinSize.x, cameraWinSize.y, oldFocalLength, 100000 );
+        auto newProject = DirectX::XMMatrixPerspectiveLH( cameraWinSize.x, cameraWinSize.y, newFocalLength, 100000 );
+
+        auto oldViewProject = DirectX::XMMatrixMultiply( oldProject, oldView ); 
+        auto newViewProject = DirectX::XMMatrixMultiply( newProject, newView ); 
+
+        DirectX::XMStoreFloat3x4( &oldCameraWorldToClip, oldViewProject );
+        DirectX::XMStoreFloat3x4( &newCameraWorldToClip, newViewProject );
+
+    }
+};
+
 struct GlobalConstantData
 {
     GlobalConstantData( )
@@ -276,6 +323,7 @@ private:
 #if RAY_TRACER
 
     
+    alignas( 16 ) DenoiserFilterData m_FilterData;
     alignas( 16 ) FrameData m_frameData;
     alignas( 16 ) GlobalConstantData m_Globals;
 
@@ -315,6 +363,7 @@ private:
     std::shared_ptr<dx12lib::MappableBuffer>            m_MissShaderTable;
     std::shared_ptr<dx12lib::MappableBuffer>            m_HitShaderTable;
 
+    std::shared_ptr<dx12lib::MappableBuffer> m_FilterCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_FrameDataCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_GlobalCB;
     std::shared_ptr<dx12lib::MappableBuffer> m_InstanceTransformResources;

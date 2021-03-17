@@ -152,10 +152,17 @@ void DummyGame::CreateRayTracingPipeline() {
         offset += m_nbrHistoryRenderTargets;
         offset += m_nbrFilterRenderTargets;
 
+        // per frame buffer
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
+        // globals buffer
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
+
+        // denoiserData
+        offset += 1;
+
+        // TLAS
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
@@ -195,12 +202,17 @@ void DummyGame::CreateRayTracingPipeline() {
         ranges.resize( rangeSize );
 
         size_t                    rangeIdx = 0;
-        // The slot after the rendertargets + denoised output 
+        // The slot after the rendertargets + per frame data
         size_t offset = ( m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets ) + 1;
+        // globals
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
 
+        // denoiser data
+        offset += 1;
+
+        // TLAS
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
         offset += 1;
@@ -295,8 +307,8 @@ void DummyGame::CreateRayTracingPipeline() {
             ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
             offset += 1;
 
-            // offset for TLAS
-            offset += 1;
+            // offset for TLAS and FilterData
+            offset += 2;
 
             // always bind skybox(es)
             // diffuse
@@ -436,12 +448,15 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     srvTlasDesc.RaytracingAccelerationStructure.Location =  m_TlasBuffers.pResult->GetD3D12Resource()->GetGPUVirtualAddress();
 
 
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc[2] = {};
-    cbvDesc[0].SizeInBytes                     = 256;
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc[3] = {};
+    cbvDesc[0].SizeInBytes                     = align_to( 256, sizeof( FrameData ) );
     cbvDesc[0].BufferLocation                  = m_FrameDataCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     cbvDesc[1].SizeInBytes                   = align_to( 256, sizeof( GlobalConstantData ) );
     cbvDesc[1].BufferLocation                = m_GlobalCB->GetD3D12Resource()->GetGPUVirtualAddress();
+
+    cbvDesc[2].SizeInBytes    = align_to( 256, sizeof( DenoiserFilterData ) );
+    cbvDesc[2].BufferLocation = m_FilterCB->GetD3D12Resource()->GetGPUVirtualAddress();
 
     m_RayShaderHeap =
         m_Device->CreateShaderTableView( totalNbrRenderTargets, &srvTlasDesc, cbvDesc, m_RaySceneMesh.get() );
@@ -547,6 +562,25 @@ void DummyGame::UpdateConstantBuffer()
         memcpy( pData, &m_InstanceTransforms[0], sizeof( InstanceTransforms ) );
     }
     m_InstanceTransformResources->Unmap();
+
+    ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
+    {
+        memcpy( pData, &m_frameData, sizeof( FrameData ) );
+    }
+    m_FrameDataCB->Unmap();
+
+    D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
+    ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
+    {
+        memcpy( pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
+    }
+    m_InstanceDescBuffer->Unmap();
+
+    ThrowIfFailed( m_FilterCB->Map( &pData ) );
+    {
+        memcpy( pData, &m_FilterData, sizeof( DenoiserFilterData ) );
+    }
+    m_FilterCB->Unmap();
 }
 
 void DummyGame::CreateConstantBuffer() 
@@ -554,6 +588,8 @@ void DummyGame::CreateConstantBuffer()
     m_FrameDataCB = m_Device->CreateMappableBuffer( 256 );
 
     m_GlobalCB = m_Device->CreateMappableBuffer( align_to( 256, sizeof( GlobalConstantData ) ) );
+
+    m_FilterCB = m_Device->CreateMappableBuffer( align_to( 256, sizeof( DenoiserFilterData ) ) );
 
     // Upload data
     void* pData;
@@ -1022,19 +1058,26 @@ bool DummyGame::LoadContent()
         ComPtr<ID3DBlob> cs;
         ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Denoiser.cso", &cs ) );
 
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[3];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
 
+        UINT offset = 0;
         ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
                         D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-
+        offset += m_nbrRayRenderTargets;
         ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, m_nbrRayRenderTargets );
-
+                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += m_nbrHistoryRenderTargets;
         ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, m_nbrRayRenderTargets + m_nbrHistoryRenderTargets );
+                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += m_nbrFilterRenderTargets;
+
+        // Add for per frame, globals CB
+        offset += 2;
+
+        ranges[3].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
 
         CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-        rayRootParams[0].InitAsDescriptorTable( 3, ranges );
+        rayRootParams[0].InitAsDescriptorTable( 4, ranges );
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -1237,6 +1280,8 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         isAccumelatingFrames &= m_frameData.Equal( &old );
 
+        m_FilterData.BuildOldAndNewDenoiser( &old, &m_frameData, m_CamWindow );
+
 
         if ( !isAccumelatingFrames )
         {
@@ -1251,20 +1296,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
 
         // update buffers
-        void* pData;
-        ThrowIfFailed( m_FrameDataCB->Map( &pData ) );
-        {
-            memcpy( pData, &m_frameData, sizeof( FrameData ) );
-        }
-        m_FrameDataCB->Unmap();
-
         
-        D3D12_RAYTRACING_INSTANCE_DESC* pInstDesc;
-        ThrowIfFailed( m_InstanceDescBuffer->Map( (void**)&pInstDesc ) );
-        {
-            memcpy( pInstDesc[0].Transform, &m_InstanceTransforms[0].matrix, sizeof( XMFLOAT3X4 ) );
-        }
-        m_InstanceDescBuffer->Unmap();
 
 
         UpdateConstantBuffer();
@@ -1399,8 +1431,6 @@ void DummyGame::OnRender()
         2. position
         3. object
         4. specular
-
-        5. SDR denoised
         */
         auto outputImage = m_FilterRenderTarget.GetTexture( AttachmentPoint::Color0 );
 
@@ -1418,7 +1448,7 @@ void DummyGame::OnRender()
         #else
         commandList->ClearTexture( outputImage, clearColor );
         #endif
-        
+         
         commandList->UAVBarrier( outputImage, true);
 
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();

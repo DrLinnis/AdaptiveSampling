@@ -697,6 +697,12 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
 /* 
     START OF REYGEN SHADER 
 */
+
+#define SLOT_COLOUR 0
+#define SLOT_NORMALS 1
+#define SLOT_POS_DEPTH 2
+#define SLOT_OBJECT_ID 3
+
 [shader("raygeneration")]
 void rayGen()
 {
@@ -742,10 +748,10 @@ void rayGen()
     
     float depth = length(camOrigin - payload.position);
 
-    gOutput[0][launchIndex.xy] = float4(newRadiance, frame.accumulatedFrames);
-    gOutput[1][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
-    gOutput[2][launchIndex.xy] = float4(payload.position, depth);
-    gOutput[3][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, frame.accumulatedFrames);
+    gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
+    gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
+    gOutput[SLOT_OBJECT_ID][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
     gOutput[4][launchIndex.xy] = float4(payload.specular, payload.specular, payload.specular, 1);
 
 }

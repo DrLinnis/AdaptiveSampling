@@ -9,6 +9,14 @@ struct ComputeShaderInput
     uint  GroupIndex : SV_GroupIndex;              // Flattened local index of the thread within a thread group.
 };
 
+struct DenoiserFilterData
+{
+    row_major matrix<float, 3, 4> oldCameraWorldToClip;
+    row_major matrix<float, 3, 4> newCameraWorldToClip;
+};
+
+ConstantBuffer<DenoiserFilterData> filterData : register(b0);
+
 /*
     colour,
     normal,
@@ -31,6 +39,11 @@ RWTexture2D<float4> historyBuffer[] : register( u0, space1 );
 */
 RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 
+#define SLOT_COLOUR 0
+#define SLOT_NORMALS 1
+#define SLOT_POS_DEPTH 2
+#define SLOT_OBJECT_ID 3
+
 #define RAW_SAMPLES 0
 
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
@@ -49,13 +62,13 @@ void main( ComputeShaderInput IN )
     {
         for (int dy = -layers; dy <= layers; ++dy)
         {
-            newRadiance += rayBuffer[0][IN.DispatchThreadID.xy + uint2(dx, dy)];
+            newRadiance += rayBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy + uint2(dx, dy)];
         }
     }
     
     newRadiance /= (2 * layers + 1) * (2 * layers + 1);
     
-    float4 integratedColour = historyBuffer[0][IN.DispatchThreadID.xy];
+    float4 integratedColour = historyBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy];
     
     uint accumulatedFrames = (uint) newRadiance.w;
     
@@ -65,15 +78,22 @@ void main( ComputeShaderInput IN )
     else
         avrRadiance = lerp(integratedColour, newRadiance, 1.f / (accumulatedFrames + 1.0f));
     
-    historyBuffer[0][IN.DispatchThreadID.xy] = avrRadiance;
+    historyBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy] = avrRadiance;
     
-
     result = avrRadiance;
     
+    float4 worldPos = float4(rayBuffer[SLOT_POS_DEPTH][IN.DispatchThreadID.xy].xyz, 1);
+    float3 vel = mul(filterData.newCameraWorldToClip, worldPos) - mul(filterData.oldCameraWorldToClip, worldPos);
+    //result = float4(vel, 0);
     
-    float3 diff = historyBuffer[2][IN.DispatchThreadID.xy].xyz - rayBuffer[2][IN.DispatchThreadID.xy].xyz;
+    
+    
+#if 0
+    float3 diff = historyBuffer[1][IN.DispatchThreadID.xy].xyz - rayBuffer[1][IN.DispatchThreadID.xy].xyz;
     if (dot(diff, diff) != 0)
         result = float4(1, 0, 0, 0);
+#endif
+    
     
 #endif
     
