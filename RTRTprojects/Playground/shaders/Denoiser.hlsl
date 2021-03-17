@@ -9,8 +9,26 @@ struct ComputeShaderInput
     uint  GroupIndex : SV_GroupIndex;              // Flattened local index of the thread within a thread group.
 };
 
+/*
+    colour,
+    normal,
+    posDepth,
+    object,
+    spec
+*/
 RWTexture2D<float4> rayBuffer[] : register( u0, space0);
+
+/*
+    integratedColour,
+    prevNormal,
+    prevPosDepth,
+    prevObject,
+*/
 RWTexture2D<float4> historyBuffer[] : register( u0, space1 );
+
+/*
+    outputImage
+*/
 RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 
 #define RAW_SAMPLES 0
@@ -49,7 +67,13 @@ void main( ComputeShaderInput IN )
     
     historyBuffer[0][IN.DispatchThreadID.xy] = avrRadiance;
     
+
     result = avrRadiance;
+    
+    
+    float3 diff = historyBuffer[2][IN.DispatchThreadID.xy].xyz - rayBuffer[2][IN.DispatchThreadID.xy].xyz;
+    if (dot(diff, diff) != 0)
+        result = float4(1, 0, 0, 0);
     
 #endif
     

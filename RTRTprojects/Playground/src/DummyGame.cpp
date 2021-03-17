@@ -415,7 +415,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color0, integratedColour );
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color1, oldNormals );
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color2, oldPosDepth );
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color3, oldObjID );
 
     D3D12_RESOURCE_DESC renderDescFiltered =
         CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
@@ -1384,6 +1384,12 @@ void DummyGame::OnRender()
             // Dispatch Rays
             commandList->DispatchRays( &m_RaytraceDesc );
 
+            for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+            {
+                auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                commandList->UAVBarrier( resource, true );
+            }
         }
 #endif
 
@@ -1412,14 +1418,28 @@ void DummyGame::OnRender()
         #else
         commandList->ClearTexture( outputImage, clearColor );
         #endif
-
-        commandList->UAVBarrier( outputImage );
+        
+        commandList->UAVBarrier( outputImage, true);
 
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
         auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
         // Copy to swapchain
         commandList->CopyResource( swapChainBackBuffer, outputImage );
+
+
+        // Copy flatout to history buffer without processing
+        auto dstNormal = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color1 );
+        auto srcNormal = m_RayRenderTarget.GetTexture( AttachmentPoint::Color1 );
+        commandList->CopyResource( dstNormal, srcNormal );
+
+        auto dstWorldDepth = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color2 );
+        auto srcWorldDepth = m_RayRenderTarget.GetTexture( AttachmentPoint::Color2 );
+        commandList->CopyResource( dstWorldDepth, srcWorldDepth );
+        
+        auto dstObject = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color3 );
+        auto srcObject = m_RayRenderTarget.GetTexture( AttachmentPoint::Color3 );
+        commandList->CopyResource( dstObject, srcObject );
 
         //commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 
