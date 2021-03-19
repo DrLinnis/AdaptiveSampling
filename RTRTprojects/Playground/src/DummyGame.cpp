@@ -720,9 +720,9 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define SAM_MIGUEL 0
 #define CORNELL_BOX 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 1
+#define CORNELL_SPHERES 0
 #define CORNELL_WATER 0
-#define SPONZA 0
+#define SPONZA 1
 #define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
@@ -1283,16 +1283,6 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         m_FilterData.BuildOldAndNewDenoiser( &old, &m_frameData, m_CamWindow, m_Width, m_Height);
 
-
-        if ( !isAccumelatingFrames )
-        {
-            m_frameData.accumulatedFrames = 0;
-        }
-        else
-        {
-            m_frameData.accumulatedFrames += 1;
-        }
-
         m_frameData.cpuGeneratedSeed = static_cast<uint32_t>(Math::random_double() * 256);
 
 
@@ -1340,6 +1330,10 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
         ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
         m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
+
+        float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
+        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 10 );
+        m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
 
         ImGui::End();
     }

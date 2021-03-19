@@ -105,7 +105,6 @@ struct PerFrameData
     
     row_major matrix<float, 3, 4> cameraPixelToWorld;
     
-    uint accumulatedFrames;
     uint exponentSamplesPerPixel;
     uint nbrBouncesPerPath;
     uint cpuGeneratedSeed;
@@ -748,7 +747,7 @@ void rayGen()
     
     float depth = length(camOrigin - payload.position);
 
-    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, frame.accumulatedFrames);
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, 0);
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
     gOutput[SLOT_OBJECT_ID][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);

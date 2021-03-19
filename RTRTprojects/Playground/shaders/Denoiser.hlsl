@@ -16,6 +16,8 @@ struct DenoiserFilterData
     
     float2 cameraWindowSize;
     float2 windowResolution;
+    
+    float reprojectErrorLimit;
 };
 
 ConstantBuffer<DenoiserFilterData> filterData : register(b0);
@@ -55,17 +57,17 @@ RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 
 #define REPROJ_DELTA 0.01
 
-float4 BilienarFilter(RWTexture2D<float4> tex, float2 floatingPixelPos)
+float4 BilienarFilter(RWTexture2D<float4> tex, float2 st)
 {
-    float2 AB = frac(floatingPixelPos - 0.5);
-    uint2 uv00 = (uint2) clamp(floor(floatingPixelPos - 0.5), 0, filterData.windowResolution);
+    float2 AB = frac(st);
+    uint2 uv00 = (uint2) clamp(st - AB, 0, filterData.windowResolution);
     uint2 uv10 = (uint2) clamp(uv00 + uint2(1, 0), 0, filterData.windowResolution);
     uint2 uv11 = (uint2) clamp(uv00 + uint2(1, 1), 0, filterData.windowResolution);
     uint2 uv01 = (uint2) clamp(uv00 + uint2(0, 1), 0, filterData.windowResolution);
     
-    float4 r1 = AB.x * tex[uv00] + (1 - AB.x) * tex[uv10];
-    float4 r2 = AB.x * tex[uv01] + (1 - AB.x) * tex[uv11];
-    return AB.y * r1 + (1 - AB.y) * r2;
+    float4 r1 = AB.x * tex[uv10] + (1 - AB.x) * tex[uv00];
+    float4 r2 = AB.x * tex[uv11] + (1 - AB.x) * tex[uv01];
+    return AB.y * r2 + (1 - AB.y) * r1;
 }
 
 // Shader toy inspired temporal reprojection := https://www.shadertoy.com/view/ldtGWl
@@ -102,6 +104,7 @@ void main( ComputeShaderInput IN )
     
     
     float3 oldPos = mul(filterData.oldCameraWorldToClip, float4(newPosDepth.xyz, 1));
+    float oldDiv = oldPos.z;
     oldPos = float3(-oldPos.x / aspectRatio, -oldPos.y, 0) / oldPos.z;
     
     // [-1,1] -> [0,1]
@@ -114,46 +117,45 @@ void main( ComputeShaderInput IN )
     newPos.xy = newPos.xy * 0.5 + 0.5;
     
     // Reprojection
-    float alpha = 0.2;
+    float alpha = 0.1;
     float4 oldIntegratedColour = 0;
-    float4 newIntegratedColour = 0;
     
     bool reuseSample = false;
     // If current position is visible in integrated history buffer.
-    if (oldPos.x > 0 && oldPos.x < 1 && oldPos.y > 0 && oldPos.y < 1 )
+    if (oldPos.x >= 0 && oldPos.x <= 1 && oldPos.y >= 0 && oldPos.y <= 1 && oldPos.z >= -0.5)
     {
-        uint2 oldRayPixelPos = (uint2) (oldPos.xy * filterData.windowResolution);
+        uint2 oldRayPixelPos = (uint2) (clamp(oldPos.xy, 0, 1) * filterData.windowResolution);
     
         // If the old object is the same object, then we can reuse
         float4 newObjMask = rayBuffer[SLOT_OBJECT_ID][IN.DispatchThreadID.xy];
         float4 oldObjMask = historyBuffer[SLOT_OBJECT_ID][oldRayPixelPos];
         reuseSample = length(newObjMask.xyz - oldObjMask.xyz) == 0;
     
-        // Check that the material is lambertian, if not, then just accumulate on same position
-        if (newObjMask.w == 0 && oldObjMask.w == 0)
+        // Check that the material is not lambertian, then just accumulate on same position
+        if (newObjMask.w != 0 || oldObjMask.w != 0)
             reuseSample &= length(oldPos.xy - newPos.xy) == 0;
         
         // if the old position is about the same as the new position
+        float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
         //float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
-        float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution);
-        reuseSample &= length(oldRayPos - newPosDepth.xyz) < 10;
+        reuseSample &= length(oldRayPos - newPosDepth.xyz) < filterData.reprojectErrorLimit;
 
         // check normals?
         float3 newNormals = normalize(rayBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
         float3 oldNormals = normalize(historyBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
-        reuseSample &= dot(newNormals, oldNormals) >= 0.99;
+        reuseSample &= dot(newNormals, oldNormals) >= 0.95;
         
         
         // Decide alpha
-        //oldIntegratedColour = BilienarFilter(historyBuffer[SLOT_COLOUR], oldPos.xy * filterData.windowResolution);
-        oldIntegratedColour = historyBuffer[SLOT_COLOUR][oldRayPixelPos];
+        oldIntegratedColour = BilienarFilter(historyBuffer[SLOT_COLOUR], oldPos.xy * filterData.windowResolution);
+        //oldIntegratedColour = historyBuffer[SLOT_COLOUR][oldRayPixelPos];
 
     }
     
     
     
-    
-    #if 0
+    float4 newIntegratedColour = 0;
+    #if 1
     if (reuseSample)
         newIntegratedColour = alpha * newRadiance + (1 - alpha) * oldIntegratedColour;
     else
@@ -172,7 +174,8 @@ void main( ComputeShaderInput IN )
     
     filterBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy] = newIntegratedColour;
     
-    result = newIntegratedColour;
+    //result = reuseSample ? newIntegratedColour : float4(1, 0, 0, 0);
+    result = oldPos.x <= 0 || oldPos.y <= 0 || oldPos.x >= 1 || oldPos.y >= 1 ? float4(1, 0, 0, 0) : newIntegratedColour;
     
 #if 0
     float3 diff = historyBuffer[1][IN.DispatchThreadID.xy].xyz - rayBuffer[1][IN.DispatchThreadID.xy].xyz;

@@ -76,8 +76,7 @@ struct FrameData
 
     FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, 
             DirectX::XMFLOAT2 cameraWinSize, uint32_t defaultBouncesPerPath)
-        : accumulatedFrames( 0 )
-        , nbrBouncesPerPath( defaultBouncesPerPath )
+        : nbrBouncesPerPath( defaultBouncesPerPath )
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , exponentSamplesPerPixel( 0 )
     {
@@ -116,8 +115,6 @@ struct FrameData
 
     DirectX::XMFLOAT3X4 camPixelToWorld;
 
-
-    uint32_t accumulatedFrames;
     uint32_t exponentSamplesPerPixel;
     uint32_t nbrBouncesPerPath;
     uint32_t cpuGeneratedSeed;
@@ -218,6 +215,8 @@ struct DenoiserFilterData
 
     DirectX::XMFLOAT2 m_CameraWinSize;
     DirectX::XMFLOAT2 m_WindowResolution;
+
+    float m_ReprojectErrorLimit = 10;
 
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
