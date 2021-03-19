@@ -400,20 +400,16 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     rayPosDepth->SetName( L"RayGen position/depth output texture" );
 
     auto rayObjID = m_Device->CreateTexture( renderDesc, nullptr );
-    rayObjID->SetName( L"RayGen object ID output texture" );
-
-    auto raySpec = m_Device->CreateTexture( renderDesc, nullptr );
-    raySpec->SetName( L"RayGen specular output texture" );
+    rayObjID->SetName( L"RayGen object ID/mask output texture" );
 
     
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPosDepth );
     m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color4, raySpec );
 
-    auto integratedColour = m_Device->CreateTexture( renderDesc, nullptr );
-    integratedColour->SetName( L"History integrated colour output texture" );
+    auto oldIntegratedColour = m_Device->CreateTexture( renderDesc, nullptr );
+    oldIntegratedColour->SetName( L"History integrated colour output texture" );
 
     auto oldNormals = m_Device->CreateTexture( renderDesc, nullptr );
     oldNormals->SetName( L"RayGen normal output texture" );
@@ -424,19 +420,24 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto oldObjID = m_Device->CreateTexture( renderDesc, nullptr );
     oldObjID->SetName( L"History object ID output texture" );
 
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color0, integratedColour );
+    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color0, oldIntegratedColour );
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color1, oldNormals );
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color2, oldPosDepth );
     m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color3, oldObjID );
 
-    D3D12_RESOURCE_DESC renderDescFiltered =
+    D3D12_RESOURCE_DESC renderDescSDR =
         CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
-    renderDescFiltered.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    renderDescSDR.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 
-    auto filteredOutput = m_Device->CreateTexture( renderDescFiltered, nullptr );
+    auto newIntegratedColour = m_Device->CreateTexture( renderDesc, nullptr );
+    newIntegratedColour->SetName( L"New integrated colour output texture" );
+
+    auto filteredOutput = m_Device->CreateTexture( renderDescSDR, nullptr );
     filteredOutput->SetName( L"Denoiser SDR filtered image" );
 
-    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color0, filteredOutput );
+
+    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color0, newIntegratedColour );
+    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color1, filteredOutput );
 
    
     auto totalNbrRenderTargets = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
@@ -1280,7 +1281,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 
         isAccumelatingFrames &= m_frameData.Equal( &old );
 
-        m_FilterData.BuildOldAndNewDenoiser( &old, &m_frameData, m_CamWindow );
+        m_FilterData.BuildOldAndNewDenoiser( &old, &m_frameData, m_CamWindow, m_Width, m_Height);
 
 
         if ( !isAccumelatingFrames )
@@ -1422,17 +1423,23 @@ void DummyGame::OnRender()
 
                 commandList->UAVBarrier( resource, true );
             }
+
+            // make sure history buffer is done before filter
+            for ( uint32_t i = 0; i < m_nbrHistoryRenderTargets; ++i )
+            {
+                auto resource = m_HistoryRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                commandList->UAVBarrier( resource, true );
+            }
         }
 #endif
 
         /*
         0. colour
         1. normal
-        2. position
-        3. object
-        4. specular
+        2. posDepth
+        3. objectMask
         */
-        auto outputImage = m_FilterRenderTarget.GetTexture( AttachmentPoint::Color0 );
 
         // Set global root signature
         commandList->SetComputeRootSignature( m_DenoiserRootSig );
@@ -1449,8 +1456,15 @@ void DummyGame::OnRender()
         commandList->ClearTexture( outputImage, clearColor );
         #endif
          
-        commandList->UAVBarrier( outputImage, true);
 
+        for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
+        {
+            auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+            commandList->UAVBarrier( resource, true );
+        }
+
+        
+        auto  outputImage         = m_FilterRenderTarget.GetTexture( m_FilterOutputSDR );
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
         auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
 
@@ -1459,17 +1473,22 @@ void DummyGame::OnRender()
 
 
         // Copy flatout to history buffer without processing
-        auto dstNormal = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color1 );
-        auto srcNormal = m_RayRenderTarget.GetTexture( AttachmentPoint::Color1 );
+        auto dstNormal = m_HistoryRenderTarget.GetTexture( m_NormalsSlot );
+        auto srcNormal = m_RayRenderTarget.GetTexture( m_NormalsSlot );
         commandList->CopyResource( dstNormal, srcNormal );
 
-        auto dstWorldDepth = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color2 );
-        auto srcWorldDepth = m_RayRenderTarget.GetTexture( AttachmentPoint::Color2 );
+        auto dstWorldDepth = m_HistoryRenderTarget.GetTexture( m_PosDepth );
+        auto srcWorldDepth = m_RayRenderTarget.GetTexture( m_PosDepth );
         commandList->CopyResource( dstWorldDepth, srcWorldDepth );
         
-        auto dstObject = m_HistoryRenderTarget.GetTexture( AttachmentPoint::Color3 );
-        auto srcObject = m_RayRenderTarget.GetTexture( AttachmentPoint::Color3 );
+        auto dstObject = m_HistoryRenderTarget.GetTexture( m_ObjectMask );
+        auto srcObject = m_RayRenderTarget.GetTexture( m_ObjectMask );
         commandList->CopyResource( dstObject, srcObject );
+
+        // Transfer new render target
+        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
+        auto srcIntegratedColour = m_FilterRenderTarget.GetTexture( m_ColourSlot );
+        commandList->CopyResource( dstIntegradedColour, srcIntegratedColour );
 
         //commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 

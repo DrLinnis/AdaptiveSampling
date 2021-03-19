@@ -32,10 +32,10 @@ struct RayPayload
     
     // For denoising
     float prob;
-    float specular;
     int object;
     
     // Ray Properties
+    float mask;
     uint depth;
     uint rayMode;
     uint seed;
@@ -444,7 +444,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY)
         {
             result.normal = currRay.normal;
-            result.specular = currRay.specular;
+            result.mask = currRay.mask;
             result.object = currRay.object;
             result.position = currRay.position;
             
@@ -751,8 +751,7 @@ void rayGen()
     gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, frame.accumulatedFrames);
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
-    gOutput[SLOT_OBJECT_ID][launchIndex.xy] = float4(GenColour(payload.object + 1), 1);
-    gOutput[4][launchIndex.xy] = float4(payload.specular, payload.specular, payload.specular, 1);
+    gOutput[SLOT_OBJECT_ID][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
 
 }
 
@@ -768,6 +767,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     float hitT = RayTCurrent();
     float3 rayDirW = WorldRayDirection();
     float3 rayOriginW = WorldRayOrigin();
+    
+    float3 posW = rayOriginW + hitT * rayDirW;
     
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
@@ -813,7 +814,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     if ((tex_rgba.w == 0 || frontFace) && payload.depth > 0)
     {
         payload.reflectDir = rayDirW;
-        payload.position = v.position;
+        payload.position = posW;
         payload.prob = 1.0f;
         payload.colour = 1.0f;
         payload.radiance = 0;
@@ -854,7 +855,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         float divIoR = payload.mediumIoR / mat.IndexOfRefraction;
         
-        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, v.position, mat.Type, albedo,
+        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, posW, mat.Type, albedo,
                         specVal, mat.Roughness, divIoR, payload.depth);
         sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
@@ -862,7 +863,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             payload.mediumIoR = mat.IndexOfRefraction;
         
         
-        payload.position = v.position;
+        payload.position = posW;
         payload.radiance = mat.Emittance;
         payload.colour /= payload.prob;
         
@@ -870,7 +871,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         {
             payload.normal = normal;
             payload.object = GeometryIndex();
-            payload.specular = specVal;
+            payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;
         }
     }
@@ -915,7 +916,7 @@ void standardMiss(inout RayPayload payload)
     payload.normal = 0;
     payload.position = rayOriginW + 100000 * rayDirW;
     
-    payload.specular = 0;
+    payload.mask = 0;
     payload.object = -1;
     
     payload.rayMode = RAY_SECONDARY;
