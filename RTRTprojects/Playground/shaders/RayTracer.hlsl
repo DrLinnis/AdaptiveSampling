@@ -31,11 +31,10 @@ struct RayPayload
     float3 radiance;
     
     // For denoising
-    float prob;
     int object;
+    float mask;
     
     // Ray Properties
-    float mask;
     uint depth;
     uint rayMode;
     uint seed;
@@ -155,16 +154,6 @@ SamplerState pointFilter : register(s1);
 float mod(float x, float y)
 {
     return x - y * floor(x / y);
-}
-
-float3 linearToSrgb(float3 c)
-{
-    // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
-    float3 sq1 = sqrt(c);
-    float3 sq2 = sqrt(sq1);
-    float3 sq3 = sqrt(sq2);
-    float3 srgb = 0.662002687 * sq1 + 0.684122060 * sq2 - 0.323583601 * sq3 - 0.0225411470 * c;
-    return srgb;
 }
 
 float3 modelToWorldPosition(float3 pos)
@@ -297,7 +286,7 @@ uint3 _getIndices(uint geometryIdx, uint triangleIndex)
     return indices[geometryIdx].Load3(indexByteStartAddress);
 }
 
-VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics)
+VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, float3 barycentrics, out float3 faceNormal)
 {
     int i;
     uint3 triangleIndices = _getIndices(geometryIndex, primitiveIndex);
@@ -338,6 +327,8 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     
     // DEPTH CALCULATION BASED ON:
     // https://media.contentapi.ea.com/content/dam/ea/seed/presentations/2019-ray-tracing-gems-chapter-20-akenine-moller-et-al.pdf
+    
+    faceNormal = cross(normalize(vertPos[0] - vertPos[1]), normalize(vertPos[0] - vertPos[2]));
     
     
     float tA = abs((texels[1].x - texels[0].x) * (texels[2].y - texels[0].y) -
@@ -546,10 +537,11 @@ float _Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3
 
 
 // Cook Torrance BRDF
-void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
+void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
                 in MaterialInfoBDRF mat, in bool sampleLight, inout uint seed)
 {
     float3 brdfEval;
+    float sampleProb;
     
     // Reflection dir, view vector, normal, half-vector
     float3 R, V = mat.view, N = mat.normal, H;
@@ -569,6 +561,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         
         if (sampleLight && dot(N, L) >= 0 && rnd(seed) < 0.5)
             R = L;
+        
 #endif
         
         R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
@@ -578,6 +571,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
         
         // Can't divide by zero
         cosNR = max(dot(N, R), EPSILON);
+        //cosNR = dot(N, R);
             
         sampleProb = cosNR * InvPi;
         brdfEval = mat.colour * InvPi;
@@ -643,6 +637,8 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
             cosVH = max(dot(V, H), 0);
         }
         
+        
+        
         if (cosNR < 0)
         {
             brdfEval = 0;
@@ -690,7 +686,7 @@ void sampleBRDF(out float3 sampleDir, out float sampleProb, out float3 brdfCos,
     }
     
     sampleDir = R;
-    brdfCos = brdfEval * cosNR;
+    brdfCos = sampleProb <= 0 ? 0 : brdfEval * cosNR / sampleProb;
 }
 
 /* 
@@ -772,8 +768,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     // (w,u,v)
     float3 barycentrics = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
     
+    float3 faceNormal;
     RayMaterialProp mat = GetMaterialProp(GeometryIndex());
-    VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics);
+    VertexAttributes v = GetVertexAttributes(GeometryIndex(), PrimitiveIndex(), barycentrics, faceNormal);
     
     // Alpha can be set by either mask or diffuse texture
     float4 tex_rgba = float4(mat.Diffuse, 1);
@@ -814,7 +811,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     {
         payload.reflectDir = rayDirW;
         payload.position = posW;
-        payload.prob = 1.0f;
         payload.colour = 1.0f;
         payload.radiance = 0;
     }
@@ -823,8 +819,16 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
         
+        
+        // View Vector
+        float3 V = -rayDirW;
+        
         // Build normal
+        float3 objNormal = v.normal;
         float3 normal = v.normal;
+        if (dot(V, normal) < 0 && dot(V, faceNormal) >= 0)
+            normal = faceNormal;
+        
         if (mat.NormalTextureIdx >= 0)
         {
             // from [0,1] to [-1, 1]
@@ -833,13 +837,12 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             normal = mul(normal, TBN);
         }
         normal = normalize(mul(instTrans.normalModelToWorld, float4(normal, 0)).xyz);
-        // Flip normals on two sided faces
-        if (dot(rayDirW, normal) > 0)
+        
+        // If face normal is visible, and fictive normal against us, then flip
+        if (dot(V, normal) < 0)
             normal = -normal;
         
         
-        // View Vector
-        float3 V = -rayDirW;
         
         float specVal = mat.Reflectivity;
         if (mat.SpecularTextureIdx >= 0)
@@ -856,7 +859,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, posW, mat.Type, albedo,
                         specVal, mat.Roughness, divIoR, payload.depth);
-        sampleBRDF(payload.reflectDir, payload.prob, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
+        sampleBRDF(payload.reflectDir, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
         if (mat.Type == DIALECTIC && dot(normal, payload.reflectDir) < 0)
             payload.mediumIoR = mat.IndexOfRefraction;
@@ -864,11 +867,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         payload.position = posW;
         payload.radiance = mat.Emittance;
-        payload.colour /= payload.prob;
         
         if (payload.rayMode == RAY_PRIMARY)
         {
-            payload.normal = normal;
+            payload.normal = objNormal;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;

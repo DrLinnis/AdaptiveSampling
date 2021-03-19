@@ -57,6 +57,18 @@ RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 
 #define REPROJ_DELTA 0.01
 
+
+float3 linearToSrgb(float3 c)
+{
+    // Based on http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+    float3 sq1 = sqrt(c);
+    float3 sq2 = sqrt(sq1);
+    float3 sq3 = sqrt(sq2);
+    float3 srgb = 0.662002687 * sq1 + 0.684122060 * sq2 - 0.323583601 * sq3 - 0.0225411470 * c;
+    return srgb;
+}
+
+
 float4 BilienarFilter(RWTexture2D<float4> tex, float2 st)
 {
     float2 AB = frac(st);
@@ -136,12 +148,12 @@ void main( ComputeShaderInput IN )
             reuseSample &= length(oldPos.xy - newPos.xy) == 0;
         
         // if the old position is about the same as the new position
-        //float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
-        float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
+        float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
+        //float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
         reuseSample &= length(oldRayPos - newPosDepth.xyz) < filterData.reprojectErrorLimit;
 
         // check normals?
-        float3 newNormals = normalize(rayBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
+        float3 newNormals = normalize(rayBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz * 2 - 1);
         float3 oldNormals = normalize(BilienarFilter(historyBuffer[SLOT_NORMALS], oldPos.xy * filterData.windowResolution).xyz * 2 - 1);
         reuseSample &= dot(newNormals, oldNormals) >= 0.95;
         
@@ -187,6 +199,6 @@ void main( ComputeShaderInput IN )
     
 #endif
     
-    filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(result, 0, 1);
-
+    filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(result.xyz), 1), 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(float4(rayBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz, 1), 0, 1);
 }
