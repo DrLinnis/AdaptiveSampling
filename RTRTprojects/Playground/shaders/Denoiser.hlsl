@@ -122,13 +122,13 @@ void main( ComputeShaderInput IN )
     
     bool reuseSample = false;
     // If current position is visible in integrated history buffer.
-    if (oldPos.x >= 0 && oldPos.x <= 1 && oldPos.y >= 0 && oldPos.y <= 1 && oldPos.z >= -0.5)
+    if (oldPos.x > 0 && oldPos.x < 1 && oldPos.y > 0 && oldPos.y < 1 && oldPos.z >= 0)
     {
         uint2 oldRayPixelPos = (uint2) (clamp(oldPos.xy, 0, 1) * filterData.windowResolution);
     
         // If the old object is the same object, then we can reuse
         float4 newObjMask = rayBuffer[SLOT_OBJECT_ID][IN.DispatchThreadID.xy];
-        float4 oldObjMask = historyBuffer[SLOT_OBJECT_ID][oldRayPixelPos];
+        float4 oldObjMask = BilienarFilter(historyBuffer[SLOT_OBJECT_ID], oldPos.xy * filterData.windowResolution);
         reuseSample = length(newObjMask.xyz - oldObjMask.xyz) == 0;
     
         // Check that the material is not lambertian, then just accumulate on same position
@@ -136,13 +136,13 @@ void main( ComputeShaderInput IN )
             reuseSample &= length(oldPos.xy - newPos.xy) == 0;
         
         // if the old position is about the same as the new position
-        float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
-        //float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
+        //float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
+        float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
         reuseSample &= length(oldRayPos - newPosDepth.xyz) < filterData.reprojectErrorLimit;
 
         // check normals?
         float3 newNormals = normalize(rayBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
-        float3 oldNormals = normalize(historyBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
+        float3 oldNormals = normalize(BilienarFilter(historyBuffer[SLOT_NORMALS], oldPos.xy * filterData.windowResolution).xyz * 2 - 1);
         reuseSample &= dot(newNormals, oldNormals) >= 0.95;
         
         
@@ -174,8 +174,9 @@ void main( ComputeShaderInput IN )
     
     filterBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy] = newIntegratedColour;
     
+    
+    result = newIntegratedColour;
     //result = reuseSample ? newIntegratedColour : float4(1, 0, 0, 0);
-    result = oldPos.x <= 0 || oldPos.y <= 0 || oldPos.x >= 1 || oldPos.y >= 1 ? float4(1, 0, 0, 0) : newIntegratedColour;
     
 #if 0
     float3 diff = historyBuffer[1][IN.DispatchThreadID.xy].xyz - rayBuffer[1][IN.DispatchThreadID.xy].xyz;
