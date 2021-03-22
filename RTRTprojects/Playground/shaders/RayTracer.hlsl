@@ -9,11 +9,11 @@
 #define EPSILON 0.00001
 
 #define T_HIT_MIN 0.0001
+#define T_HIT_MAX 100000
 
-#define LAMBERTIAN  0
-#define METALIC       1
-#define PLASTIC     2
-#define DIALECTIC   3
+#define DIFFUSE         0
+#define SPECULAR        1
+#define TRANSMISSIVE    2
 
 #define RAY_PRIMARY 0
 #define RAY_SECONDARY 1
@@ -408,7 +408,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     ray.Origin = origin;
     ray.Direction = direction;
     ray.TMin = 0.0;
-    ray.TMax = 100000;
+    ray.TMax = T_HIT_MAX;
     
     float3 radiance = 0;
     float3 colour = 1.0f;
@@ -445,7 +445,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (length(currRay.radiance) > 0 || length(colour) < 0.05)
+        if (length(currRay.radiance) > 0 || length(colour) < 0.01)
         {
             break;
         }
@@ -517,6 +517,7 @@ float3 GenColour(int id)
 
 float _TrowbridgeReitz(in float cos2, in float alpha2)
 {
+    cos2 = max(cos2, EPSILON);
     float x = alpha2 + (1 - cos2) / cos2;
     return alpha2 / (PI * cos2 * cos2 * x * x);
 }
@@ -526,10 +527,10 @@ float _Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3
     if (dot(wo, wm) < 0 || dot(wi, wm) < 0)
         return 0.0f;
 
-    float cos2 = dot(wn, wo);
+    float cos2 = max(dot(wn, wo), EPSILON);
     cos2 *= cos2;
     float lambda1 = 0.5 * (-1 + sqrt(1 + alpha2 * (1 - cos2) / cos2));
-    cos2 = dot(wn, wi);
+    cos2 = max(dot(wn, wi), EPSILON);
     cos2 *= cos2;
     float lambda2 = 0.5 * (-1 + sqrt(1 + alpha2 * (1 - cos2) / cos2));
     return 1 / (1 + lambda1 + lambda2);
@@ -551,63 +552,44 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     //float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
     float alpha2 = mat.roughness * mat.roughness;
     
-    if (mat.type == LAMBERTIAN)
+    if (mat.type == DIFFUSE)
     {
-        
-#if 0
-        const float mix = 0.0;
-        
-        float3 L = SampleNearestLightDirection(mat.pos, mat.normal);
-        
-        if (sampleLight && dot(N, L) >= 0 && rnd(seed) < 0.5)
-            R = L;
-        
-#endif
-        
-        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
-        
-        
-        R = normalize(R);
-        
-        // Can't divide by zero
-        cosNR = max(dot(N, R), EPSILON);
-        //cosNR = dot(N, R);
-            
-        sampleProb = cosNR * InvPi;
-        brdfEval = mat.colour * InvPi;
-
-    }
-    
-    else if (mat.type == METALIC)
-    {
-        
         H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
         H = normalize(applyRotationMappingZToN(N, H));
         
-        cosNH = max(dot(N, H), 0);
-        cosNV = max(dot(N, V), 0);
-        cosVH = max(dot(V, H), 0);
+        cosNH = dot(N, H);
+        cosNV = dot(N, V);
+        cosVH = dot(V, H);
         
         R = 2 * cosVH * H - V;
         
-        // Can't divide by zero
-        cosNR = max(dot(N, R), EPSILON);
+        R = normalize(R);
         
+        cosNR = dot(N, R);
+        
+        if (cosNR < 0) // Can't sample in negative hemisphere
+        {
+            sampleProb = 0;
+            brdfEval = 0;
+        }
+        else
+        {
+            float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
+            float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
+            float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5);
     
-        float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
-        float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
-        float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5);
-    
-        // Can't divide by zero
-        float denomBRDF = max(4 * cosNV * cosNR, EPSILON);
-        float denomProb = max(4 * cosNV, EPSILON);
+            // Can't divide by zero
+            float denomBRDF = max(4 * cosNV * cosNR, EPSILON);
+            float denomProb = max(4 * cosNV, EPSILON);
             
-        sampleProb = D * cosNH / denomProb;
-        brdfEval = (D * G / denomBRDF) * F;
+            sampleProb = D * cosNH / denomProb;
+            brdfEval = (D * G / denomBRDF) * F;
+        }
+            
         
     }
     
-    else if (mat.type == PLASTIC)
+    else if (mat.type == SPECULAR)
     {
         float r = mat.reflectivity;
         if (rnd(seed) < r)
@@ -615,11 +597,10 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
             R = reflect(-V, N);
             H = normalize(R + V);
             
-            cosNH = max(dot(N, H), 0);
-            cosNV = max(dot(N, V), 0);
-            cosVH = max(dot(V, H), 0);
+            cosNH = dot(N, H);
+            cosNV = dot(N, V);
+            cosVH = dot(V, H);
         
-            // Can't divide by zero
             cosNR = dot(N, R);
         }
         else
@@ -628,13 +609,12 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
         
             R = normalize(R);
         
-            // Can't divide by zero
             cosNR = dot(N, R);
             H = normalize(R + V);
             
-            cosNH = max(dot(N, H), 0);
-            cosNV = max(dot(N, V), 0);
-            cosVH = max(dot(V, H), 0);
+            cosNH = dot(N, H);
+            cosNV = dot(N, V);
+            cosVH = dot(V, H);
         }
         
         
@@ -658,7 +638,7 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
 
     }
     
-    else if (mat.type == DIALECTIC)
+    else if (mat.type == TRANSMISSIVE)
     {
         R = refract(V, N, mat.ior);
         
@@ -696,7 +676,7 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
 #define SLOT_COLOUR 0
 #define SLOT_NORMALS 1
 #define SLOT_POS_DEPTH 2
-#define SLOT_OBJECT_ID 3
+#define SLOT_OBJECT_ID_MASK 3
 
 [shader("raygeneration")]
 void rayGen()
@@ -746,7 +726,7 @@ void rayGen()
     gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, 0);
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
-    gOutput[SLOT_OBJECT_ID][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
+    gOutput[SLOT_OBJECT_ID_MASK][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
 
 }
 
@@ -799,15 +779,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     
     
-    bool frontFace = false;
     
-#if 0 
-    float3 tmpNormal = normalize(mul(instTrans.normalModelToWorld, float4(v.normal, 0)).xyz);
-    frontFace = dot(tmpNormal, rayDirW) > 0;
-#endif
-    
-    // DIALECTIC pixel hit!
-    if ((tex_rgba.w == 0 || frontFace) && payload.depth > 0)
+    // transparent pixel hit!
+    if (tex_rgba.w == 0 && payload.depth > 0)
     {
         payload.reflectDir = rayDirW;
         payload.position = posW;
@@ -826,6 +800,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // Build normal
         float3 objNormal = v.normal;
         float3 normal = v.normal;
+        // if the interpolated normal is facing away from the view
         if (dot(V, normal) < 0 && dot(V, faceNormal) >= 0)
             normal = faceNormal;
         
@@ -861,7 +836,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
                         specVal, mat.Roughness, divIoR, payload.depth);
         sampleBRDF(payload.reflectDir, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
         
-        if (mat.Type == DIALECTIC && dot(normal, payload.reflectDir) < 0)
+        if (mat.Type == TRANSMISSIVE && dot(normal, payload.reflectDir) < 0)
             payload.mediumIoR = mat.IndexOfRefraction;
         
         

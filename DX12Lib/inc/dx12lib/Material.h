@@ -41,10 +41,9 @@ namespace dx12lib
 class Texture;
 
 
-#define LAMBERTIAN 0
-#define METALIC    1
-#define PLASTIC    2
-#define DIALECTIC  3
+#define DIFFUSE         0
+#define SPECULAR        1
+#define TRANSMISSIVE    2
 
 // clang-format off
 struct alignas( 16 ) MaterialProperties
@@ -59,7 +58,7 @@ struct alignas( 16 ) MaterialProperties
         const DirectX::XMFLOAT4 emissive = { 0, 0, 0, 1 },
         const DirectX::XMFLOAT4 reflectance = { 0, 0, 0, 0 }, const float opacity = 1.0f,
         const float indexOfRefraction = 0.0f, const float bumpIntensity = 1.0f,
-        const float alphaThreshold = 0.1f, uint32_t type = LAMBERTIAN, float roughness = 1.0
+        const float alphaThreshold = 0.1f, uint32_t type = DIFFUSE, float roughness = 1.0f
     )
     : Diffuse( diffuse )
     , Specular( specular )
@@ -119,7 +118,7 @@ struct alignas( 16 ) RayMaterialProp
 {
     RayMaterialProp(
         const DirectX::XMFLOAT3 diffuse = { 1, 1, 1 },
-        const int type = LAMBERTIAN,
+        const int type = DIFFUSE,
         const DirectX::XMFLOAT3 emittance = {0, 0, 0},
         const float reflectivity = 0.0f,
         const float indexOfRefraction = 1.0f

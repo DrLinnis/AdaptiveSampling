@@ -218,6 +218,10 @@ struct DenoiserFilterData
 
     float m_ReprojectErrorLimit = 1;
 
+    float sigmaDepth = 1;
+    float sigmaNormal = 128;
+    float sigmaLuminance = 4;
+
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
     {
@@ -376,18 +380,22 @@ private:
     const uint32_t m_nbrRayRenderTargets = 4;
     dx12lib::RenderTarget m_RayRenderTarget;
 
-    const uint32_t        m_nbrHistoryRenderTargets = 4;
+    const uint32_t        m_nbrHistoryRenderTargets = 5;
     dx12lib::RenderTarget m_HistoryRenderTarget;
 
-    const uint32_t        m_nbrFilterRenderTargets = 2;
+    const uint32_t        m_nbrFilterRenderTargets = 4;
     dx12lib::RenderTarget m_FilterRenderTarget;
 
-    dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color1;
+
+    dx12lib::AttachmentPoint m_FilterMomentHistory = dx12lib::AttachmentPoint::Color1;
+    dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color2;
+    dx12lib::AttachmentPoint m_FilterWavelet     = dx12lib::AttachmentPoint::Color3;
 
     dx12lib::AttachmentPoint m_ColourSlot  = dx12lib::AttachmentPoint::Color0;
     dx12lib::AttachmentPoint m_NormalsSlot = dx12lib::AttachmentPoint::Color1;
     dx12lib::AttachmentPoint m_PosDepth    = dx12lib::AttachmentPoint::Color2;
     dx12lib::AttachmentPoint m_ObjectMask  = dx12lib::AttachmentPoint::Color3;
+    dx12lib::AttachmentPoint m_MomentHistory  = dx12lib::AttachmentPoint::Color4;
 
     std::shared_ptr<dx12lib::ShaderTableResourceView>   m_RayShaderHeap;
     std::vector<InstanceTransforms>                   m_InstanceTransforms;

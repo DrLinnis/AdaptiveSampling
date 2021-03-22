@@ -403,10 +403,10 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     rayObjID->SetName( L"RayGen object ID/mask output texture" );
 
     
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color0, rayImage );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color1, rayNormals );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color2, rayPosDepth );
-    m_RayRenderTarget.AttachTexture( AttachmentPoint::Color3, rayObjID );
+    m_RayRenderTarget.AttachTexture( m_ColourSlot, rayImage );
+    m_RayRenderTarget.AttachTexture( m_NormalsSlot, rayNormals );
+    m_RayRenderTarget.AttachTexture( m_PosDepth, rayPosDepth );
+    m_RayRenderTarget.AttachTexture( m_ObjectMask, rayObjID );
 
     auto oldIntegratedColour = m_Device->CreateTexture( renderDesc, nullptr );
     oldIntegratedColour->SetName( L"History integrated colour output texture" );
@@ -420,10 +420,14 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto oldObjID = m_Device->CreateTexture( renderDesc, nullptr );
     oldObjID->SetName( L"History object ID output texture" );
 
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color0, oldIntegratedColour );
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color1, oldNormals );
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color2, oldPosDepth );
-    m_HistoryRenderTarget.AttachTexture( AttachmentPoint::Color3, oldObjID );
+    auto oldMomentHist = m_Device->CreateTexture( renderDesc, nullptr );
+    oldMomentHist->SetName( L"History moment output texture" );
+
+    m_HistoryRenderTarget.AttachTexture( m_ColourSlot, oldIntegratedColour );
+    m_HistoryRenderTarget.AttachTexture( m_NormalsSlot, oldNormals );
+    m_HistoryRenderTarget.AttachTexture( m_PosDepth, oldPosDepth );
+    m_HistoryRenderTarget.AttachTexture( m_ObjectMask, oldObjID );
+    m_HistoryRenderTarget.AttachTexture( m_MomentHistory, oldMomentHist );
 
     D3D12_RESOURCE_DESC renderDescSDR =
         CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
@@ -432,13 +436,20 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     auto newIntegratedColour = m_Device->CreateTexture( renderDesc, nullptr );
     newIntegratedColour->SetName( L"New integrated colour output texture" );
 
+    auto newMomentHistory = m_Device->CreateTexture( renderDesc, nullptr );
+    newMomentHistory->SetName( L"New moment history output texture" );
+
+    auto waveletWorkspace = m_Device->CreateTexture( renderDesc, nullptr );
+    waveletWorkspace->SetName( L"Wavelet workspace for filtering texture" );
+
     auto filteredOutput = m_Device->CreateTexture( renderDescSDR, nullptr );
     filteredOutput->SetName( L"Denoiser SDR filtered image" );
 
 
-    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color0, newIntegratedColour );
-    m_FilterRenderTarget.AttachTexture( AttachmentPoint::Color1, filteredOutput );
-
+    m_FilterRenderTarget.AttachTexture( m_ColourSlot, newIntegratedColour );
+    m_FilterRenderTarget.AttachTexture( m_FilterMomentHistory, newMomentHistory );
+    m_FilterRenderTarget.AttachTexture( m_FilterOutputSDR, filteredOutput );
+    m_FilterRenderTarget.AttachTexture( m_FilterWavelet, waveletWorkspace );
    
     auto totalNbrRenderTargets = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
 
@@ -1331,10 +1342,6 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
         m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
 
-        float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
-        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 10 );
-        m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
-
         ImGui::End();
     }
 
@@ -1364,6 +1371,21 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         }
     }
 
+    if ( ImGui::Begin( "Filter Settings" ) )
+    {
+        float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
+        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 10 );
+        m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
+
+        ImGui::SliderFloat( "Sigma Depth", &m_FilterData.sigmaDepth, 0.01, 100 );
+        ImGui::SliderFloat( "Sigma Normal Power", &m_FilterData.sigmaNormal, 1, 200 );
+        ImGui::SliderFloat( "Sigma Luminance", &m_FilterData.sigmaLuminance, 0.01, 100 );
+
+
+
+        ImGui::End();
+    }
+
     m_GUI->Render( commandList, renderTarget );
 }
 
@@ -1378,7 +1400,7 @@ void DummyGame::OnRender()
 
     auto RenderTarget = m_IsLoading ? m_SwapChain->GetRenderTarget() : m_RayRenderTarget;
 
-    FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
+    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
     if (m_IsLoading) 
     {
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
@@ -1424,6 +1446,17 @@ void DummyGame::OnRender()
                 auto resource = m_HistoryRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
 
                 commandList->UAVBarrier( resource, true );
+
+                
+            }
+
+            for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
+            {
+                auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                commandList->ClearTexture( resource, clearColor );
+
+                commandList->UAVBarrier( resource, true );
             }
         }
 #endif
@@ -1454,6 +1487,7 @@ void DummyGame::OnRender()
         for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
         {
             auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
             commandList->UAVBarrier( resource, true );
         }
 
@@ -1483,6 +1517,10 @@ void DummyGame::OnRender()
         auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
         auto srcIntegratedColour = m_FilterRenderTarget.GetTexture( m_ColourSlot );
         commandList->CopyResource( dstIntegradedColour, srcIntegratedColour );
+
+        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
+        auto srcMomentHistory = m_FilterRenderTarget.GetTexture( m_FilterMomentHistory );
+        commandList->CopyResource( dstMomentHistory, srcMomentHistory );
 
         //commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 

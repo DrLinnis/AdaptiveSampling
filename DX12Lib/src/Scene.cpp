@@ -349,21 +349,21 @@ void Scene::ImportMaterial( CommandList& commandList, const aiMaterial& material
             if ( isTransparent )
             {
                 pMaterial->SetDiffuseColor( XMFLOAT3( transpColor.r, transpColor.g, transpColor.b ) );
-                pMaterial->SetMaterialType( DIALECTIC );
+                pMaterial->SetMaterialType( TRANSMISSIVE );
             }
             else {
-                pMaterial->SetMaterialType( PLASTIC );
+                pMaterial->SetMaterialType( SPECULAR );
             }
             break;
         case aiShadingMode_Phong:  // illum 2 and rest
             if ( isTransparent )
             {
                 pMaterial->SetDiffuseColor( XMFLOAT3( transpColor.r, transpColor.g, transpColor.b ) );
-                pMaterial->SetMaterialType( DIALECTIC );
+                pMaterial->SetMaterialType( TRANSMISSIVE );
             }
             else
             {
-                pMaterial->SetMaterialType( LAMBERTIAN );
+                pMaterial->SetMaterialType( DIFFUSE );
             }
             break;
         }
