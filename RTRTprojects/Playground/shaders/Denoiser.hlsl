@@ -114,7 +114,7 @@ float4 texelFetch(RWTexture2D<float4> tex, uint2 pixelPos, float4 default_value)
 }
 
 // 7x7 bilateral filter
-float calcSpatialVariance(inout float2 moment, float histlen, uint2 pixelPos, float2 deltaDepth)
+float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
 {
     
     float weightSum = 1.0;
@@ -124,7 +124,7 @@ float calcSpatialVariance(inout float2 moment, float histlen, uint2 pixelPos, fl
     
     float3 normalPixel = normalize(texelFetch(rayBuffer[SLOT_NORMALS], pixelPos, 0).xyz * 2 - 1);
     float3 meshPixel = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], pixelPos, 0).xyz;
-    
+    float3 positionPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], pixelPos, 0).xyz;
     
     for (int yy = -radius; yy <= radius; ++yy)
     {
@@ -135,17 +135,17 @@ float calcSpatialVariance(inout float2 moment, float histlen, uint2 pixelPos, fl
                 continue;
             }
             
-            uint2 p = int2(pixelPos) + int2(xx, yy);
-            float3 curColor = texelFetch(filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], p, 0).rgb;
-            float curDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], p, 0).w;
-            float3 curNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], p, 0).xyz * 2 - 1);
-            float3 curMeshID = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], p, 0).xyz;
+            uint2 q = int2(pixelPos) + int2(xx, yy);
+            float3 curColor = texelFetch(filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], q, 0).rgb;
+            float3 currPos = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).xyz;
+            float3 curNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
+            float3 curMeshID = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
             
             
             float lumQ = luminance(curColor.xyz);
             
             // x in w_z = exp(-x)
-            float weightDepth = abs(curDepth - deltaDepth.x) / (length(float2(xx, yy)) + EPSILON);
+            float weightDepth = dot(currPos - positionPixel, currPos - positionPixel) / (length(float2(xx, yy)) + EPSILON);
             // w_n 
             float weightNormal = pow(max(0, dot(curNormal, normalPixel)), 128);
             
@@ -167,7 +167,7 @@ float calcSpatialVariance(inout float2 moment, float histlen, uint2 pixelPos, fl
     return (1.0 + 2.0 * (1 - histlen)) * max(0.0, moment.y - moment.x * moment.x);
 }
 
-float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uint2 currUv, float2 deltaDepth, int step_size )
+float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uint2 currUv, int step_size )
 {
     float newVar = 0;
     float4 result = 0;
@@ -186,6 +186,7 @@ float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uin
     
     float3 normalPixel = normalize(texelFetch(rayBuffer[SLOT_NORMALS], currUv, 0).xyz * 2 - 1);
     float luminancePixel = luminance(colour[currUv].xyz);
+    float3 positionPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], currUv, 0).xyz;
     
     for (int yy = -radius; yy <= radius; ++yy)
     {
@@ -196,16 +197,16 @@ float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uin
             
             uint2 q = currUv + int2(xx, yy) * step_size;
             
-            float currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w / T_HIT_MAX;
+            float3 currPos = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).xyz;
             float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
             float currLuminance = luminance(colour[q].xyz);
             
             // LOOK AT THIS := https://github.com/NVIDIA/Q2RTX/blob/master/src/refresh/vkpt/shader/asvgf_atrous.comp
-            float weightDepth = abs(currDepth - deltaDepth.x / T_HIT_MAX) / (filterData.sigmaDepth + EPSILON);
+            float weightDepth = dot(currPos - positionPixel, currPos - positionPixel) / (filterData.sigmaDepth * length(float2(xx, yy)) + EPSILON);
             float weightNormal = pow(max(0, dot(currNormal, normalPixel)), filterData.sigmaNormal);
             float weightLuminance = abs(luminancePixel - currLuminance) / (filterData.sigmaLuminance * sqrt(variance) + EPSILON);
             
-            float w_i = exp(-weightDepth / step_size) * weightNormal * exp(-weightLuminance);
+            float w_i = exp(-weightDepth / float(step_size)) * weightNormal * exp(-weightLuminance);
             
             colourNominator += h * w_i * colour[q];
             colourDenominator += h * w_i;
@@ -312,13 +313,11 @@ void main( ComputeShaderInput IN )
         ESTIMATE VARIANCE AND WAVELETS
     */
     
-    // depth = (depth, Delta[oldClipPos, newClipPos])
-    float2 deltaDepth = float2(newDiv, length(oldClipPos - newClipPos)); // Divide by T_HIT_MAX ?
     
     // only use the variance once the moment has been accumulated for a while.
-    float variance = histlen > 4 ? temporalVariance : calcSpatialVariance(moment, histlen, IN.DispatchThreadID.xy, deltaDepth);
+    float variance = histlen > 4 ? temporalVariance : calcSpatialVariance(moment, histlen, IN.DispatchThreadID.xy);
     
-    newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], IN.DispatchThreadID.xy, deltaDepth, 1);
+    newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], IN.DispatchThreadID.xy, 1);
     
     filterBuffer[FILTER_SLOT_MOMENT][IN.DispatchThreadID.xy] = float4(reuseSample ? moment : 0, reuseSample ? histlen + 1 : 0, variance);
     
@@ -339,7 +338,7 @@ void main( ComputeShaderInput IN )
         
         // sync everyong finish writing before we read in the wavelet.
         AllMemoryBarrierWithGroupSync();
-        newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_WAVELET], IN.DispatchThreadID.xy, deltaDepth, 1 << i);
+        newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_WAVELET], IN.DispatchThreadID.xy, (1 << i));
         
     }
     
