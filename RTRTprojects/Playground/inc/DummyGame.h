@@ -216,11 +216,14 @@ struct DenoiserFilterData
     DirectX::XMFLOAT2 m_CameraWinSize;
     DirectX::XMFLOAT2 m_WindowResolution;
 
+    float m_alpha_new         = 0.2;
     float m_ReprojectErrorLimit = 1;
 
     float sigmaDepth = 1;
     float sigmaNormal = 128;
     float sigmaLuminance = 4;
+
+    int stepSize = 1;
 
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
@@ -389,7 +392,7 @@ private:
 
     dx12lib::AttachmentPoint m_FilterMomentHistory = dx12lib::AttachmentPoint::Color1;
     dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color2;
-    dx12lib::AttachmentPoint m_FilterWavelet     = dx12lib::AttachmentPoint::Color3;
+    dx12lib::AttachmentPoint m_FilterWaveletTarget     = dx12lib::AttachmentPoint::Color3;
 
     dx12lib::AttachmentPoint m_ColourSlot  = dx12lib::AttachmentPoint::Color0;
     dx12lib::AttachmentPoint m_NormalsSlot = dx12lib::AttachmentPoint::Color1;
@@ -439,7 +442,9 @@ private:
 
     // denoiser compute shader
     std::shared_ptr<dx12lib::RootSignature> m_DenoiserRootSig;
-    std::shared_ptr<dx12lib::PipelineStateObject> m_DenoiserPipelineState; 
+    std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_AtrousPipelineState;
+    std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_ReprojectionPipelineState; 
+    std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_MomentsPipelineState; 
 
 #endif
 

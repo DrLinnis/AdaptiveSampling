@@ -12,7 +12,9 @@ set( SRC_FILES
 )
 
 set( COMPUTER_SHADER_FILES
-    shaders/Denoiser.hlsl
+    shaders/SVGF_reprojection.hlsl
+    shaders/SVGF_atrous.hlsl
+    shaders/SVGF_moments.hlsl
 )
 
 set( RAY_TRACING_SHADER_FILES

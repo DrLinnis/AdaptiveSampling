@@ -449,7 +449,7 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
     m_FilterRenderTarget.AttachTexture( m_ColourSlot, newIntegratedColour );
     m_FilterRenderTarget.AttachTexture( m_FilterMomentHistory, newMomentHistory );
     m_FilterRenderTarget.AttachTexture( m_FilterOutputSDR, filteredOutput );
-    m_FilterRenderTarget.AttachTexture( m_FilterWavelet, waveletWorkspace );
+    m_FilterRenderTarget.AttachTexture( m_FilterWaveletTarget, waveletWorkspace );
    
     auto totalNbrRenderTargets = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
 
@@ -1067,8 +1067,14 @@ bool DummyGame::LoadContent()
 
     {
         // Load compute shader
-        ComPtr<ID3DBlob> cs;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/Denoiser.cso", &cs ) );
+        ComPtr<ID3DBlob> svgf_atrous;
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_atrous.cso", &svgf_atrous ) );
+
+        ComPtr<ID3DBlob> svgf_reprojection;
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_reprojection.cso", &svgf_reprojection ) );
+
+        ComPtr<ID3DBlob> svgf_moments;
+        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_moments.cso", &svgf_moments ) );
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
 
@@ -1103,12 +1109,26 @@ bool DummyGame::LoadContent()
         {
             CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
             CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
-        } denoiserPipelineStateStream;
+        };
+        
+        // Atrous wavelet filter
+        struct DenoiserPipelineState svgfAtrousPipelineStateStream = {};
+        svgfAtrousPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+        svgfAtrousPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_atrous.Get() );
+        m_SVGF_AtrousPipelineState = m_Device->CreatePipelineStateObject( svgfAtrousPipelineStateStream );
 
-        denoiserPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        denoiserPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( cs.Get() );
+        // Reprojection filter
+        struct DenoiserPipelineState svgfReprojectionPipelineStateStream = {};
+        svgfReprojectionPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+        svgfReprojectionPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_reprojection.Get() );
+        m_SVGF_ReprojectionPipelineState = m_Device->CreatePipelineStateObject( svgfReprojectionPipelineStateStream );
 
-        m_DenoiserPipelineState = m_Device->CreatePipelineStateObject( denoiserPipelineStateStream );
+        // Moments filter
+        struct DenoiserPipelineState svgfMomentsPipelineStateStream = {};
+        svgfMomentsPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+        svgfMomentsPipelineStateStream.CS = CD3DX12_SHADER_BYTECODE( svgf_moments.Get() );
+        m_SVGF_MomentsPipelineState = m_Device->CreatePipelineStateObject( svgfMomentsPipelineStateStream );
+
     }
 
 #endif
@@ -1377,9 +1397,13 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 10 );
         m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
 
-        ImGui::SliderFloat( "Sigma Depth", &m_FilterData.sigmaDepth, 0.01, 100 );
-        ImGui::SliderFloat( "Sigma Normal Power", &m_FilterData.sigmaNormal, 1, 200 );
-        ImGui::SliderFloat( "Sigma Luminance", &m_FilterData.sigmaLuminance, 0.01, 100 );
+        ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
+
+
+
+        ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
+        ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
+        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.01, 100 );
 
 
 
@@ -1414,49 +1438,49 @@ void DummyGame::OnRender()
 
         commandList->CopyResource( swapChainBackBuffer, renderImage );
     }
-    else 
+    else
     {
 #if RAY_TRACER /* Ray tracing calling. */
         {
 
-    #if UPDATE_TRANSFORMS
-            AccelerationBuffer::CreateTopLevelAS( m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
-                                                  m_Instances, m_InstanceDescBuffer.get(), true );
-    #endif
-            
+#if UPDATE_TRANSFORMS
+            AccelerationBuffer::CreateTopLevelAS(m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
+                m_Instances, m_InstanceDescBuffer.get(), true);
+#endif
+
             // Set global root signature
-            commandList->SetComputeRootSignature( m_GlobalRootSig );
+            commandList->SetComputeRootSignature(m_GlobalRootSig);
 
             // Set pipeline and heaps for shader table
-            commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
+            commandList->SetPipelineState1(m_RayPipelineState, m_RayShaderHeap);
 
             // Dispatch Rays
-            commandList->DispatchRays( &m_RaytraceDesc );
+            commandList->DispatchRays(&m_RaytraceDesc);
 
-            for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+            for (uint32_t i = 0; i < m_nbrRayRenderTargets; ++i)
             {
-                auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+                auto resource = m_RayRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
 
-                commandList->UAVBarrier( resource, true );
+                commandList->UAVBarrier(resource, true);
             }
 
             // make sure history buffer is done before filter
-            for ( uint32_t i = 0; i < m_nbrHistoryRenderTargets; ++i )
+            for (uint32_t i = 0; i < m_nbrHistoryRenderTargets; ++i)
             {
-                auto resource = m_HistoryRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+                auto resource = m_HistoryRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
 
-                commandList->UAVBarrier( resource, true );
+                commandList->UAVBarrier(resource, true);
 
-                
+
             }
 
-            for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
+            for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i)
             {
-                auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+                auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
 
-                commandList->ClearTexture( resource, clearColor );
+                commandList->ClearTexture(resource, clearColor);
 
-                commandList->UAVBarrier( resource, true );
+                commandList->UAVBarrier(resource, true);
             }
         }
 #endif
@@ -1468,39 +1492,80 @@ void DummyGame::OnRender()
         3. objectMask
         */
 
-        // Set global root signature
-        commandList->SetComputeRootSignature( m_DenoiserRootSig );
+        // Set global root signature for denoise shaders
+        commandList->SetComputeRootSignature(m_DenoiserRootSig);
 
-        // Set pipeline and heaps for shader table
-        commandList->SetPipelineState( m_DenoiserPipelineState, false, m_RayShaderHeap);
+        // Set up block size for shaders
+#define BLOCK_SIZE 16 
 
-        // Start denoiser shader
-        #if 1
+// Get commandlist and set heap for denoise shaders
         auto d3d12Command = commandList->GetD3D12CommandList();
-        d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
-        commandList->Dispatch( (m_Width / 8), (m_Height / 8), 1, true); 
-        #else
-        commandList->ClearTexture( outputImage, clearColor );
-        #endif
-         
+        d3d12Command->SetComputeRootDescriptorTable(0, m_RayShaderHeap->GetGpuDescriptorHandle());
 
-        for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
-        {
-            auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+        // Set pipeline for REPROJECTION shader and dispatch
+        commandList->SetPipelineState(m_SVGF_ReprojectionPipelineState, false, m_RayShaderHeap);
+        commandList->Dispatch((m_Width / BLOCK_SIZE), (m_Height / BLOCK_SIZE), 1, true);
 
-            commandList->UAVBarrier( resource, true );
+
+        // Wait for dispatch to finish writing.
+        for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
+            auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
+            commandList->UAVBarrier(resource, true);
         }
 
+        // Set pipeline for MOMENTS shader and dispatch
+        commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
+        commandList->Dispatch((m_Width / BLOCK_SIZE), (m_Height / BLOCK_SIZE), 1, true);
+
+        // Wait for dispatch to finish writing.
+        for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
+            auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
+            commandList->UAVBarrier(resource, true);
+        }
+
+        // Copy moment history once we have finished writing to it.
+        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture(m_MomentHistory);
+        auto srcMomentHistory = m_FilterRenderTarget.GetTexture(m_FilterMomentHistory);
+        commandList->CopyResource(dstMomentHistory, srcMomentHistory);
+
+        // Copy integrated colour once we have finished writing to it
+        auto srcWaveletColour = m_FilterRenderTarget.GetTexture(m_FilterWaveletTarget);
+        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture(m_ColourSlot);
+        commandList->CopyResource(dstIntegradedColour, srcWaveletColour);
+
+        for (int i = 1; i < 5; i++) {
+            DenoiserFilterData* pData;
+            ThrowIfFailed( m_FilterCB->Map( (void**)&pData ) );
+            {
+                pData->stepSize = i;
+            }
+            m_FilterCB->Unmap();
+
+            // Set pipeline for MOMENTS shader and dispatch
+            commandList->SetPipelineState( m_SVGF_AtrousPipelineState, false, m_RayShaderHeap );
+            commandList->Dispatch( ( m_Width / BLOCK_SIZE ), ( m_Height / BLOCK_SIZE ), 1, true );
+
+            // Wait for dispatch to finish writing.
+            for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i ) {
+                auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+                commandList->UAVBarrier( resource, true );
+            }
+
+            auto dstFilterIntegratedColour = m_FilterRenderTarget.GetTexture( m_ColourSlot );
+            commandList->CopyResource( dstFilterIntegratedColour, srcWaveletColour );
+        }
+            
         
+
+
+        
+        // Get output image and swaptchain image, then copy over
         auto  outputImage         = m_FilterRenderTarget.GetTexture( m_FilterOutputSDR );
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
         auto  swapChainBackBuffer = swapChainRT.GetTexture( AttachmentPoint::Color0 );
-
-        // Copy to swapchain
         commandList->CopyResource( swapChainBackBuffer, outputImage );
 
-
-        // Copy flatout to history buffer without processing
+        // Copy flatout to history buffer without processing. LAST STEP 
         auto dstNormal = m_HistoryRenderTarget.GetTexture( m_NormalsSlot );
         auto srcNormal = m_RayRenderTarget.GetTexture( m_NormalsSlot );
         commandList->CopyResource( dstNormal, srcNormal );
@@ -1512,17 +1577,6 @@ void DummyGame::OnRender()
         auto dstObject = m_HistoryRenderTarget.GetTexture( m_ObjectMask );
         auto srcObject = m_RayRenderTarget.GetTexture( m_ObjectMask );
         commandList->CopyResource( dstObject, srcObject );
-
-        // Transfer new render target
-        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
-        auto srcIntegratedColour = m_FilterRenderTarget.GetTexture( m_ColourSlot );
-        commandList->CopyResource( dstIntegradedColour, srcIntegratedColour );
-
-        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
-        auto srcMomentHistory = m_FilterRenderTarget.GetTexture( m_FilterMomentHistory );
-        commandList->CopyResource( dstMomentHistory, srcMomentHistory );
-
-        //commandList->CopyResource( swapChainBackBuffer, m_DummyTexture );
 
     }
     

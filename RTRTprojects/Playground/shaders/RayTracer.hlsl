@@ -585,7 +585,18 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
             sampleProb = D * cosNH / denomProb;
             brdfEval = (D * G / denomBRDF) * F;
         }
+      
+// Reactivate old diffuse calculation
+#if 0 
+        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+        
+        R = normalize(R);
+        
+        cosNR = dot(N, R);
             
+        sampleProb = cosNR * InvPi;
+        brdfEval = mat.colour * InvPi;
+#endif
         
     }
     
@@ -889,7 +900,7 @@ void standardMiss(inout RayPayload payload)
     
     payload.reflectDir = 0.0;
     
-    payload.normal = 0;
+    payload.normal = -rayDirW;
     payload.position = rayOriginW + 100000 * rayDirW;
     
     payload.mask = 0;

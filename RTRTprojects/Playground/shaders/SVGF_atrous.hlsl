@@ -10,7 +10,6 @@
 #define T_HIT_MIN 0.0001
 #define T_HIT_MAX 100000
 
-#define BLOCK_SIZE 8
 
 struct ComputeShaderInput
 {
@@ -28,12 +27,16 @@ struct DenoiserFilterData
     float2 cameraWindowSize;
     float2 windowResolution;
     
+    float alpha;
     float reprojectErrorLimit;
     
     float sigmaDepth;
     float sigmaNormal;
     float sigmaLuminance;
+    
+    int stepSize;
 };
+
 
 ConstantBuffer<DenoiserFilterData> filterData : register(b0);
 
@@ -63,7 +66,7 @@ RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 #define FILTER_SLOT_INTEGRATED_COLOUR 0
 #define FILTER_SLOT_MOMENT 1
 #define FILTER_SLOT_SDR 2
-#define FILTER_SLOT_WAVELET 3
+#define FILTER_SLOT_WAVELET_TARGET 3
 
 #define SLOT_COLOUR 0
 #define SLOT_NORMALS 1
@@ -113,8 +116,137 @@ float4 texelFetch(RWTexture2D<float4> tex, uint2 pixelPos, float4 default_value)
     return default_value;
 }
 
+
+float CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
+{
+    float centre = tex[p].w;
+    
+    float left = texelFetch(tex, p + int2(-1, 0), centre).w;
+    float right = texelFetch(tex, p + int2(1, 0), centre).w;
+    float up = texelFetch(tex, p + int2(0, -1), centre).w;
+    float down = texelFetch(tex, p + int2(0, 1), centre).w;
+    
+    float maxVert = max(abs(centre - left), abs(centre - right));
+    float maxHori = max(abs(centre - up), abs(centre - down));
+    return max(maxVert, maxHori);
+}
+
+/* Guassian 3x3 filter*/
+float computeVarianceCenter(int2 center, RWTexture2D<float4> texInS)
+{
+    float sum = 0;
+
+    const float kernel[2][2] =
+    {
+        { 1.0 / 4.0, 1.0 / 8.0 },
+        { 1.0 / 8.0, 1.0 / 16.0 }
+    };
+
+    const int radius = 1;
+    for (int yy = -radius; yy <= radius; yy++)
+    {
+        for (int xx = -radius; xx <= radius; xx++)
+        {
+            int2 p = center + int2(xx, yy);
+
+            float k = kernel[abs(xx)][abs(yy)];
+
+            sum += texInS[p].w * k; // we sample the variance from the moments here
+        }
+    }
+
+    return sum;
+}
+
+
+#if 1
+
+/* 
+    SUMMARY:= takes from (history, ray, filter) buffer, to write to WAVELET TARGET FILTER buffer 
+*/
+
+#define BLOCK_SIZE 16
+[numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]
+void main(ComputeShaderInput IN)
+{
+    const float kernel[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
+    uint2 p = IN.DispatchThreadID.xy;
+    
+    float4 momentHistlenExtra = filterBuffer[FILTER_SLOT_MOMENT][p];
+    uint histLength = momentHistlenExtra.z;
+    
+    float4 centreColour = filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR][p];
+    
+    float lumP = luminance(centreColour.rgb);
+    
+    float3 centreNormal = rayBuffer[SLOT_NORMALS][p].xyz;
+    float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;
+    float centreDepth = rayBuffer[SLOT_POS_DEPTH][p].w / T_HIT_MAX;
+        
+    float depthGradient = CalcDepthGradient(rayBuffer[SLOT_POS_DEPTH], p) / T_HIT_MAX;
+        
+    float1 sumWeight = 1.0;
+    float4 sumColour = centreColour;
+    float sumVariance = centreColour.w;
+        
+    float var = computeVarianceCenter(p, filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR]);
+    float weightLumDenominator = filterData.sigmaLuminance * sqrt( max(0, EPSILON + var));
+    
+    // 5x5 à trous wavelet filter
+    for (int yOffset = -2; yOffset <= 2; yOffset++)
+    {
+        for (int xOffset = -2; xOffset <= 2; xOffset++)
+        {
+            if (xOffset != 0 || yOffset != 0)
+            {
+                int2 q = p + filterData.stepSize * int2(xOffset, yOffset);
+                    
+                    
+                float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], q, 0);
+                float3 currNormal = texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz;
+                float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
+                float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w / T_HIT_MAX;
+                
+                float lumQ = luminance(currColour.rgb);
+                    
+                // For estimating the variance spatially, we use normals, depth, and luminace
+                float kernelWeight = kernel[abs(xOffset)] * kernel[abs(yOffset)];
+                
+                // w_l
+                float weightLuminace = abs(lumP - lumQ) / weightLumDenominator;
+                // w_n
+                float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
+                // w_z
+                float weightDepth = abs(centreDepth - currDepth) / (abs(depthGradient * length(float2(xOffset, yOffset))) * filterData.sigmaDepth + EPSILON);
+
+                float w_i = exp(0.0 - max(weightDepth, 0.0) - max(weightLuminace, 0)) * weightNormal * kernelWeight;
+                    
+                if (isnan(w_i))
+                    w_i = 0;
+                    
+                sumColour += w_i * currColour;
+                sumVariance += w_i * w_i * currColour.w;
+                sumWeight += w_i;
+            }
+        }
+    }
+        
+    sumWeight = max(sumWeight, EPSILON);
+    sumVariance /= sumWeight * sumWeight;
+    sumColour /= sumWeight;
+        
+    filterBuffer[FILTER_SLOT_WAVELET_TARGET][p] = float4(sumColour.rgb, sumVariance);
+    
+    
+    // remove in future
+    //filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(sumColour.rgb), 1), 0, 1);
+
+}
+
+#else
+
 // 7x7 bilateral filter
-float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
+float calcSpatialVariance(inout float2 moment, float histlen, uint2 pixelPos, float linearGradientPixel)
 {
     
     float weightSum = 1.0;
@@ -124,7 +256,7 @@ float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
     
     float3 normalPixel = normalize(texelFetch(rayBuffer[SLOT_NORMALS], pixelPos, 0).xyz * 2 - 1);
     float3 meshPixel = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], pixelPos, 0).xyz;
-    float3 positionPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], pixelPos, 0).xyz;
+    float depthPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], pixelPos, 0).w;
     
     for (int yy = -radius; yy <= radius; ++yy)
     {
@@ -137,7 +269,7 @@ float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
             
             uint2 q = int2(pixelPos) + int2(xx, yy);
             float3 curColor = texelFetch(filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], q, 0).rgb;
-            float3 currPos = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).xyz;
+            float currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
             float3 curNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
             float3 curMeshID = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
             
@@ -145,7 +277,7 @@ float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
             float lumQ = luminance(curColor.xyz);
             
             // x in w_z = exp(-x)
-            float weightDepth = dot(currPos - positionPixel, currPos - positionPixel) / (length(float2(xx, yy)) + EPSILON);
+            float weightDepth = abs(depthPixel - currDepth) / (linearGradientPixel * length(float2(xx, yy)) + EPSILON);
             // w_n 
             float weightNormal = pow(max(0, dot(curNormal, normalPixel)), 128);
             
@@ -167,12 +299,8 @@ float calcSpatialVariance( inout float2 moment, float histlen, uint2 pixelPos )
     return (1.0 + 2.0 * (1 - histlen)) * max(0.0, moment.y - moment.x * moment.x);
 }
 
-float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uint2 currUv, int step_size )
+float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uint2 currUv, float linearGradientPixel, int step_size )
 {
-    float newVar = 0;
-    float4 result = 0;
-    float4 curr = colour[currUv];
-    
     
     // 3/8, 1/4, 1/16
     const float hList[] = { 0.375, 0.25, 0.0625 };
@@ -186,7 +314,8 @@ float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uin
     
     float3 normalPixel = normalize(texelFetch(rayBuffer[SLOT_NORMALS], currUv, 0).xyz * 2 - 1);
     float luminancePixel = luminance(colour[currUv].xyz);
-    float3 positionPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], currUv, 0).xyz;
+    float depthPixel = texelFetch(rayBuffer[SLOT_POS_DEPTH], currUv, 0).w;
+    float3 meshPixel = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], currUv, 0).xyz;
     
     for (int yy = -radius; yy <= radius; ++yy)
     {
@@ -195,18 +324,22 @@ float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uin
             // sample which filter kernal stage we are in.
             float h = hList[max(radius - abs(xx), radius - abs(yy))];
             
-            uint2 q = currUv + int2(xx, yy) * step_size;
+            uint2 q = currUv + int2(xx, yy);
             
-            float3 currPos = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).xyz;
+            float currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
             float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
             float currLuminance = luminance(colour[q].xyz);
+            float3 currMeshID = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
             
             // LOOK AT THIS := https://github.com/NVIDIA/Q2RTX/blob/master/src/refresh/vkpt/shader/asvgf_atrous.comp
-            float weightDepth = dot(currPos - positionPixel, currPos - positionPixel) / (filterData.sigmaDepth * length(float2(xx, yy)) + EPSILON);
+            float weightDepth = abs(depthPixel - currDepth) / (filterData.sigmaDepth * linearGradientPixel * length(float2(xx, yy)) + EPSILON);
             float weightNormal = pow(max(0, dot(currNormal, normalPixel)), filterData.sigmaNormal);
             float weightLuminance = abs(luminancePixel - currLuminance) / (filterData.sigmaLuminance * sqrt(variance) + EPSILON);
             
-            float w_i = exp(-weightDepth / float(step_size)) * weightNormal * exp(-weightLuminance);
+            float w_i = exp(-weightDepth) * weightNormal * exp(-weightLuminance) * (length(meshPixel - currMeshID) == 0 ? 1 : 0);
+            
+            if (isnan(w_i))
+                w_i = 0.0;
             
             colourNominator += h * w_i * colour[q];
             colourDenominator += h * w_i;
@@ -219,19 +352,17 @@ float4 WaveletFilter(inout float variance, in RWTexture2D<float4> colour, in uin
     
     variance = varNominator / max(varDenominator * varDenominator, EPSILON);
     return colourNominator / max(colourDenominator, EPSILON);
+    //return weightNormal;
+
 }
 
 // Shader toy inspired temporal reprojection := https://www.shadertoy.com/view/ldtGWl
+
+
+#define BLOCK_SIZE 16
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main( ComputeShaderInput IN ) 
 { 
-    float4 result = 0;
-    
-#if RAW_SAMPLES
-    result = rayBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy];
-#else
-    
-    
     float4 newRadiance = rayBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy];
     float4 newPosDepth = rayBuffer[SLOT_POS_DEPTH][IN.DispatchThreadID.xy];
     float3 newNormals = normalize(rayBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz * 2 - 1);
@@ -312,15 +443,18 @@ void main( ComputeShaderInput IN )
     /*
         ESTIMATE VARIANCE AND WAVELETS
     */
+    float centre = texelFetch(rayBuffer[SLOT_POS_DEPTH], IN.DispatchThreadID.xy, 0).w;
+    float up = texelFetch(rayBuffer[SLOT_POS_DEPTH], IN.DispatchThreadID.xy + int2(0, 1), 0).w;
+    float right = texelFetch(rayBuffer[SLOT_POS_DEPTH], IN.DispatchThreadID.xy + int2(1,0), 0).w;
     
+    float linearGradient = max(abs(centre - right), abs(centre - up));
     
     // only use the variance once the moment has been accumulated for a while.
-    float variance = histlen > 4 ? temporalVariance : calcSpatialVariance(moment, histlen, IN.DispatchThreadID.xy);
+    float variance = histlen > 4 ? temporalVariance : calcSpatialVariance(moment, histlen, IN.DispatchThreadID.xy, linearGradient);
     
-    newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], IN.DispatchThreadID.xy, 1);
+    newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], IN.DispatchThreadID.xy, linearGradient, 1);
     
     filterBuffer[FILTER_SLOT_MOMENT][IN.DispatchThreadID.xy] = float4(reuseSample ? moment : 0, reuseSample ? histlen + 1 : 0, variance);
-    
     
     int n = 5;
     for (int i = 0; i < n; ++i)
@@ -328,6 +462,7 @@ void main( ComputeShaderInput IN )
         // sync everyone finished reading in wavelet before writing to texture
         AllMemoryBarrierWithGroupSync();
         filterBuffer[FILTER_SLOT_WAVELET][IN.DispatchThreadID.xy] = newIntegratedColour;
+        filterBuffer[FILTER_SLOT_MOMENT][IN.DispatchThreadID.xy].w = variance;
         
         // ONLY write to integrated colour after first wavelet filtering, the rest is just extra processing for a pretty image.
         if (i == 0)
@@ -338,17 +473,14 @@ void main( ComputeShaderInput IN )
         
         // sync everyong finish writing before we read in the wavelet.
         AllMemoryBarrierWithGroupSync();
-        newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_WAVELET], IN.DispatchThreadID.xy, (1 << i));
+        newIntegratedColour = WaveletFilter(variance, filterBuffer[FILTER_SLOT_WAVELET], IN.DispatchThreadID.xy, linearGradient, (1 << i));
         
     }
     
     
-    result = backup;
     
     
     
+}
+
 #endif
-    
-        filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(result.xyz), 1), 0, 1);
-    
-    }
