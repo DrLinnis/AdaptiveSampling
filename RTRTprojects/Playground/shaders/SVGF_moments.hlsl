@@ -145,11 +145,11 @@ void main( ComputeShaderInput IN )
     
     uint2 p = IN.DispatchThreadID.xy;
     
-    float4 momentHistlenExtra = filterBuffer[FILTER_SLOT_MOMENT_SOURCE][p];
-    uint histLength = momentHistlenExtra.z;
+    float4 momentHistlenStepsize = filterBuffer[FILTER_SLOT_MOMENT_SOURCE][p];
+    uint histLength = momentHistlenStepsize.z;
     
     float4 centreColour = filterBuffer[FILTER_SLOT_COLOUR_SOURCE][p];
-    float2 centreMomentum = momentHistlenExtra.xy;
+    float2 centreMomentum = momentHistlenStepsize.xy;
     
     
     // Since spatial accumulation is not good enough, define spatial
@@ -175,9 +175,6 @@ void main( ComputeShaderInput IN )
                 {
                     int2 q = p + int2(xOffset, yOffset);
                     
-                    // if q is outside of frame, ignore
-                    if (q.x < 0 || q.x >= filterData.windowResolution.x || q.y < 0 || q.y >= filterData.windowResolution.y)
-                        continue;
                     
                     float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
                     float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
@@ -214,15 +211,16 @@ void main( ComputeShaderInput IN )
         variance *= 4.0 / max(1.0, histLength);
         
         filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = float4(sumColour.rgb, variance);
-        momentHistlenExtra.xy = sumMomentum;
+        momentHistlenStepsize.xy = sumMomentum;
 
     }
     else
     {
         filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = centreColour;
     }
+    momentHistlenStepsize.w = 1;
     
-    filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenExtra;
+    filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenStepsize;
     
     // remove in future
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);

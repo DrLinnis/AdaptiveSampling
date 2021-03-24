@@ -573,7 +573,7 @@ float _Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3
 
 // Cook Torrance BRDF
 void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
-                in MaterialInfoBDRF mat, in bool sampleLight, inout uint seed)
+                in MaterialInfoBDRF mat, inout uint seed)
 {
     float3 brdfEval;
     float sampleProb;
@@ -581,7 +581,7 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     // Reflection dir, view vector, normal, half-vector
     float3 R, V = mat.view, N = mat.normal, H;
     
-    float cosNH, cosVH, cosNR, cosNV, cosRH;
+    float cosNH, cosVH, cosNR, cosNV, cosRH, cosNL;
     
     //float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
     float alpha2 = mat.roughness * mat.roughness;
@@ -590,10 +590,13 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     
     const float lightSampleProb = 0.5;
     
+    cosNL = dot(N, L);
+    
     // Importance sampling
-    if (rnd(seed) < lightSampleProb && dot(N, L) > 0)
+    if (rnd(seed) < lightSampleProb && cosNL > 0)
     {
-        
+        float scatteringCone = lerp(0.0, 0.01, cosNL);
+        scatteringCone *= scatteringCone;
         float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
         R = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
         
@@ -863,14 +866,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float3 objNormal = v.normal;
         float3 normal = v.normal;
         // if the interpolated normal is facing away from the view
-        if (dot(V, normal) < 0 && dot(V, faceNormal) >= 0)
-            normal = faceNormal;
+        
         
         // If face normal is visible, and fictive normal against us, then flip
-        if (dot(V, normal) < 0)
-            normal = -normal;
-        if (dot(V, normal) < 0)
-            objNormal = -objNormal;
+        
         
         if (mat.NormalTextureIdx >= 0)
         {
@@ -900,14 +899,15 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, posW, mat.Type, albedo,
                         specVal, mat.Roughness, divIoR, payload.depth);
-        sampleBRDF(payload.reflectDir, payload.colour, matBDRF, length(mat.Emittance) == 0, payload.seed);
+        sampleBRDF(payload.reflectDir, payload.colour, matBDRF, payload.seed);
         
         if (mat.Type == TRANSMISSIVE && dot(normal, payload.reflectDir) < 0)
             payload.mediumIoR = mat.IndexOfRefraction;
         
         
         payload.position = posW;
-        payload.radiance = mat.Emittance;
+        float emittanceIntensity = length(mat.Emittance);
+        payload.radiance = clamp(mat.Emittance, 0, clamp(emittanceIntensity, 0, 5) * normalize(mat.Emittance));
         
         if (payload.rayMode == RAY_PRIMARY)
         {

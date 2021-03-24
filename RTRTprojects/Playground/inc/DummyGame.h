@@ -88,13 +88,12 @@ struct FrameData
 
     }
 
-    FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, 
-            DirectX::XMFLOAT2 cameraWinSize, uint32_t defaultBouncesPerPath)
+    FrameData( DirectX::XMFLOAT2 cameraWinSize, uint32_t defaultBouncesPerPath)
         : nbrBouncesPerPath( defaultBouncesPerPath )
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , exponentSamplesPerPixel( 0 )
     {
-        UpdateCamera( cameraPos, cameraLookAt, cameraWinSize );
+        UpdateCamera( DirectX::XMFLOAT3( 0, 2, 0 ), DirectX::XMFLOAT3( 10, 2, 0 ), cameraWinSize );
     }
 
     bool Equal( FrameData* pOld ) 
@@ -498,7 +497,7 @@ private:
     DirectX::XMFLOAT3 m_CamPos;
     DirectX::XMFLOAT2 m_CamWindow;
 
-    float cam_speed       = 300.0f;
+    float cam_speed       = 30.0f;
 
     float scene_rot_speed   = 0.0f;
     float scene_rot_offset  = 0;

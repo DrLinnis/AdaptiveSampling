@@ -183,7 +183,7 @@ void main( ComputeShaderInput IN )
         // check normals?
         float3 oldNormals = normalize(BilienarFilter(historyBuffer[SLOT_NORMALS], oldPos.xy * filterData.windowResolution).xyz * 2 - 1);
         //float3 oldNormals = normalize(historyBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
-        reuseSample &= dot(newNormals, oldNormals) >= 0.99;
+        reuseSample &= dot(newNormals, oldNormals) >= 0.95;
         
         
         // Decide alpha

@@ -173,8 +173,9 @@ void main(ComputeShaderInput IN)
     const float kernel[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
     uint2 p = IN.DispatchThreadID.xy;
     
-    float4 momentHistlenExtra = filterBuffer[FILTER_SLOT_MOMENT_SOURCE][p];
-    uint histLength = momentHistlenExtra.z;
+    float4 momentHistlenStepsize = filterBuffer[FILTER_SLOT_MOMENT_SOURCE][p];
+    uint histLength = momentHistlenStepsize.z;
+    int stepsize = (int) momentHistlenStepsize.w;
     
     float4 centreColour = filterBuffer[FILTER_SLOT_COLOUR_SOURCE][p];
     
@@ -193,7 +194,7 @@ void main(ComputeShaderInput IN)
     float weightLumDenominator = filterData.sigmaLuminance * sqrt(max(0, EPSILON + varGauss));
     
 // ignore filter
-#if 1
+#if 0
     // 5x5 à trous wavelet filter
     for (int yOffset = -2; yOffset <= 2; yOffset++)
     {
@@ -201,7 +202,7 @@ void main(ComputeShaderInput IN)
         {
             if (xOffset != 0 || yOffset != 0)
             {
-                int2 q = p + 2 * int2(xOffset, yOffset);
+                int2 q = p + stepsize * int2(xOffset, yOffset);
                 
                 if (q.x < 0 || q.x >= filterData.windowResolution.x || q.y < 0 || q.y >= filterData.windowResolution.y)
                     continue;
@@ -237,10 +238,12 @@ void main(ComputeShaderInput IN)
         
     sumWeight = max(sumWeight, EPSILON);
     sumColourVar /= float4(sumWeight.xxx, sumWeight * sumWeight);
-    
+    momentHistlenStepsize.w = stepsize + 1;
 #endif
-    filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = sumColourVar;
     
+    
+    filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = sumColourVar;
+    filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenStepsize;
     
     // remove in future
     filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(sumColourVar.rgb), 1), 0, 1);

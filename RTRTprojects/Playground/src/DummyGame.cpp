@@ -66,8 +66,8 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_IsLoading( true )
 , m_RenderScale( 1.0f )
 , m_CamWindow( width / (float)height, 1 )
-, m_CamPos( 50, 50, 0 )
-, m_frameData( XMFLOAT3( 50, 50, 0 ), XMFLOAT3( -50, 50, 0 ), XMFLOAT2(width / (float)height, 1), 10 )
+, m_CamPos( 0, 2, 0 )
+, m_frameData( XMFLOAT2(width / (float)height, 1), 10 )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -841,7 +841,8 @@ bool DummyGame::LoadContent()
     }
 
 #elif CORNELL_BOX
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
+    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); 
+    scene_scale = 10;
     
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -849,7 +850,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_MIRROR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
-    scene_scale    = 100;
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -857,7 +858,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_SPHERES
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
-    scene_scale    = 100;
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -865,7 +866,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_WATER
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" );
-    scene_scale    = 100;
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -906,6 +907,8 @@ bool DummyGame::LoadContent()
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
+    scene_scale = 1 / 10.0f;
     
 #elif DEBUG_SCENE
     // Debug scene
@@ -1577,6 +1580,10 @@ void DummyGame::OnRender()
 
             // Copy COLOUR target to source - this is used in ATROUS
             commandList->CopyResource( dstColourSource, srcColourTarget );
+            commandList->UAVBarrier( dstMomentSource, true );
+
+            // Copy MOMENT target to source - this is used in ATROUS
+            commandList->CopyResource( dstMomentSource, srcMomentTarget );
             commandList->UAVBarrier( dstMomentSource, true );
 
             if (i == 1) {
