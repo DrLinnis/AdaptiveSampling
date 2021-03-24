@@ -64,10 +64,11 @@ RWTexture2D<float4> historyBuffer[] : register( u0, space1 );
 */
 RWTexture2D<float4> filterBuffer[] : register(u0, space2 );
 
-#define FILTER_SLOT_INTEGRATED_COLOUR 0
-#define FILTER_SLOT_MOMENT 1
-#define FILTER_SLOT_SDR 2
-#define FILTER_SLOT_WAVELET_TARGET 3
+#define FILTER_SLOT_COLOUR_SOURCE 0
+#define FILTER_SLOT_MOMENT_SOURCE 1
+#define FILTER_SLOT_SDR_TARGET 2
+#define FILTER_SLOT_COLOUR_TARGET 3
+#define FILTER_SLOT_MOMENT_TARGET 4
 
 #define SLOT_COLOUR 0
 #define SLOT_NORMALS 1
@@ -134,7 +135,7 @@ float CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
 
 
 /* 
-    SUMMARY:= takes from (history, ray, filter) buffer, to write to WAVELET TARGET FILTER buffer 
+    SUMMARY:= takes from (ray, filter) buffer, to write to WAVELET TARGET FILTER buffer AND filter momentum
 */
 
 #define BLOCK_SIZE 16
@@ -144,17 +145,17 @@ void main( ComputeShaderInput IN )
     
     uint2 p = IN.DispatchThreadID.xy;
     
-    float4 momentHistlenExtra = filterBuffer[FILTER_SLOT_MOMENT][p];
+    float4 momentHistlenExtra = filterBuffer[FILTER_SLOT_MOMENT_SOURCE][p];
     uint histLength = momentHistlenExtra.z;
     
-    float4 centreColour = filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR][p];
+    float4 centreColour = filterBuffer[FILTER_SLOT_COLOUR_SOURCE][p];
     float2 centreMomentum = momentHistlenExtra.xy;
     
     
     // Since spatial accumulation is not good enough, define spatial
     if (histLength < 4)
     {
-        float3 centreNormal = rayBuffer[SLOT_NORMALS][p].xyz;
+        float3 centreNormal = normalize(rayBuffer[SLOT_NORMALS][p].xyz * 2 - 1);
         float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;
         float centreDepth = rayBuffer[SLOT_POS_DEPTH][p].w / T_HIT_MAX;
         
@@ -163,7 +164,8 @@ void main( ComputeShaderInput IN )
         float1 sumWeight = 1.0;
         float4 sumColour = centreColour;
         float2 sumMomentum = centreMomentum;
-        
+// Disable the filter
+#if 1
         // 7x7 filter to estimate variance spatialy
         for (int yOffset = -3; yOffset <= 3; yOffset++)
         {
@@ -173,12 +175,15 @@ void main( ComputeShaderInput IN )
                 {
                     int2 q = p + int2(xOffset, yOffset);
                     
+                    // if q is outside of frame, ignore
+                    if (q.x < 0 || q.x >= filterData.windowResolution.x || q.y < 0 || q.y >= filterData.windowResolution.y)
+                        continue;
                     
-                    float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_INTEGRATED_COLOUR], q, 0);
-                    float3 currNormal = texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz;
+                    float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
+                    float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
                     float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
                     float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w / T_HIT_MAX;
-                    float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT], p, 0).xy;
+                    float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT_SOURCE], p, 0).xy;
                     
                     
                     // For estimating the variance spatially, we just use normals and depth
@@ -191,7 +196,7 @@ void main( ComputeShaderInput IN )
                     if (isnan(w_i))
                         w_i = 0;
                     
-                    sumMomentum += currentMomentum * float2(w_i.xx);
+                    sumMomentum += currentMomentum * w_i.xx;
                     sumColour += w_i * currColour;
                     sumWeight += w_i;
                 }
@@ -201,17 +206,25 @@ void main( ComputeShaderInput IN )
         sumWeight = max(sumWeight, EPSILON);
         sumColour /= sumWeight;
         sumMomentum /= sumWeight;
+#endif
         
         float variance = max(0, sumMomentum.y - sumMomentum.x * sumMomentum.x);
-        filterBuffer[FILTER_SLOT_WAVELET_TARGET][p] = float4(sumColour.rgb, variance);
+        
+        // give the variance a boost for the first frames
+        variance *= 4.0 / max(1.0, histLength);
+        
+        filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = float4(sumColour.rgb, variance);
+        momentHistlenExtra.xy = sumMomentum;
 
     }
     else
     {
-        filterBuffer[FILTER_SLOT_WAVELET_TARGET][p] = centreColour;
+        filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = centreColour;
     }
     
+    filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenExtra;
+    
     // remove in future
-    //filterBuffer[FILTER_SLOT_SDR][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_WAVELET_TARGET][p].rgb), 1), 0, 1);
-
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(histLength < 4, 0, 1);
 }

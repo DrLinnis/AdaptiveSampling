@@ -48,11 +48,11 @@ struct FrameData
         auto lookAt =
             DirectX::XMLoadFloat3( &cameraLookAt );
         static auto up = 
-            DirectX::XMVectorSet( 0, 1, 0, 0 );
-
+            DirectX::XMVectorSet( 0, -1, 0, 0 );
         auto LookDirection =
             DirectX::XMVectorSubtract( lookAt, camPos );
 
+#if 0
         auto focal_length = 
             DirectX::XMVector3Length( LookDirection );
         auto w =
@@ -61,6 +61,7 @@ struct FrameData
             DirectX::XMVector3Normalize( DirectX::XMVector3Cross( w, up ) );
         auto v =
             DirectX::XMVector3Cross( u, w );
+
 
         auto Horizontal = 
             DirectX::XMVectorScale( DirectX::XMVectorMultiply( focal_length, u ), cameraWinSize.x );
@@ -72,6 +73,19 @@ struct FrameData
             DirectX::XMMATRIX( Horizontal, Vertical, LookDirection, camPos );
 
         DirectX::XMStoreFloat3x4( &this->camPixelToWorld, FinalMatrix );
+#else
+
+        auto worldToView = DirectX::XMMatrixLookToLH( camPos, LookDirection, up );
+
+        auto detView = DirectX::XMMatrixDeterminant( worldToView );
+
+        auto viewToWorld = DirectX::XMMatrixInverse( &detView, worldToView );
+
+        DirectX::XMStoreFloat3x4( &this->camPixelToWorld, viewToWorld );
+
+#endif
+
+
     }
 
     FrameData( DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, 
@@ -130,6 +144,8 @@ struct GlobalConstantData
     uint32_t nbrActiveLights;
 
     uint32_t hasSkybox;
+
+    DirectX::XMFLOAT2 _padding;
 
     // Fill all elements with empty positions
     DirectX::XMFLOAT4 lightPositions[10] = { DirectX::XMFLOAT4(0,0,0,0) };
@@ -233,7 +249,7 @@ struct DenoiserFilterData
 
         auto camPosFloat = DirectX::XMFLOAT4( 0, 0, 0, 1 );
         auto centerFloat = DirectX::XMFLOAT4( 0, 0, 1, 1 );
-        auto upFloat     = DirectX::XMFLOAT4( 0, 1, 0, 0 );
+        auto upFloat     = DirectX::XMFLOAT4( 0, -1, 0, 0 );
 
         auto centre = DirectX::XMLoadFloat4( &centerFloat );
         auto camPos = DirectX::XMLoadFloat4( &camPosFloat );
@@ -251,6 +267,9 @@ struct DenoiserFilterData
         float oldFocalLength, newFocalLength;
         DirectX::XMStoreFloat( &oldFocalLength, DirectX::XMVector3Length( oldCamLength ) );
         DirectX::XMStoreFloat( &newFocalLength, DirectX::XMVector3Length( newCamLength ) );
+
+
+
 
         auto oldDir = DirectX::XMVector3Normalize( oldCamLength );
         auto newDir = DirectX::XMVector3Normalize( newCamLength );
@@ -386,13 +405,18 @@ private:
     const uint32_t        m_nbrHistoryRenderTargets = 5;
     dx12lib::RenderTarget m_HistoryRenderTarget;
 
-    const uint32_t        m_nbrFilterRenderTargets = 4;
+    const uint32_t        m_nbrFilterRenderTargets = 5;
     dx12lib::RenderTarget m_FilterRenderTarget;
+    #define FILTER_SLOT_COLOUR_SOURCE 0
+    #define FILTER_SLOT_MOMENT_SOURCE 1
+    #define FILTER_SLOT_SDR_TARGET    2
+    #define FILTER_SLOT_COLOUR_TARGET 3
+    #define FILTER_SLOT_MOMENT_TARGET 4
 
-
-    dx12lib::AttachmentPoint m_FilterMomentHistory = dx12lib::AttachmentPoint::Color1;
+    dx12lib::AttachmentPoint m_FilterMomentSource = dx12lib::AttachmentPoint::Color1;
     dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color2;
-    dx12lib::AttachmentPoint m_FilterWaveletTarget     = dx12lib::AttachmentPoint::Color3;
+    dx12lib::AttachmentPoint m_FilterColourTarget     = dx12lib::AttachmentPoint::Color3;
+    dx12lib::AttachmentPoint m_FilterMomentTarget  = dx12lib::AttachmentPoint::Color4;
 
     dx12lib::AttachmentPoint m_ColourSlot  = dx12lib::AttachmentPoint::Color0;
     dx12lib::AttachmentPoint m_NormalsSlot = dx12lib::AttachmentPoint::Color1;

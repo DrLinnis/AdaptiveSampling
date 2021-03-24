@@ -433,23 +433,27 @@ void DummyGame::CreateShaderResource( DXGI_FORMAT backBufferFormat )
         CD3DX12_RESOURCE_DESC::Tex2D( DXGI_FORMAT_R8G8B8A8_UNORM, m_Width, m_Height, 1, 1 );
     renderDescSDR.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 
-    auto newIntegratedColour = m_Device->CreateTexture( renderDesc, nullptr );
-    newIntegratedColour->SetName( L"New integrated colour output texture" );
+    auto integratedColourSource = m_Device->CreateTexture( renderDesc, nullptr );
+    integratedColourSource->SetName( L"integrated colour source texture" );
 
-    auto newMomentHistory = m_Device->CreateTexture( renderDesc, nullptr );
-    newMomentHistory->SetName( L"New moment history output texture" );
+    auto momentSource = m_Device->CreateTexture( renderDesc, nullptr );
+    momentSource->SetName( L"moment source texture" );
 
-    auto waveletWorkspace = m_Device->CreateTexture( renderDesc, nullptr );
-    waveletWorkspace->SetName( L"Wavelet workspace for filtering texture" );
+    auto integratedColourTarget = m_Device->CreateTexture( renderDesc, nullptr );
+    integratedColourTarget->SetName( L"integrated colour target texture" );
+
+    auto momentTarget = m_Device->CreateTexture( renderDesc, nullptr );
+    momentTarget->SetName( L"moment target texture" );
 
     auto filteredOutput = m_Device->CreateTexture( renderDescSDR, nullptr );
     filteredOutput->SetName( L"Denoiser SDR filtered image" );
 
 
-    m_FilterRenderTarget.AttachTexture( m_ColourSlot, newIntegratedColour );
-    m_FilterRenderTarget.AttachTexture( m_FilterMomentHistory, newMomentHistory );
+    m_FilterRenderTarget.AttachTexture( m_ColourSlot, integratedColourSource );
+    m_FilterRenderTarget.AttachTexture( m_FilterMomentSource, momentSource );
     m_FilterRenderTarget.AttachTexture( m_FilterOutputSDR, filteredOutput );
-    m_FilterRenderTarget.AttachTexture( m_FilterWaveletTarget, waveletWorkspace );
+    m_FilterRenderTarget.AttachTexture( m_FilterColourTarget, integratedColourTarget );
+    m_FilterRenderTarget.AttachTexture( m_FilterMomentTarget, momentTarget );
    
     auto totalNbrRenderTargets = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
 
@@ -805,15 +809,15 @@ bool DummyGame::LoadContent()
 
 
     m_Globals.nbrActiveLights   = 9;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 15.55160, 3.359916, -9.547095, 0 );
-    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 0 );
-    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 0 );
-    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( 25.14169, 3.176208, -1.989974, 0 );
-    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 21.71185, 3.189476, 1.739486, 0 );
-    m_Globals.lightPositions[5] = DirectX::XMFLOAT4( 18.20104, 3.183240, 1.738785, 0 );
-    m_Globals.lightPositions[6] = DirectX::XMFLOAT4( 14.42395, 3.179192, 1.731135, 0 );
-    m_Globals.lightPositions[7] = DirectX::XMFLOAT4( 11.16639, 3.148412, 1.713052, 0 );
-    m_Globals.lightPositions[8] = DirectX::XMFLOAT4( 7.508241, 3.150581, 1.559817, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 15.55160, 3.359916, -9.547095, 10 );
+    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 1 );
+    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( 25.16472, 9.243500, -1.974456, 1 );
+    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( 25.14169, 3.176208, -1.989974, 1 );
+    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 21.71185, 3.189476, 1.739486, 1 );
+    m_Globals.lightPositions[5] = DirectX::XMFLOAT4( 18.20104, 3.183240, 1.738785, 1 );
+    m_Globals.lightPositions[6] = DirectX::XMFLOAT4( 14.42395, 3.179192, 1.731135, 1 );
+    m_Globals.lightPositions[7] = DirectX::XMFLOAT4( 11.16639, 3.148412, 1.713052, 1 );
+    m_Globals.lightPositions[8] = DirectX::XMFLOAT4( 7.508241, 3.150581, 1.559817, 1 );
 
 
     auto pos                    = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y, m_Globals.lightPositions[0].z );
@@ -840,7 +844,7 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); scene_scale = 100;
     
     m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
 #elif CORNELL_MIRROR
@@ -848,7 +852,7 @@ bool DummyGame::LoadContent()
     scene_scale    = 100;
 
     m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
 #elif CORNELL_SPHERES
@@ -856,7 +860,7 @@ bool DummyGame::LoadContent()
     scene_scale    = 100;
 
     m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
 #elif CORNELL_WATER
@@ -864,7 +868,7 @@ bool DummyGame::LoadContent()
     scene_scale    = 100;
 
     m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 0 );
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
 #elif SPONZA
@@ -874,11 +878,11 @@ bool DummyGame::LoadContent()
     m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
 
     m_Globals.nbrActiveLights   = 5;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1120, 200, 445, 0 );
-    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 0 );
-    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( -1190, 200, 445, 0 );
-    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( -1190, 200, -405, 0 );
-    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 0, 2000, 0, 0 ); // sun, up?
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1100, 200, 445, 300 );
+    m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 300 );
+    m_Globals.lightPositions[2] = DirectX::XMFLOAT4( -1190, 200, 445, 300 );
+    m_Globals.lightPositions[3] = DirectX::XMFLOAT4( -1190, 200, -405, 300 );
+    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 0, 1500, 0, 2000 ); // sun, up?
 
     for (int i = 0; i < 4; ++i) {
 
@@ -1502,16 +1506,27 @@ void DummyGame::OnRender()
         auto d3d12Command = commandList->GetD3D12CommandList();
         d3d12Command->SetComputeRootDescriptorTable(0, m_RayShaderHeap->GetGpuDescriptorHandle());
 
-        // Set pipeline for REPROJECTION shader and dispatch
-        commandList->SetPipelineState(m_SVGF_ReprojectionPipelineState, false, m_RayShaderHeap);
-        commandList->Dispatch((m_Width / BLOCK_SIZE), (m_Height / BLOCK_SIZE), 1, true);
+            // Set pipeline for REPROJECTION shader and dispatch
+            commandList->SetPipelineState(m_SVGF_ReprojectionPipelineState, false, m_RayShaderHeap);
+            commandList->Dispatch( ( m_Width / BLOCK_SIZE ), ( m_Height / BLOCK_SIZE ), 1, true );
 
+            // Wait for dispatch to finish writing.
+            for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
+                auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
+                commandList->UAVBarrier(resource, true);
+            }
 
-        // Wait for dispatch to finish writing.
-        for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
-            auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
-            commandList->UAVBarrier(resource, true);
-        }
+            // Copy MOMENT target to source - this is used in MOMENTS
+            auto srcMomentTarget  = m_FilterRenderTarget.GetTexture( m_FilterMomentTarget );
+            auto dstMomentSource = m_FilterRenderTarget.GetTexture( m_FilterMomentSource );
+            commandList->CopyResource( dstMomentSource, srcMomentTarget );
+            commandList->UAVBarrier( dstMomentSource, true );
+
+            // Copy COLOUR target to source - this is used in MOMENTS
+            auto srcColourTarget = m_FilterRenderTarget.GetTexture( m_FilterColourTarget );
+            auto dstColourSource = m_FilterRenderTarget.GetTexture( m_ColourSlot );
+            commandList->CopyResource( dstColourSource, srcColourTarget );
+            commandList->UAVBarrier( dstMomentSource, true );
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
@@ -1523,21 +1538,30 @@ void DummyGame::OnRender()
             commandList->UAVBarrier(resource, true);
         }
 
-        // Copy moment history once we have finished writing to it.
-        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture(m_MomentHistory);
-        auto srcMomentHistory = m_FilterRenderTarget.GetTexture(m_FilterMomentHistory);
-        commandList->CopyResource(dstMomentHistory, srcMomentHistory);
+        // Copy MOMENT target to source - this is used in ATROUS
+        commandList->CopyResource( dstMomentSource, srcMomentTarget );
+        commandList->UAVBarrier( dstMomentSource, true );
 
-        // Copy integrated colour once we have finished writing to it
-        auto srcWaveletColour = m_FilterRenderTarget.GetTexture(m_FilterWaveletTarget);
-        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture(m_ColourSlot);
-        commandList->CopyResource(dstIntegradedColour, srcWaveletColour);
+        // Copy COLOUR  target to source - this is used in ATROUS
+        commandList->CopyResource( dstColourSource, srcColourTarget );
+        commandList->UAVBarrier( dstMomentSource, true );
 
-        for (int i = 1; i < 5; i++) {
+        // Copy MOMENT target to HISTORY once we have finished MOMENT SVGF filter.
+        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
+        commandList->CopyResource( dstMomentHistory, srcMomentTarget );
+        commandList->UAVBarrier( dstMomentHistory, true );
+
+        // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
+        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
+        commandList->CopyResource( dstIntegradedColour, srcColourTarget );
+        commandList->UAVBarrier( dstIntegradedColour, true );
+
+        // A TROUS WAVELET FILTER
+        for (int i = 1; i <= 5; ++i) {
             DenoiserFilterData* pData;
             ThrowIfFailed( m_FilterCB->Map( (void**)&pData ) );
             {
-                pData->stepSize = i;
+                pData->stepSize = 1;
             }
             m_FilterCB->Unmap();
 
@@ -1551,13 +1575,15 @@ void DummyGame::OnRender()
                 commandList->UAVBarrier( resource, true );
             }
 
-            auto dstFilterIntegratedColour = m_FilterRenderTarget.GetTexture( m_ColourSlot );
-            commandList->CopyResource( dstFilterIntegratedColour, srcWaveletColour );
+            // Copy COLOUR target to source - this is used in ATROUS
+            commandList->CopyResource( dstColourSource, srcColourTarget );
+            commandList->UAVBarrier( dstMomentSource, true );
+
+            if (i == 1) {
+
+                
+            }
         }
-            
-        
-
-
         
         // Get output image and swaptchain image, then copy over
         auto  outputImage         = m_FilterRenderTarget.GetTexture( m_FilterOutputSDR );

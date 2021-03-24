@@ -115,6 +115,8 @@ struct ConstantData
     
     uint hasSkybox;
     
+    float2 _padding;
+    
     float4 lightPositions[10];
 };
 
@@ -255,28 +257,58 @@ float3 sample_hemisphere_TrowbridgeReitzCos(in float alpha2, inout uint seed)
     return sampleDir;
 }
 
+
 // My functions
-float3 SampleNearestLightDirection(float3 pos, float3 normal)
+float3 SampleNearestLightDirection(float3 pos, float3 normal, inout uint seed)
 {
-    float bestDist = pow(1 / EPSILON, 2);
-    float3 result = normal;
+    float3 result = 0;
     
+#if 1
+    
+    int selected = (globals.nbrActiveLights - 1) * rnd(seed);
+    float3 lightPos = globals.lightPositions[selected].xyz;
+    lightPos = modelToWorldPosition(lightPos);
+    float3 dir = lightPos - pos;
+    result = normalize(dir);
+    
+#elif 1
+    float bestDist = 1.#INF; // infinity
     for (int i = 0; i < globals.nbrActiveLights; ++i)
     {
         float3 lightPos = globals.lightPositions[i].xyz;
         lightPos = modelToWorldPosition(lightPos);
+        float radius = globals.lightPositions[i].w; // Adjust for scale
+        
+        
         float3 dir = lightPos - pos;
         float distSqred = dot(dir, dir);
-        if (distSqred < bestDist)
+        if (distSqred < bestDist && distSqred > 0 && distSqred <= radius * radius)
         {
             bestDist = distSqred;
             result = dir;
         }
     }
     
-    //result = mul(instTrans.normalModelToWorld, float4(result, 0)).xyz;
+#else
     
-    return normalize(result);
+    float bestDist = 1.#INF; // infinity
+    for (int i = 0; i < globals.nbrActiveLights; ++i)
+    {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+        float distSqred = dot(dir, dir);
+        if (distSqred < bestDist && distSqred > 0)
+        {
+            bestDist = distSqred;
+            result = dir;
+        }
+    }
+    
+    result = normalize(result);
+#endif
+    
+    return result;
 }
 
 // INTERPOLATION helper functions
@@ -348,11 +380,10 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     
     v.texCoord[2] = 0.5 * log2(tA / pA);
   
-    
     // normalize direction vectors
-    v.normal = normalize(v.normal);
-    v.tangent = normalize(-v.tangent);
-    v.bitangent = normalize(v.bitangent);
+    v.normal = normalize(mul(instTrans.normalModelToWorld, float4(v.normal, 0)));
+    v.tangent = normalize(mul(instTrans.modelToWorld, float4(-v.tangent, 0)));
+    v.bitangent = normalize(mul(instTrans.modelToWorld, float4(v.bitangent, 0)));
     
     return v;
 }
@@ -445,10 +476,13 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (length(currRay.radiance) > 0 || length(colour) < 0.01)
-        {
+        if (length(currRay.radiance) > 0)
+            break;
+        if (length(colour) < 0.01) {
+            radiance += colour * 0.1; // AMBIENT TERM
             break;
         }
+            
         
         // Only shoot from 0 on camera.
         ray.TMin = T_HIT_MIN;
@@ -552,7 +586,27 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     //float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
     float alpha2 = mat.roughness * mat.roughness;
     
-    if (mat.type == DIFFUSE)
+    float3 L = SampleNearestLightDirection(mat.pos, mat.normal, seed);
+    
+    const float lightSampleProb = 0.5;
+    
+    // Importance sampling
+    if (rnd(seed) < lightSampleProb && dot(N, L) > 0)
+    {
+        
+        float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
+        R = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+        
+        //R = normalize(L);
+        
+        cosNR = dot(N, R);
+            
+        sampleProb = cosNR * InvPi;
+        brdfEval = mat.colour * InvPi;
+        
+    }
+        
+    else if (mat.type == DIFFUSE)
     {
         H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
         H = normalize(applyRotationMappingZToN(N, H));
@@ -586,18 +640,6 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
             brdfEval = (D * G / denomBRDF) * F;
         }
       
-// Reactivate old diffuse calculation
-#if 0 
-        R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
-        
-        R = normalize(R);
-        
-        cosNR = dot(N, R);
-            
-        sampleProb = cosNR * InvPi;
-        brdfEval = mat.colour * InvPi;
-#endif
-        
     }
     
     else if (mat.type == SPECULAR)
@@ -677,7 +719,7 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     }
     
     sampleDir = R;
-    brdfCos = sampleProb <= 0 ? 0 : brdfEval * cosNR / sampleProb;
+    brdfCos = sampleProb <= 0 ? 0 : brdfEval * cosNR / (sampleProb * (1 - lightSampleProb));
 }
 
 /* 
@@ -701,7 +743,13 @@ void rayGen()
     float2 dims = float2(launchDim.xy);
     float2 pixel = float2(launchIndex.xy);
     
+    
     float2 d = ((pixel / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
+    
+    
+    float aspectRatio = dims.x / dims.y;
+    d.x *= aspectRatio;
+    
     float4 pixelRay = float4(d.x, d.y, 1, 0);
     
     float3 camOrigin = mul(frame.cameraPixelToWorld, float4(0, 0, 0, 1));
@@ -722,6 +770,9 @@ void rayGen()
         float dy = rnd(payload.seed) - 0.5;
         
         float4 pixelRayRnd = pixelRay + float4(dx, dy, 0, 0);
+        
+        
+        // Opting for no random in initial pixel to not confuse
         float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
         
         payload = TraceFullPath(camOrigin, direction, payload.seed);
@@ -815,6 +866,12 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         if (dot(V, normal) < 0 && dot(V, faceNormal) >= 0)
             normal = faceNormal;
         
+        // If face normal is visible, and fictive normal against us, then flip
+        if (dot(V, normal) < 0)
+            normal = -normal;
+        if (dot(V, normal) < 0)
+            objNormal = -objNormal;
+        
         if (mat.NormalTextureIdx >= 0)
         {
             // from [0,1] to [-1, 1]
@@ -822,11 +879,9 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(normal, TBN);
         }
-        normal = normalize(mul(instTrans.normalModelToWorld, float4(normal, 0)).xyz);
+        normal = normalize(normal);
+        objNormal = normalize(objNormal);
         
-        // If face normal is visible, and fictive normal against us, then flip
-        if (dot(V, normal) < 0)
-            normal = -normal;
         
         
         
