@@ -92,6 +92,7 @@ struct FrameData
         : nbrBouncesPerPath( defaultBouncesPerPath )
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , exponentSamplesPerPixel( 0 )
+        , ambientLight(0)
     {
         UpdateCamera( DirectX::XMFLOAT3( 0, 2, 0 ), DirectX::XMFLOAT3( 10, 2, 0 ), cameraWinSize );
     }
@@ -127,6 +128,8 @@ struct FrameData
     DirectX::XMFLOAT4 atmosphere;
 
     DirectX::XMFLOAT3X4 camPixelToWorld;
+
+    float ambientLight;
 
     uint32_t exponentSamplesPerPixel;
     uint32_t nbrBouncesPerPath;

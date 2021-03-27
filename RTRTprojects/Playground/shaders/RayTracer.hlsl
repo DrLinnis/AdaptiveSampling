@@ -23,12 +23,18 @@
 // PAYLOADS AND STRUCTS
 struct RayPayload
 {
-    // Vectors
-    float3 colour;
-    float3 normal;
+    // Future Ray Specific
     float3 reflectDir;
-    float3 position;
+    float3 lightDir;
+    
+    // Current Mat Direction Specific
+    float3 colourReflect;
+    float3 colourLight;
+    
+    // Current Mat Specific
     float3 radiance;
+    float3 position;
+    float3 normal;
     
     // For denoising
     int object;
@@ -103,6 +109,8 @@ struct PerFrameData
     float4 atmosphere;
     
     row_major matrix<float, 3, 4> cameraPixelToWorld;
+    
+    float ambientFactor;
     
     uint exponentSamplesPerPixel;
     uint nbrBouncesPerPath;
@@ -360,8 +368,6 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     // DEPTH CALCULATION BASED ON:
     // https://media.contentapi.ea.com/content/dam/ea/seed/presentations/2019-ray-tracing-gems-chapter-20-akenine-moller-et-al.pdf
     
-    faceNormal = cross(normalize(vertPos[0] - vertPos[1]), normalize(vertPos[0] - vertPos[2]));
-    
     
     float tA = abs((texels[1].x - texels[0].x) * (texels[2].y - texels[0].y) -
             (texels[2].x - texels[0].x) * (texels[1].y - texels[0].y)
@@ -374,6 +380,10 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
     {
         vertPos[i] = modelToWorldPosition(vertPos[i]);
     }
+    
+    
+    faceNormal = cross(normalize(vertPos[0] - vertPos[1]), normalize(vertPos[0] - vertPos[2]));
+    
     
     // world space version
     float pA = instTrans.lodScaler * length(cross(vertPos[1] - vertPos[0], vertPos[2] - vertPos[0]));
@@ -441,25 +451,63 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     ray.TMin = 0.0;
     ray.TMax = T_HIT_MAX;
     
+    RayDesc rayLightDesc;
+    rayLightDesc.TMin = T_HIT_MIN;
+    rayLightDesc.TMax = T_HIT_MAX;
+    
     float3 radiance = 0;
     float3 colour = 1.0f;
     RayPayload currRay;
+    RayPayload lightRay;
     currRay.seed = seed;
     currRay.rayMode = RAY_PRIMARY;
-    currRay.depth = frame.nbrBouncesPerPath;
+    currRay.depth = 0;
     currRay.mediumIoR = 1.0f;
     
     uint prevType;
-    while (currRay.depth > 0)
+    float3 prevPos;
+    while (currRay.depth < frame.nbrBouncesPerPath)
     {
-        currRay.radiance = 0;
-        currRay.colour = 0;
+        currRay.radiance = lightRay.radiance = 0;
+        currRay.colourReflect = lightRay.colourReflect = 0;
         prevType = currRay.rayMode;
+        prevPos = currRay.position;
         
         TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
+        float3 dist = prevPos - currRay.position;
+        float distSqredLight = 1;
         
-        radiance += colour * currRay.radiance;
-        colour *= currRay.colour;
+        // Trace light if given direction
+        rayLightDesc.Origin = currRay.position;
+        rayLightDesc.Direction = currRay.lightDir;
+        lightRay.radiance = 0;
+        const float wantedMaxRadiance = 10;
+        
+        if (length(currRay.lightDir) != 0 && currRay.depth <= 3)
+        {
+            TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, rayLightDesc, lightRay);
+            float currentRadiance = length(lightRay.radiance);
+            // adjust
+            lightRay.radiance *= currentRadiance > 0 ? wantedMaxRadiance / currentRadiance : 0;
+            
+            float3 distToLight = currRay.position - lightRay.position;
+            distSqredLight = length(distToLight);
+            distSqredLight = max(distSqredLight, 1);
+
+        }
+        
+        // Sampling from the skybox doesn't invovle distance.
+        if (currRay.object == -1)
+            dist = 1;
+        
+        // Adjust rnd light hit
+        float rndRadiance = length(currRay.radiance);
+        currRay.radiance *= rndRadiance > 0 ? sqrt(3) / rndRadiance : 0;
+        
+        const float shadowRayBounceAlpha = 0.5;
+        radiance += shadowRayBounceAlpha * colour * currRay.radiance / length(dist) 
+            + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distSqredLight;
+        colour *= currRay.colourReflect;
         
         // Store the first Primary Ray normal/specular/object/position
         if (currRay.rayMode == RAY_SECONDARY && prevType == RAY_PRIMARY)
@@ -469,8 +517,8 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             result.object = currRay.object;
             result.position = currRay.position;
             
-            if (length(currRay.radiance) > 0 && currRay.object == -1)
-                radiance = currRay.colour;
+            if (length(currRay.radiance) > 0)
+                radiance = currRay.object == -1 ? currRay.colourReflect : currRay.radiance;
         }
         
         ray.Origin = currRay.position;
@@ -479,7 +527,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         if (length(currRay.radiance) > 0)
             break;
         if (length(colour) < 0.01) {
-            radiance += colour * 0.1; // AMBIENT TERM
+            //radiance += colour * frame.ambientFactor;
             break;
         }
             
@@ -488,7 +536,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.TMin = T_HIT_MIN;
     }
     
-    result.colour = radiance;
+    result.colourReflect = radiance;
     result.seed = currRay.seed;
     
     return result;
@@ -572,11 +620,12 @@ float _Smith_TrowbridgeReitz(in float3 wi, in float3 wo, in float3 wm, in float3
 
 
 // Cook Torrance BRDF
-void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
-                in MaterialInfoBDRF mat, inout uint seed)
+void sampleBRDF(out float3 reflectDir, out float3 lightDir, 
+                out float3 brdfCosReflect, out float3 brdfCosLight,
+                in MaterialInfoBDRF mat, inout uint seed )
 {
-    float3 brdfEval;
-    float sampleProb;
+    float3 brdfEvalReflect, brdfEvalLight;
+    float sampleProbReflect, sampleProbLight;
     
     // Reflection dir, view vector, normal, half-vector
     float3 R, V = mat.view, N = mat.normal, H;
@@ -586,63 +635,59 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
     //float k_direct = (mat.roughness + 1) * (mat.roughness + 1) / 8;
     float alpha2 = mat.roughness * mat.roughness;
     
+    
+    // Light Sample Ray scatter cone
     float3 L = SampleNearestLightDirection(mat.pos, mat.normal, seed);
-    
-    const float lightSampleProb = 0.5;
-    
     cosNL = dot(N, L);
+    float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
+    L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
-    // Importance sampling
-    if (rnd(seed) < lightSampleProb && cosNL > 0)
+    // Can't sample in negative hemisphere
+    if (cosNL < 0) 
     {
-        float scatteringCone = lerp(0.0, 0.01, cosNL);
-        scatteringCone *= scatteringCone;
-        float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
-        R = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
-        
-        //R = normalize(L);
-        
-        cosNR = dot(N, R);
-            
-        sampleProb = cosNR * InvPi;
-        brdfEval = mat.colour * InvPi;
-        
+        sampleProbLight = 1;
+        brdfEvalLight = 0;
+        L = 0;
+    }
+    else
+    {
+        sampleProbLight = cosNR;
+        brdfEvalLight = mat.colour;
     }
         
-    else if (mat.type == DIFFUSE)
+    if (mat.type == DIFFUSE)
     {
-        H = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
-        H = normalize(applyRotationMappingZToN(N, H));
+        R = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
+        R = normalize(applyRotationMappingZToN(N, R));
+        
+        H = normalize(R + V);
         
         cosNH = dot(N, H);
         cosNV = dot(N, V);
         cosVH = dot(V, H);
-        
-        R = 2 * cosVH * H - V;
-        
-        R = normalize(R);
-        
         cosNR = dot(N, R);
+        
+        float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
         
         if (cosNR < 0) // Can't sample in negative hemisphere
         {
-            sampleProb = 0;
-            brdfEval = 0;
+            sampleProbReflect = 1;
+            brdfEvalReflect = 0;
         }
         else
         {
-            float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
             float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
             float3 F = mat.colour + (1 - mat.colour) * pow(max(0, 1 - cosVH), 5);
     
             // Can't divide by zero
-            float denomBRDF = max(4 * cosNV * cosNR, EPSILON);
-            float denomProb = max(4 * cosNV, EPSILON);
+            float denomBRDF = 4 * cosNV * cosNR;
+            float denomProb = 4 * cosNV;
             
-            sampleProb = D * cosNH / denomProb;
-            brdfEval = (D * G / denomBRDF) * F;
+            sampleProbReflect = D * cosNR / denomProb;
+            brdfEvalReflect = (D * G / denomBRDF) * F;
         }
-      
+        
+        
     }
     
     else if (mat.type == SPECULAR)
@@ -677,8 +722,8 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
         
         if (cosNR < 0)
         {
-            brdfEval = 0;
-            sampleProb = 1; //sampleProb = r * (D*HN / (4*abs(OH)));  if allowing sample negative hemisphere
+            brdfEvalReflect = 0;
+            sampleProbReflect = 1; //sampleProb = r * (D*HN / (4*abs(OH)));  if allowing sample negative hemisphere
         }
         else
         {
@@ -688,8 +733,8 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
             float D = _TrowbridgeReitz(cosNH * cosNH, alpha2);
             float G = _Smith_TrowbridgeReitz(R, V, H, N, alpha2);
             float3 spec = ((D * G) / denomBRDF);
-            brdfEval = r * spec + (1 - r) * InvPi * mat.colour;
-            sampleProb = r * (D * cosNH / denomProb) + (1 - r) * (InvPi * cosNR);
+            brdfEvalReflect = r * spec + (1 - r) * InvPi * mat.colour;
+            sampleProbReflect = r * (D * cosNH / denomProb) + (1 - r) * (InvPi * cosNR);
         }
 
     }
@@ -703,26 +748,29 @@ void sampleBRDF(out float3 sampleDir, out float3 brdfCos,
         
         R = normalize(R);
         
-        // Can't divide by zero
-        cosNR = max(dot(N, R), EPSILON);
+        cosNR = dot(N, R);
             
-        sampleProb = cosNR * InvPi;
-        brdfEval = (float3(1, 1, 1) - mat.colour) * InvPi;
+        sampleProbReflect = cosNR;
+        brdfEvalReflect = (float3(1, 1, 1));
     }
     
     else
     {
         // NOT SUPPOSE TO HAPPEN
         R = N;
-        brdfCos = 0;
-        sampleProb = 1;
+        brdfEvalReflect = 0;
+        sampleProbReflect = 1;
         cosNR = 0;
-        brdfEval = 0;
-
     }
     
-    sampleDir = R;
-    brdfCos = sampleProb <= 0 ? 0 : brdfEval * cosNR / (sampleProb * (1 - lightSampleProb));
+    
+    
+    reflectDir = R;
+    lightDir = L;
+    
+    brdfCosReflect = brdfEvalReflect * cosNR / sampleProbReflect;
+    brdfCosLight = brdfEvalLight * cosNL / sampleProbLight;
+
 }
 
 /* 
@@ -780,13 +828,13 @@ void rayGen()
         
         payload = TraceFullPath(camOrigin, direction, payload.seed);
         
-        newRadiance += payload.colour;
+        newRadiance += payload.colourReflect;
     }
     
     newRadiance /= (float) nbrSamples;
     
     
-    float depth = length(camOrigin - payload.position);
+    float depth = length(camOrigin - payload.position) / T_HIT_MAX;
 
     gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, 0);
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
@@ -802,7 +850,7 @@ void rayGen()
 void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
     // Iterate depths
-    --payload.depth;
+    ++payload.depth;
     
     float hitT = RayTCurrent();
     float3 rayDirW = WorldRayDirection();
@@ -846,11 +894,11 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     
     
     // transparent pixel hit!
-    if (tex_rgba.w == 0 && payload.depth > 0)
+    if (tex_rgba.w == 0)
     {
         payload.reflectDir = rayDirW;
         payload.position = posW;
-        payload.colour = 1.0f;
+        payload.colourReflect = 1.0f;
         payload.radiance = 0;
     }
     else // We have hit a normal object/pixel
@@ -865,11 +913,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // Build normal
         float3 objNormal = v.normal;
         float3 normal = v.normal;
-        // if the interpolated normal is facing away from the view
-        
-        
-        // If face normal is visible, and fictive normal against us, then flip
-        
         
         if (mat.NormalTextureIdx >= 0)
         {
@@ -878,10 +921,25 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
             normal = mul(normal, TBN);
         }
+        
         normal = normalize(normal);
         objNormal = normalize(objNormal);
         
-        
+        // If the primary ray is hiting an object that is in the wrong direction.
+        if ((mat.Type != TRANSMISSIVE && dot(normal, V) <= 0 && payload.rayMode == RAY_PRIMARY) || length(mat.Emittance) != 0)
+        {
+            payload.position = posW;
+            payload.colourReflect = 0;
+            payload.reflectDir = -normal;
+            
+            payload.radiance = mat.Emittance;
+            
+            payload.normal = -normal;
+            payload.object = GeometryIndex();
+            payload.mask = mat.Type;
+            payload.rayMode = RAY_SECONDARY;
+            return;
+        }
         
         
         float specVal = mat.Reflectivity;
@@ -899,15 +957,16 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, posW, mat.Type, albedo,
                         specVal, mat.Roughness, divIoR, payload.depth);
-        sampleBRDF(payload.reflectDir, payload.colour, matBDRF, payload.seed);
+        sampleBRDF( payload.reflectDir, payload.lightDir, 
+                    payload.colourReflect, payload.colourLight, 
+                    matBDRF, payload.seed
+            );
         
         if (mat.Type == TRANSMISSIVE && dot(normal, payload.reflectDir) < 0)
             payload.mediumIoR = mat.IndexOfRefraction;
         
-        
         payload.position = posW;
-        float emittanceIntensity = length(mat.Emittance);
-        payload.radiance = clamp(mat.Emittance, 0, clamp(emittanceIntensity, 0, 5) * normalize(mat.Emittance));
+        payload.radiance = 0;
         
         if (payload.rayMode == RAY_PRIMARY)
         {
@@ -951,7 +1010,7 @@ void standardMiss(inout RayPayload payload)
     
     // sky normal, depth, and colour
     payload.radiance = radiance;
-    payload.colour = colour;
+    payload.colourReflect = colour;
     
     payload.reflectDir = 0.0;
     

@@ -96,17 +96,62 @@ float3 linearToSrgb(float3 c)
     return srgb;
 }
 
-float4 BilienarFilter(RWTexture2D<float4> tex, float2 st)
+bool BilienarTapFilter(float2 oldUv, float2 newUv, float3 normal, float3 worldPos, 
+        float3 obj, float mask, out float4 oldIntegratedColour, out float histLength )
 {
-    float2 AB = frac(st);
-    uint2 uv00 = (uint2) clamp(st - AB, 0, filterData.windowResolution);
-    uint2 uv10 = (uint2) clamp(uv00 + uint2(1, 0), 0, filterData.windowResolution);
-    uint2 uv11 = (uint2) clamp(uv00 + uint2(1, 1), 0, filterData.windowResolution);
-    uint2 uv01 = (uint2) clamp(uv00 + uint2(0, 1), 0, filterData.windowResolution);
+    float2 st = oldUv * filterData.windowResolution;
+    float2 AB = frac(st - 0.5);
+    int2 uv00 = (int2) clamp(round(st - AB), 0, filterData.windowResolution);
+    int2 uv10 = (int2) clamp(uv00 + int2(1, 0), 0, filterData.windowResolution);
+    int2 uv11 = (int2) clamp(uv00 + int2(1, 1), 0, filterData.windowResolution);
+    int2 uv01 = (int2) clamp(uv00 + int2(0, 1), 0, filterData.windowResolution);
     
-    float4 r1 = AB.x * tex[uv10] + (1 - AB.x) * tex[uv00];
-    float4 r2 = AB.x * tex[uv11] + (1 - AB.x) * tex[uv01];
-    return AB.y * r2 + (1 - AB.y) * r1;
+    int2 samplePositions[4] = { uv00, uv10, uv11, uv01 };
+    
+    float4 integratedColour = 0;
+    float sumSamples = 0.0;
+    float lowestHistlength = 1.#INF;
+    
+    for (int i = 0; i < 4; ++i)
+    {
+        int2 q = samplePositions[i];
+        
+        // check obj
+        if (length(historyBuffer[SLOT_OBJECT_ID_MASK][q].xyz - obj) != 0)
+            continue;
+        
+        // check normal
+        if (dot(normalize(historyBuffer[SLOT_NORMALS][q].xyz * 2.0 - 1), normal) <= 1.0 - EPSILON)
+            continue;
+        
+        // check position
+        if (length(historyBuffer[SLOT_POS_DEPTH][q].xyz - worldPos) > filterData.reprojectErrorLimit)
+            continue;
+        
+        // check uv if material is transparent
+        if ((mask != 0 || historyBuffer[SLOT_OBJECT_ID_MASK][q].w != 0) && length(oldUv - newUv) != 0)
+            continue;
+        
+        // sample colour, histlength, and add.
+        integratedColour += historyBuffer[SLOT_COLOUR][q];
+        lowestHistlength = max(min(lowestHistlength, historyBuffer[SLOT_MOMENT_HISTORY][q].z), 0);
+        sumSamples += 1.0f;
+    }
+    
+    histLength = lowestHistlength;
+    
+    if (sumSamples == 0)
+    {
+        oldIntegratedColour = 0;
+        return false;
+    }
+
+    oldIntegratedColour = integratedColour / sumSamples;
+    return true;
+    
+    //float4 r1 = AB.x * tex[uv10] + (1 - AB.x) * tex[uv00];
+    //float4 r2 = AB.x * tex[uv11] + (1 - AB.x) * tex[uv01];
+    //return AB.y * r2 + (1 - AB.y) * r1;
 }
 
 float4 texelFetch(RWTexture2D<float4> tex, uint2 pixelPos, float4 default_value)
@@ -139,7 +184,7 @@ void main( ComputeShaderInput IN )
     
     // [-1,1] -> [0,1]
     oldPos.xy = oldPos.xy * 0.5 + 0.5;
-    uint2 oldRayPixelPos = (uint2) (clamp(oldPos.xy, 0, 1) * filterData.windowResolution);
+    uint2 oldRayPixelPos = (uint2) round((clamp(oldPos.xy, 0, 1) * filterData.windowResolution));
     
     float3 newClipPos = mul(filterData.newCameraWorldToClip, float4(newPosDepth.xyz, 1));
     float newDiv = newClipPos.z;
@@ -147,7 +192,7 @@ void main( ComputeShaderInput IN )
     
     // [-1,1] -> [0,1]
     newPos.xy = newPos.xy * 0.5 + 0.5;
-    uint2 newRayPixelPos = (uint2) (clamp(newPos.xy, 0, 1) * filterData.windowResolution);
+    uint2 newRayPixelPos = (uint2) round((clamp(newPos.xy, 0, 1) * filterData.windowResolution));
     
     
     float4 newRadiance = rayBuffer[SLOT_COLOUR][newRayPixelPos];
@@ -157,66 +202,50 @@ void main( ComputeShaderInput IN )
     
     // Reprojection
     float4 oldIntegratedColour = 0;
+    float oldHistLength = 0;
     
     bool reuseSample = false;
     // If current position is visible in integrated history buffer.
     if (oldPos.x > 0 && oldPos.x < 1 && oldPos.y > 0 && oldPos.y < 1 && oldPos.z >= 0)
     {
         // assume true until we multiple with false
-        reuseSample = true;
+        reuseSample = BilienarTapFilter(oldPos.xy, newPos.xy, newNormals, newPosDepth.xyz,
+            newObjMask.xyz, newObjMask.w, oldIntegratedColour, oldHistLength );
         
-        // If the old object is the same object, then we can reuse
-        float4 oldObjMask = BilienarFilter(historyBuffer[SLOT_OBJECT_ID_MASK], oldPos.xy * filterData.windowResolution);
-        //float4 oldObjMask = historyBuffer[SLOT_OBJECT_ID_MASK][oldRayPixelPos];
-        reuseSample &= length(newObjMask.xyz - oldObjMask.xyz) == 0;
-    
-        // Check that the material is not lambertian, then just accumulate on same position
-        if (newObjMask.w != 0 || oldObjMask.w != 0)
-            reuseSample &= length(oldPos.xy - newPos.xy) == 0;
-        
-        // if the old position is about the same as the new position
-        float3 oldRayPos = BilienarFilter(historyBuffer[SLOT_POS_DEPTH], oldPos.xy * filterData.windowResolution).xyz;
-        //float3 oldRayPos = historyBuffer[SLOT_POS_DEPTH][oldRayPixelPos].xyz;
-        reuseSample &= length(oldRayPos - newPosDepth.xyz) < filterData.reprojectErrorLimit;
-        
-        
-        // check normals?
-        float3 oldNormals = normalize(BilienarFilter(historyBuffer[SLOT_NORMALS], oldPos.xy * filterData.windowResolution).xyz * 2 - 1);
-        //float3 oldNormals = normalize(historyBuffer[SLOT_NORMALS][oldRayPixelPos].xyz * 2 - 1);
-        reuseSample &= dot(newNormals, oldNormals) >= 0.95;
-        
-        
-        // Decide alpha
-        oldIntegratedColour = BilienarFilter(historyBuffer[SLOT_COLOUR], oldPos.xy * filterData.windowResolution);
-        //oldIntegratedColour = historyBuffer[SLOT_COLOUR][oldRayPixelPos];
-
     }
     
-    float4 momentsHistlenExtra = 0;
+    float4 momentHistlenStepsize = 0;
     float4 reprojectedColour = 0;
     if (reuseSample)
     {
-        momentsHistlenExtra = BilienarFilter(historyBuffer[SLOT_MOMENT_HISTORY], oldPos.xy * filterData.windowResolution);
-        momentsHistlenExtra.z = floor(momentsHistlenExtra.z) + 1;
-        reprojectedColour = filterData.alpha * newRadiance + (1 - filterData.alpha) * oldIntegratedColour;
+        momentHistlenStepsize.z = floor(oldHistLength) + 1;
+        
+#if 1
+        reprojectedColour.xyz = filterData.alpha * newRadiance.xyz + (1 - filterData.alpha) * oldIntegratedColour.xyz;
+#else
+        reprojectedColour.xyz = (newRadiance.xyz + (momentHistlenStepsize.z - 1) * oldIntegratedColour.xyz) / momentHistlenStepsize.z;
+#endif
+        
     }
     else
     {
-        momentsHistlenExtra.z = 1;
-        reprojectedColour = newRadiance;
+        momentHistlenStepsize.z = 1;
+        reprojectedColour.xyz = newRadiance.xyz;
     }
     
-    momentsHistlenExtra.x = luminance(reprojectedColour.rgb);
-    momentsHistlenExtra.y = momentsHistlenExtra.x * momentsHistlenExtra.x;
+    momentHistlenStepsize.x = luminance(reprojectedColour.rgb);
+    momentHistlenStepsize.y = momentHistlenStepsize.x * momentHistlenStepsize.x;
     
-    filterBuffer[FILTER_SLOT_MOMENT_TARGET][IN.DispatchThreadID.xy] = momentsHistlenExtra;
+    
+    filterBuffer[FILTER_SLOT_MOMENT_TARGET][IN.DispatchThreadID.xy] = momentHistlenStepsize;
     filterBuffer[FILTER_SLOT_COLOUR_TARGET][IN.DispatchThreadID.xy] = reprojectedColour;
     
     
     // remove in future
-    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(rayBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy], 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(rayBuffer[SLOT_POS_DEPTH][IN.DispatchThreadID.xy], 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(reprojectedColour.rgb), 1), 0, 1);
-    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(momentsHistlenExtra.z / 100, 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(reuseSample, 0, 0, 0), 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(length(newRayPixelPos - IN.DispatchThreadID.xy) > 1, 0, 0, 0), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(newRadiance.rgb), 1), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(historyBuffer[SLOT_NORMALS][oldRayPixelPos].xyz - rayBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz, 1), 0, 1);
 }

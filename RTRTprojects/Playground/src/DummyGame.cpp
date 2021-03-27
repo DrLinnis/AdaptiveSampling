@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_RenderScale( 1.0f )
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 0, 2, 0 )
-, m_frameData( XMFLOAT2(width / (float)height, 1), 10 )
+, m_frameData( XMFLOAT2(width / (float)height, 1), 5 )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -347,7 +347,7 @@ void DummyGame::CreateRayTracingPipeline() {
 
 
     // Bind the payload size to the programs
-    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*5 + 3 + 4) );
+    ShaderConfig shaderConfig( sizeof( float ) * 2, sizeof( float ) * (3*7 + 3 + 4) );
     subobjects[index] = shaderConfig.subobject;
 
     uint32_t          shaderConfigIndex = index++;  
@@ -733,7 +733,7 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define AMAZON_INTERIOR 0
 #define AMAZON_EXTERIOR 0
 #define SAM_MIGUEL 0
-#define CORNELL_BOX 0
+#define CORNELL_BOX 1
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER 0
@@ -842,7 +842,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_BOX
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); 
-    scene_scale = 10;
+    scene_scale = 30;
     
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -877,7 +877,7 @@ bool DummyGame::LoadContent()
     // merge scenes
     lodScaleExp            = 6;
     m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
-
+    m_frameData.ambientLight    = 5.0;
     m_Globals.nbrActiveLights   = 5;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1100, 200, 445, 300 );
     m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 300 );
@@ -896,7 +896,7 @@ bool DummyGame::LoadContent()
         auto m_RaySphere = commandList->CreateSphere( 45, 16u, pos );
 
         auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
-        float scale     = 10;
+        float scale     = 100;
 
         sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 0.5 + Math::random_double() * scale,
                                                         0.5 + Math::random_double() * scale,
@@ -1159,6 +1159,8 @@ void DummyGame::OnResize( ResizeEventArgs& e )
     m_HistoryRenderTarget.Resize( m_Width, m_Height );
     m_FilterRenderTarget.Resize( m_Width, m_Height );
 
+    m_FilterData.m_WindowResolution = DirectX::XMFLOAT2( m_Width, m_Height );
+
     m_SwapChain->Resize( m_Width, m_Height );
 
     UINT offset = 0;
@@ -1369,6 +1371,8 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
         m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
 
+        ImGui::SliderFloat( "Ambient Light", &m_frameData.ambientLight, 0, 5 );
+
         ImGui::End();
     }
 
@@ -1471,24 +1475,6 @@ void DummyGame::OnRender()
                 commandList->UAVBarrier(resource, true);
             }
 
-            // make sure history buffer is done before filter
-            for (uint32_t i = 0; i < m_nbrHistoryRenderTargets; ++i)
-            {
-                auto resource = m_HistoryRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
-
-                commandList->UAVBarrier(resource, true);
-
-
-            }
-
-            for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i)
-            {
-                auto resource = m_FilterRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
-
-                commandList->ClearTexture(resource, clearColor);
-
-                commandList->UAVBarrier(resource, true);
-            }
         }
 #endif
 
@@ -1529,7 +1515,7 @@ void DummyGame::OnRender()
             auto srcColourTarget = m_FilterRenderTarget.GetTexture( m_FilterColourTarget );
             auto dstColourSource = m_FilterRenderTarget.GetTexture( m_ColourSlot );
             commandList->CopyResource( dstColourSource, srcColourTarget );
-            commandList->UAVBarrier( dstMomentSource, true );
+            commandList->UAVBarrier( dstColourSource, true );
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
@@ -1547,17 +1533,17 @@ void DummyGame::OnRender()
 
         // Copy COLOUR  target to source - this is used in ATROUS
         commandList->CopyResource( dstColourSource, srcColourTarget );
-        commandList->UAVBarrier( dstMomentSource, true );
+        commandList->UAVBarrier( dstColourSource, true );
 
-        // Copy MOMENT target to HISTORY once we have finished MOMENT SVGF filter.
-        auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
-        commandList->CopyResource( dstMomentHistory, srcMomentTarget );
-        commandList->UAVBarrier( dstMomentHistory, true );
+            // Copy MOMENT target to HISTORY once we have finished MOMENT SVGF filter.
+            auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
+            commandList->CopyResource( dstMomentHistory, srcMomentTarget );
+            commandList->UAVBarrier( dstMomentHistory, true );
 
-        // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
-        auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
-        commandList->CopyResource( dstIntegradedColour, srcColourTarget );
-        commandList->UAVBarrier( dstIntegradedColour, true );
+            // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
+            auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
+            commandList->CopyResource( dstIntegradedColour, srcColourTarget );
+            commandList->UAVBarrier( dstIntegradedColour, true );
 
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
@@ -1580,7 +1566,7 @@ void DummyGame::OnRender()
 
             // Copy COLOUR target to source - this is used in ATROUS
             commandList->CopyResource( dstColourSource, srcColourTarget );
-            commandList->UAVBarrier( dstMomentSource, true );
+            commandList->UAVBarrier( dstColourSource, true );
 
             // Copy MOMENT target to source - this is used in ATROUS
             commandList->CopyResource( dstMomentSource, srcMomentTarget );
@@ -1588,6 +1574,7 @@ void DummyGame::OnRender()
 
             if (i == 1) {
 
+                
                 
             }
         }
@@ -1602,15 +1589,28 @@ void DummyGame::OnRender()
         auto dstNormal = m_HistoryRenderTarget.GetTexture( m_NormalsSlot );
         auto srcNormal = m_RayRenderTarget.GetTexture( m_NormalsSlot );
         commandList->CopyResource( dstNormal, srcNormal );
+        commandList->UAVBarrier( dstNormal, true );
 
         auto dstWorldDepth = m_HistoryRenderTarget.GetTexture( m_PosDepth );
         auto srcWorldDepth = m_RayRenderTarget.GetTexture( m_PosDepth );
         commandList->CopyResource( dstWorldDepth, srcWorldDepth );
+        commandList->UAVBarrier( dstWorldDepth, true );
         
         auto dstObject = m_HistoryRenderTarget.GetTexture( m_ObjectMask );
         auto srcObject = m_RayRenderTarget.GetTexture( m_ObjectMask );
         commandList->CopyResource( dstObject, srcObject );
+        commandList->UAVBarrier( dstObject, true );
 
+
+        
+        for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i )
+        {
+            auto resource = m_FilterRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+            commandList->ClearTexture( resource, clearColor );
+
+            commandList->UAVBarrier( resource, true );
+        }
     }
     
     // Render GUI.

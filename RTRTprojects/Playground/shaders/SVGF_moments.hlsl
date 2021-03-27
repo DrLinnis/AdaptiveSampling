@@ -97,18 +97,6 @@ float3 linearToSrgb(float3 c)
     return srgb;
 }
 
-float4 BilienarFilter(RWTexture2D<float4> tex, float2 st)
-{
-    float2 AB = frac(st);
-    uint2 uv00 = (uint2) clamp(st - AB, 0, filterData.windowResolution);
-    uint2 uv10 = (uint2) clamp(uv00 + uint2(1, 0), 0, filterData.windowResolution);
-    uint2 uv11 = (uint2) clamp(uv00 + uint2(1, 1), 0, filterData.windowResolution);
-    uint2 uv01 = (uint2) clamp(uv00 + uint2(0, 1), 0, filterData.windowResolution);
-    
-    float4 r1 = AB.x * tex[uv10] + (1 - AB.x) * tex[uv00];
-    float4 r2 = AB.x * tex[uv11] + (1 - AB.x) * tex[uv01];
-    return AB.y * r2 + (1 - AB.y) * r1;
-}
 
 float4 texelFetch(RWTexture2D<float4> tex, int2 pixelPos, float4 default_value)
 {
@@ -157,15 +145,16 @@ void main( ComputeShaderInput IN )
     {
         float3 centreNormal = normalize(rayBuffer[SLOT_NORMALS][p].xyz * 2 - 1);
         float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;
-        float centreDepth = rayBuffer[SLOT_POS_DEPTH][p].w / T_HIT_MAX;
+        float centreDepth = rayBuffer[SLOT_POS_DEPTH][p].w;
         
-        float depthGradient = CalcDepthGradient(rayBuffer[SLOT_POS_DEPTH], p) / T_HIT_MAX;
+        float depthGradient = CalcDepthGradient(rayBuffer[SLOT_POS_DEPTH], p);
         
         float1 sumWeight = 1.0;
         float4 sumColour = centreColour;
         float2 sumMomentum = centreMomentum;
+        
 // Disable the filter
-#if 1
+#if 0
         // 7x7 filter to estimate variance spatialy
         for (int yOffset = -3; yOffset <= 3; yOffset++)
         {
@@ -179,7 +168,7 @@ void main( ComputeShaderInput IN )
                     float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
                     float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
                     float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
-                    float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w / T_HIT_MAX;
+                    float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
                     float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT_SOURCE], p, 0).xy;
                     
                     
@@ -223,6 +212,6 @@ void main( ComputeShaderInput IN )
     filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenStepsize;
     
     // remove in future
-    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);
+    filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(histLength < 4, 0, 1);
 }
