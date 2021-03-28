@@ -114,7 +114,7 @@ bool BilienarTapFilter(float2 oldUv, float2 newUv, float3 normal, float3 worldPo
     float sumSamples = 0.0;
     float lowestHistlength = 1.#INF;
     
-    const int layer = 0;
+    const int layer = 1;
     for (int dx = -layer; dx <= layer; ++dx)
     {
         for (int dy = -layer; dy <= layer; ++dy)
@@ -158,7 +158,6 @@ bool BilienarTapFilter(float2 oldUv, float2 newUv, float3 normal, float3 worldPo
     }
 
     oldIntegratedColour = integratedColour / sumSamples;
-    //oldIntegratedColour = historyBuffer[SLOT_MOMENT_HISTORY][filterData.windowResolution.xy - int2(1, 1)] ;
     return true;
     
 }
@@ -250,7 +249,7 @@ void main( ComputeShaderInput IN )
     
     // remove in future
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(rayBuffer[SLOT_COLOUR][IN.DispatchThreadID.xy], 0, 1);
-    filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(reprojectedColour.rgb), 1), 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(reprojectedColour.rgb), 1), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(newPos.xy, IN.DispatchThreadID.y >= filterData.windowResolution.y ? 1 : 0, 0), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(length(oldRayPixelPos - IN.DispatchThreadID.xy) > 1, 0, 0, 0), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(newRadiance.rgb), 1), 0, 1);

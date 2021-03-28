@@ -1542,10 +1542,6 @@ void DummyGame::OnRender()
             commandList->CopyResource( dstMomentHistory, srcMomentTarget );
             commandList->UAVBarrier( dstMomentHistory, true );
 
-            // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
-            auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
-            commandList->CopyResource( dstIntegradedColour, srcColourTarget );
-            commandList->UAVBarrier( dstIntegradedColour, true );
 
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
@@ -1578,7 +1574,11 @@ void DummyGame::OnRender()
             if (i == 1) {
 
                 
-                
+            
+            // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
+                auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
+                commandList->CopyResource( dstIntegradedColour, srcColourTarget );
+                commandList->UAVBarrier( dstIntegradedColour, true );
             }
         }
         

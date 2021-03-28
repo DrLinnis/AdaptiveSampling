@@ -643,7 +643,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
     L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
     // Can't sample in negative hemisphere
-    if (cosNL < 0) 
+    if (cosNL <= 0) 
     {
         sampleProbLight = 1;
         brdfEvalLight = 0;
@@ -906,7 +906,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
         
-        
         // View Vector
         float3 V = -rayDirW;
         
@@ -925,8 +924,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         normal = normalize(normal);
         objNormal = normalize(objNormal);
         
-        // If the primary ray is hiting an object that is in the wrong direction.
-        if ((mat.Type != TRANSMISSIVE && dot(normal, V) <= 0 && payload.rayMode == RAY_PRIMARY) || length(mat.Emittance) != 0)
+        bool isLight = length(mat.Emittance) != 0;
+        
+        // If the primary ray is hiting an object that is in the wrong direction, or hitting the light.
+        if ((mat.Type != TRANSMISSIVE && dot(normal, V) <= 0 && payload.rayMode == RAY_PRIMARY) || isLight)
         {
             payload.position = posW;
             payload.colourReflect = 0;
@@ -936,7 +937,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             
             payload.lightDir = 0;
             
-            payload.normal = -normal;
+            payload.normal = isLight ? -normal : 0;
+            //payload.object = length(mat.Emittance) != 0 ? GeometryIndex() : -1;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;

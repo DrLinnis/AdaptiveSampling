@@ -107,7 +107,7 @@ float4 texelFetch(RWTexture2D<float4> tex, int2 pixelPos, float4 default_value)
 }
 
 
-float CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
+float2 CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
 {
     float centre = tex[p].w;
     
@@ -118,7 +118,7 @@ float CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
     
     float maxVert = max(abs(centre - left), abs(centre - right));
     float maxHori = max(abs(centre - up), abs(centre - down));
-    return max(maxVert, maxHori);
+    return float2(maxVert, maxHori);
 }
 
 
@@ -149,18 +149,18 @@ void main( ComputeShaderInput IN )
         float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;
         float centreDepth = rayBuffer[SLOT_POS_DEPTH][p].w;
         
-        float depthGradient = CalcDepthGradient(rayBuffer[SLOT_POS_DEPTH], p);
+        float2 depthGradient = CalcDepthGradient(rayBuffer[SLOT_POS_DEPTH], p);
         
         float1 sumWeight = 1.0;
         float4 sumColour = centreColour;
         float2 sumMomentum = centreMomentum;
         
 // Disable the filter
-#if 0
+#if 1
         // 7x7 filter to estimate variance spatialy
-        for (int yOffset = -3; yOffset <= 3; yOffset++)
+        for (int yOffset = -3; yOffset <= 3; ++yOffset)
         {
-            for (int xOffset = -3; xOffset <= 3; xOffset++)
+            for (int xOffset = -3; xOffset <= 3; ++xOffset)
             {
                 int2 q = p + int2(xOffset, yOffset);
                 
@@ -169,17 +169,18 @@ void main( ComputeShaderInput IN )
                         || q.y < 0 || q.y >= filterData.windowResolution.y )
                     continue;
                 
-                float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
-                float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
-                float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
-                float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
-                float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT_SOURCE], p, 0).xy;
+                float4 currColourVar = filterBuffer[FILTER_SLOT_COLOUR_SOURCE][q];
+                float3 currNormal = normalize(rayBuffer[SLOT_NORMALS][q].xyz * 2.0 - 1.0);
+                float3 currObj = rayBuffer[SLOT_OBJECT_ID_MASK][q].xyz;
+                float1 currDepth = rayBuffer[SLOT_POS_DEPTH][q].w;
+                float2 currentMomentum = rayBuffer[FILTER_SLOT_MOMENT_SOURCE][q].xy;
                     
                     
                 // For estimating the variance spatially, we just use normals and depth
                 float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
 
-                float weightDepth = abs(centreDepth - currDepth) / (abs(depthGradient * length(float2(xOffset, yOffset))) * filterData.sigmaDepth + EPSILON);
+                //float weightDepth = abs(centreDepth - currDepth) / (length(max(depthGradient.x, depthGradient.y) * float2(xOffset, yOffset)) * filterData.sigmaDepth + EPSILON);
+                float weightDepth = abs(centreDepth - currDepth) / (length(max(depthGradient.x, depthGradient.y) * float2(xOffset, yOffset)) * filterData.sigmaDepth + EPSILON);
 
                 float w_i = exp(0.0 - max(weightDepth, 0.0)) * weightNormal;
                     
@@ -187,14 +188,13 @@ void main( ComputeShaderInput IN )
                     w_i = 0;
                     
                 sumMomentum += currentMomentum * w_i.xx;
-                sumColour += w_i * currColour;
+                sumColour += w_i * currColourVar;
                 sumWeight += w_i;
-                
-                
             }
         }
         
-        sumWeight = max(sumWeight, EPSILON);
+        //sumWeight = max(sumWeight, EPSILON);
+        
         sumColour /= sumWeight;
         sumMomentum /= sumWeight;
 #endif
