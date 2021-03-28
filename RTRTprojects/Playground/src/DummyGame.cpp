@@ -1489,7 +1489,7 @@ void DummyGame::OnRender()
         commandList->SetComputeRootSignature(m_DenoiserRootSig);
 
         // Set up block size for shaders
-#define BLOCK_SIZE 16 
+#define BLOCK_SIZE 16.0 
 
 // Get commandlist and set heap for denoise shaders
         auto d3d12Command = commandList->GetD3D12CommandList();
@@ -1497,8 +1497,8 @@ void DummyGame::OnRender()
 
             // Set pipeline for REPROJECTION shader and dispatch
             commandList->SetPipelineState(m_SVGF_ReprojectionPipelineState, false, m_RayShaderHeap);
-            commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1),
-                               static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1), 1, true );
+            commandList->Dispatch( static_cast<unsigned int>( std::ceil(m_Width / BLOCK_SIZE)),
+                                   static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
 
             // Wait for dispatch to finish writing.
             for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1520,8 +1520,8 @@ void DummyGame::OnRender()
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
-        commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1 ),
-                                static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1 ), 1, true );
+            commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
+                               static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
 
         // Wait for dispatch to finish writing.
         for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1558,8 +1558,8 @@ void DummyGame::OnRender()
 
             // Set pipeline for MOMENTS shader and dispatch
             commandList->SetPipelineState( m_SVGF_AtrousPipelineState, false, m_RayShaderHeap );
-            commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1 ),
-                                   static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1 ), 1, true );
+            commandList->Dispatch( static_cast<unsigned int>(std::ceil(m_Width / BLOCK_SIZE)),
+                               static_cast<unsigned int>( std::ceil(m_Height / BLOCK_SIZE)), 1, true );
 
             // Wait for dispatch to finish writing.
             for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i ) {
