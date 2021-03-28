@@ -1148,8 +1148,8 @@ void DummyGame::OnResize( ResizeEventArgs& e )
 {
     m_Logger->info( "Resize: {}, {}", e.Width, e.Height );
 
-    m_Width  = std::max( 1, e.Width );
-    m_Height = std::max( 1, e.Height );
+    m_Width  = std::max( 16, e.Width );
+    m_Height = std::max( 16, e.Height );
 
     float aspectRatio = m_Width / (float)m_Height;
 
@@ -1497,7 +1497,8 @@ void DummyGame::OnRender()
 
             // Set pipeline for REPROJECTION shader and dispatch
             commandList->SetPipelineState(m_SVGF_ReprojectionPipelineState, false, m_RayShaderHeap);
-            commandList->Dispatch( ( m_Width / BLOCK_SIZE ), ( m_Height / BLOCK_SIZE ), 1, true );
+            commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1),
+                               static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1), 1, true );
 
             // Wait for dispatch to finish writing.
             for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1519,7 +1520,8 @@ void DummyGame::OnRender()
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
-        commandList->Dispatch((m_Width / BLOCK_SIZE), (m_Height / BLOCK_SIZE), 1, true);
+        commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1 ),
+                                static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1 ), 1, true );
 
         // Wait for dispatch to finish writing.
         for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1556,7 +1558,8 @@ void DummyGame::OnRender()
 
             // Set pipeline for MOMENTS shader and dispatch
             commandList->SetPipelineState( m_SVGF_AtrousPipelineState, false, m_RayShaderHeap );
-            commandList->Dispatch( ( m_Width / BLOCK_SIZE ), ( m_Height / BLOCK_SIZE ), 1, true );
+            commandList->Dispatch( static_cast<unsigned int>( m_Width / BLOCK_SIZE + 1 ),
+                                   static_cast<unsigned int>( m_Height / BLOCK_SIZE + 1 ), 1, true );
 
             // Wait for dispatch to finish writing.
             for ( uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i ) {

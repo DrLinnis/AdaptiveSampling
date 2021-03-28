@@ -795,7 +795,7 @@ void rayGen()
     float2 pixel = float2(launchIndex.xy);
     
     
-    float2 d = ((pixel / dims) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
+    float2 d = ((pixel / (dims)) * 2.f - 1.f); // converts [0, 1] to [-1, 1]
     
     
     float aspectRatio = dims.x / dims.y;
@@ -933,6 +933,8 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             payload.reflectDir = -normal;
             
             payload.radiance = mat.Emittance;
+            
+            payload.lightDir = 0;
             
             payload.normal = -normal;
             payload.object = GeometryIndex();

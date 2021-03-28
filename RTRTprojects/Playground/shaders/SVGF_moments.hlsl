@@ -130,6 +130,8 @@ float CalcDepthGradient(RWTexture2D<float4> tex, int2 p)
 [numthreads( BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main( ComputeShaderInput IN ) 
 { 
+    if (IN.DispatchThreadID.x >= filterData.windowResolution.x || IN.DispatchThreadID.y >= filterData.windowResolution.y)
+        return;
     
     uint2 p = IN.DispatchThreadID.xy;
     
@@ -160,32 +162,35 @@ void main( ComputeShaderInput IN )
         {
             for (int xOffset = -3; xOffset <= 3; xOffset++)
             {
-                if (xOffset != 0 || yOffset != 0)
-                {
-                    int2 q = p + int2(xOffset, yOffset);
+                int2 q = p + int2(xOffset, yOffset);
+                
+                if ( (xOffset == 0 && yOffset == 0) 
+                        || q.x < 0 || q.x >= filterData.windowResolution.x 
+                        || q.y < 0 || q.y >= filterData.windowResolution.y )
+                    continue;
+                
+                float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
+                float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
+                float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
+                float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
+                float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT_SOURCE], p, 0).xy;
                     
                     
-                    float4 currColour = texelFetch(filterBuffer[FILTER_SLOT_COLOUR_SOURCE], q, 0);
-                    float3 currNormal = normalize(texelFetch(rayBuffer[SLOT_NORMALS], q, 0).xyz * 2 - 1);
-                    float3 currObj = texelFetch(rayBuffer[SLOT_OBJECT_ID_MASK], q, 0).xyz;
-                    float1 currDepth = texelFetch(rayBuffer[SLOT_POS_DEPTH], q, 0).w;
-                    float2 currentMomentum = texelFetch(filterBuffer[FILTER_SLOT_MOMENT_SOURCE], p, 0).xy;
-                    
-                    
-                    // For estimating the variance spatially, we just use normals and depth
-                    float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
+                // For estimating the variance spatially, we just use normals and depth
+                float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
 
-                    float weightDepth = abs(centreDepth - currDepth) / (abs(depthGradient * length(float2(xOffset, yOffset))) * filterData.sigmaDepth + EPSILON);
+                float weightDepth = abs(centreDepth - currDepth) / (abs(depthGradient * length(float2(xOffset, yOffset))) * filterData.sigmaDepth + EPSILON);
 
-                    float w_i = exp(0.0 - max(weightDepth, 0.0)) * weightNormal;
+                float w_i = exp(0.0 - max(weightDepth, 0.0)) * weightNormal;
                     
-                    if (isnan(w_i))
-                        w_i = 0;
+                if (isnan(w_i))
+                    w_i = 0;
                     
-                    sumMomentum += currentMomentum * w_i.xx;
-                    sumColour += w_i * currColour;
-                    sumWeight += w_i;
-                }
+                sumMomentum += currentMomentum * w_i.xx;
+                sumColour += w_i * currColour;
+                sumWeight += w_i;
+                
+                
             }
         }
         
@@ -212,6 +217,6 @@ void main( ComputeShaderInput IN )
     filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenStepsize;
     
     // remove in future
-    filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);
+    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(filterBuffer[FILTER_SLOT_COLOUR_TARGET][p].rgb), 1), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(histLength < 4, 0, 1);
 }

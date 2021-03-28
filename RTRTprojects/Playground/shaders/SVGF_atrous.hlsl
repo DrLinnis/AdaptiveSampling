@@ -154,6 +154,9 @@ float computeVarianceCenter(int2 center, RWTexture2D<float4> texInS)
 [numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main(ComputeShaderInput IN)
 {
+    if (IN.DispatchThreadID.x >= filterData.windowResolution.x || IN.DispatchThreadID.y >= filterData.windowResolution.y)
+        return;
+    
     const float kernel[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
     uint2 p = IN.DispatchThreadID.xy;
     
@@ -178,7 +181,7 @@ void main(ComputeShaderInput IN)
     float weightLumDenominator = filterData.sigmaLuminance * sqrt(max(0, EPSILON + varGauss));
     
 // ignore filter
-#if 1
+#if 0
     // 5x5 à trous wavelet filter
     for (int yOffset = -2; yOffset <= 2; yOffset++)
     {
