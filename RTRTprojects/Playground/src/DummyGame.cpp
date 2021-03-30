@@ -67,7 +67,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_RenderScale( 1.0f )
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 0, 2, 0 )
-, m_frameData( XMFLOAT2(width / (float)height, 1), 5 )
+, m_frameData( 5 )
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -733,7 +733,8 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define AMAZON_INTERIOR 0
 #define AMAZON_EXTERIOR 0
 #define SAM_MIGUEL 0
-#define CORNELL_BOX 1
+#define CORNELL_BOX 0
+#define CORNELL_BOX_LONG 0
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER 0
@@ -844,6 +845,13 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); 
     scene_scale = 30;
     
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
+    scene_rot_offset            = 90;
+#elif CORNELL_BOX_LONG
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
+    scene_scale    = 30;
+
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
@@ -1159,7 +1167,7 @@ void DummyGame::OnResize( ResizeEventArgs& e )
     m_HistoryRenderTarget.Resize( m_Width, m_Height );
     m_FilterRenderTarget.Resize( m_Width, m_Height );
 
-    m_FilterData.m_WindowResolution = DirectX::XMFLOAT2( m_Width, m_Height );
+    m_CamWindow = DirectX::XMFLOAT2( aspectRatio, 1 );
 
     m_SwapChain->Resize( m_Width, m_Height );
 
@@ -1172,7 +1180,7 @@ void DummyGame::OnResize( ResizeEventArgs& e )
     offset += m_nbrFilterRenderTargets;
 
     UpdateDispatchRaysDesc();
-
+    m_FilterData.BuildOldAndNewDenoiser( nullptr, nullptr, m_CamWindow, m_Width, m_Height );
 }
 
 void DummyGame::OnDPIScaleChanged( DPIScaleEventArgs& e )
@@ -1253,7 +1261,7 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
     DirectX::XMFLOAT3 camLookAt;
     DirectX::XMStoreFloat3( &camLookAt, lookAt );
 
-    m_frameData.UpdateCamera( m_CamPos, camLookAt, m_CamWindow );
+    m_frameData.UpdateCamera( m_CamPos, camLookAt );
 
 }
 
@@ -1541,7 +1549,7 @@ void DummyGame::OnRender()
             auto dstMomentHistory = m_HistoryRenderTarget.GetTexture( m_MomentHistory );
             commandList->CopyResource( dstMomentHistory, srcMomentTarget );
             commandList->UAVBarrier( dstMomentHistory, true );
-
+            
 
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
@@ -1573,12 +1581,12 @@ void DummyGame::OnRender()
 
             if (i == 1) {
 
-                
-            
-            // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
+                // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
                 auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
                 commandList->CopyResource( dstIntegradedColour, srcColourTarget );
                 commandList->UAVBarrier( dstIntegradedColour, true );
+            
+            
             }
         }
         

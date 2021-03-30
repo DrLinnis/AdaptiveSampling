@@ -267,38 +267,23 @@ float3 sample_hemisphere_TrowbridgeReitzCos(in float alpha2, inout uint seed)
 
 
 // My functions
-float3 SampleNearestLightDirection(float3 pos, float3 normal, inout uint seed)
+
+float3 _sampleRandomLightDirection(float3 pos, float3 normal, uint sampleMask, inout uint seed)
 {
-    float3 result = 0;
-    
-#if 1
+    if (globals.nbrActiveLights == 0)
+        return normal;
     
     int selected = (globals.nbrActiveLights - 1) * rnd(seed);
     float3 lightPos = globals.lightPositions[selected].xyz;
     lightPos = modelToWorldPosition(lightPos);
     float3 dir = lightPos - pos;
-    result = normalize(dir);
-    
-#elif 1
-    float bestDist = 1.#INF; // infinity
-    for (int i = 0; i < globals.nbrActiveLights; ++i)
-    {
-        float3 lightPos = globals.lightPositions[i].xyz;
-        lightPos = modelToWorldPosition(lightPos);
-        float radius = globals.lightPositions[i].w; // Adjust for scale
-        
-        
-        float3 dir = lightPos - pos;
-        float distSqred = dot(dir, dir);
-        if (distSqred < bestDist && distSqred > 0 && distSqred <= radius * radius)
-        {
-            bestDist = distSqred;
-            result = dir;
-        }
-    }
-    
-#else
-    
+    return normalize(dir);
+}
+
+float3 _sampleNearestLightDirection(float3 pos, float3 normal)
+{
+    float3 result = normal;
+  
     float bestDist = 1.#INF; // infinity
     for (int i = 0; i < globals.nbrActiveLights; ++i)
     {
@@ -314,9 +299,21 @@ float3 SampleNearestLightDirection(float3 pos, float3 normal, inout uint seed)
     }
     
     result = normalize(result);
-#endif
     
     return result;
+}
+
+float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
+{
+    
+#if 1
+    return _sampleNearestLightDirection(position, normal);
+#elif 1
+    return _sampleRandomLightDirection(position, normal, 1, seed);
+#else
+    return _sampleRandomLightDirection(position, normal, 1 | 1 << 1, seed);
+#endif
+    
 }
 
 // INTERPOLATION helper functions
@@ -475,37 +472,47 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
         float3 dist = prevPos - currRay.position;
-        float distSqredLight = 1;
+        float distNewPosSqr = dot(dist, dist);
+        distNewPosSqr = max(distNewPosSqr, 1);
         
-        // Trace light if given direction
+        // Sampling from the skybox doesn't invovle distance.
+        if (currRay.object == -1 || length(dist) == 0)
+            distNewPosSqr = 1;
+        
+        // Trace light if given a direction
         rayLightDesc.Origin = currRay.position;
         rayLightDesc.Direction = currRay.lightDir;
         lightRay.radiance = 0;
         const float wantedMaxRadiance = 10;
         
-        if (length(currRay.lightDir) != 0 && currRay.depth <= 3)
+        
+        float distSqredLight = 1;
+        // If we organize a new light direction, sample the light:
+        if (length(currRay.lightDir) != 0)
         {
             TraceRay(gRtScene, 0, 0xFF, 0, 1, 0, rayLightDesc, lightRay);
-            float currentRadiance = length(lightRay.radiance);
-            // adjust
-            lightRay.radiance *= currentRadiance > 0 ? wantedMaxRadiance / currentRadiance : 0;
+            float lightRadiance = length(lightRay.radiance);
+            
+            // adjust radiance for light ray
+            lightRay.radiance *= lightRadiance > 0 ? wantedMaxRadiance / lightRadiance : 0;
             
             float3 distToLight = currRay.position - lightRay.position;
             distSqredLight = length(distToLight);
             distSqredLight = max(distSqredLight, 1);
-
+            
+            // Sampling from the skybox doesn't invovle distance.
+            if (lightRay.object == -1)
+                distSqredLight = 1;
         }
         
-        // Sampling from the skybox doesn't invovle distance.
-        if (currRay.object == -1)
-            dist = 1;
         
         // Adjust rnd light hit
         float rndRadiance = length(currRay.radiance);
-        currRay.radiance *= rndRadiance > 0 ? sqrt(3) / rndRadiance : 0;
+        currRay.radiance *= rndRadiance > 0 ? 0.1 * wantedMaxRadiance / rndRadiance : 0;
         
+        // Blend light ray and reflection ray 50/50
         const float shadowRayBounceAlpha = 0.5;
-        radiance += shadowRayBounceAlpha * colour * currRay.radiance / length(dist) 
+        radiance += shadowRayBounceAlpha * colour * currRay.radiance / distNewPosSqr
             + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distSqredLight;
         colour *= currRay.colourReflect;
         
@@ -517,6 +524,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             result.object = currRay.object;
             result.position = currRay.position;
             
+            // if we sample directly from skybox, sample the colour and not radiance.
             if (length(currRay.radiance) > 0)
                 radiance = currRay.object == -1 ? currRay.colourReflect : currRay.radiance;
         }
@@ -524,18 +532,20 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         ray.Origin = currRay.position;
         ray.Direction = currRay.reflectDir;
         
-        if (length(currRay.radiance) > 0)
+        // If currRay is now emissive, or the reflect dir doesnt lead to anywhere, break:
+        if (length(currRay.reflectDir) == 0 || length(currRay.radiance) > 0)
             break;
+        // If it is a normal bounce with a normal new dir but the light is now too low:
         if (length(colour) < 0.01) {
-            //radiance += colour * frame.ambientFactor;
+            //radiance += 0.5 * colour * frame.ambientFactor;
             break;
         }
-            
         
         // Only shoot from 0 on camera.
         ray.TMin = T_HIT_MIN;
     }
     
+    // Final sampled colour
     result.colourReflect = radiance;
     result.seed = currRay.seed;
     
@@ -637,7 +647,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
     
     
     // Light Sample Ray scatter cone
-    float3 L = SampleNearestLightDirection(mat.pos, mat.normal, seed);
+    float3 L = SampleLightDirection(mat.pos, mat.normal, seed);
     cosNL = dot(N, L);
     float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
     L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
@@ -849,8 +859,6 @@ void rayGen()
 [shader("closesthit")] 
 void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
-    // Iterate depths
-    ++payload.depth;
     
     float hitT = RayTCurrent();
     float3 rayDirW = WorldRayDirection();
@@ -900,9 +908,16 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         payload.position = posW;
         payload.colourReflect = 1.0f;
         payload.radiance = 0;
+        
+        payload.lightDir = 0;
+        payload.colourLight = 0;
     }
     else // We have hit a normal object/pixel
     {
+        
+        // Iterate depths
+        ++payload.depth;
+        
         // sample diffuse texture value
         float3 albedo = tex_rgba.rgb;
         
@@ -910,35 +925,35 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         float3 V = -rayDirW;
         
         // Build normal
-        float3 objNormal = v.normal;
+        float3 normalMap = v.normal;
         float3 normal = v.normal;
         
         if (mat.NormalTextureIdx >= 0)
         {
             // from [0,1] to [-1, 1]
-            normal = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord).rgb * 2 - 1;
+            normalMap = TriSampleTex(normalsTex, mat.NormalTextureIdx, v.texCoord).rgb * 2 - 1;
             float3x3 TBN = float3x3(v.tangent, v.bitangent, v.normal);
-            normal = mul(normal, TBN);
+            normalMap = mul(normalMap, TBN);
         }
         
         normal = normalize(normal);
-        objNormal = normalize(objNormal);
+        normalMap = normalize(normalMap);
         
         bool isLight = length(mat.Emittance) != 0;
         
         // If the primary ray is hiting an object that is in the wrong direction, or hitting the light.
-        if ((mat.Type != TRANSMISSIVE && dot(normal, V) <= 0 && payload.rayMode == RAY_PRIMARY) || isLight)
+        if ((mat.Type != TRANSMISSIVE && dot(faceNormal, V) < 0) || isLight)
         {
             payload.position = posW;
             payload.colourReflect = 0;
-            payload.reflectDir = -normal;
+            payload.reflectDir = 0;
             
             payload.radiance = mat.Emittance;
             
+            payload.colourLight = 0;
             payload.lightDir = 0;
             
-            payload.normal = isLight ? -normal : 0;
-            //payload.object = length(mat.Emittance) != 0 ? GeometryIndex() : -1;
+            payload.normal = dot(faceNormal, V) < 0 ? -faceNormal : normal;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;
@@ -974,7 +989,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         if (payload.rayMode == RAY_PRIMARY)
         {
-            payload.normal = objNormal;
+            payload.normal = normal;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;
@@ -991,7 +1006,6 @@ void standardMiss(inout RayPayload payload)
     float3 radiance = 0;
     float3 colour = 0;
     
-    //skyboxDiffuse && skyboxRadiance
     
     if (globals.hasSkybox)
     {
@@ -1015,7 +1029,9 @@ void standardMiss(inout RayPayload payload)
     // sky normal, depth, and colour
     payload.radiance = radiance;
     payload.colourReflect = colour;
+    payload.colourLight = 0;
     
+    payload.lightDir = 0;
     payload.reflectDir = 0.0;
     
     payload.normal = -rayDirW;

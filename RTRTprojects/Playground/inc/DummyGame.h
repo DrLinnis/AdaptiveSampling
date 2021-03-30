@@ -42,7 +42,7 @@ class Window;  // From GameFramework.
 
 struct FrameData
 {
-    void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt, DirectX::XMFLOAT2 cameraWinSize) { 
+    void UpdateCamera(DirectX::XMFLOAT3 cameraPos, DirectX::XMFLOAT3 cameraLookAt ) { 
         auto camPos = 
             DirectX::XMLoadFloat3( &cameraPos );
         auto lookAt =
@@ -83,18 +83,19 @@ struct FrameData
 
         DirectX::XMStoreFloat3x4( &this->camPixelToWorld, viewToWorld );
 
+
 #endif
 
 
     }
 
-    FrameData( DirectX::XMFLOAT2 cameraWinSize, uint32_t defaultBouncesPerPath)
+    FrameData( uint32_t defaultBouncesPerPath)
         : nbrBouncesPerPath( defaultBouncesPerPath )
         , atmosphere( { 0, 0, 0, 1} ) // { .529, .808, .922, 1 }
         , exponentSamplesPerPixel( 0 )
         , ambientLight(0)
     {
-        UpdateCamera( DirectX::XMFLOAT3( 0, 2, 0 ), DirectX::XMFLOAT3( 10, 2, 0 ), cameraWinSize );
+        UpdateCamera( DirectX::XMFLOAT3( 0, 2, 0 ), DirectX::XMFLOAT3( 10, 2, 0 ) );
     }
 
     bool Equal( FrameData* pOld ) 
@@ -246,41 +247,41 @@ struct DenoiserFilterData
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
     {
-        auto oldCam = DirectX::XMLoadFloat3x4( &pOld->camPixelToWorld );
-        auto newCam = DirectX::XMLoadFloat3x4( &pNew->camPixelToWorld );
+        if (pOld || pNew) {
+            auto oldCam = DirectX::XMLoadFloat3x4( &pOld->camPixelToWorld );
+            auto newCam = DirectX::XMLoadFloat3x4( &pNew->camPixelToWorld );
 
-        auto camPosFloat = DirectX::XMFLOAT4( 0, 0, 0, 1 );
-        auto centerFloat = DirectX::XMFLOAT4( 0, 0, 1, 1 );
-        auto upFloat     = DirectX::XMFLOAT4( 0, -1, 0, 0 );
+            auto camPosFloat = DirectX::XMFLOAT4( 0, 0, 0, 1 );
+            auto centerFloat = DirectX::XMFLOAT4( 0, 0, 1, 1 );
+            auto upFloat     = DirectX::XMFLOAT4( 0, -1, 0, 0 );
 
-        auto centre = DirectX::XMLoadFloat4( &centerFloat );
-        auto camPos = DirectX::XMLoadFloat4( &camPosFloat );
-        auto up     = DirectX::XMLoadFloat4( &upFloat );
+            auto centre = DirectX::XMLoadFloat4( &centerFloat );
+            auto camPos = DirectX::XMLoadFloat4( &camPosFloat );
+            auto up     = DirectX::XMLoadFloat4( &upFloat );
 
-        auto oldPos = DirectX::XMVector4Transform( camPos, oldCam );
-        auto newPos = DirectX::XMVector4Transform( camPos, newCam );
+            auto oldPos = DirectX::XMVector4Transform( camPos, oldCam );
+            auto newPos = DirectX::XMVector4Transform( camPos, newCam );
 
-        auto oldLookAt = DirectX::XMVector4Transform( centre, oldCam );
-        auto newLookAt = DirectX::XMVector4Transform( centre, newCam );
+            auto oldLookAt = DirectX::XMVector4Transform( centre, oldCam );
+            auto newLookAt = DirectX::XMVector4Transform( centre, newCam );
 
-        auto oldCamLength = DirectX::XMVectorSubtract( oldLookAt, oldPos );
-        auto newCamLength = DirectX::XMVectorSubtract( newLookAt, newPos );
+            auto oldCamLength = DirectX::XMVectorSubtract( oldLookAt, oldPos );
+            auto newCamLength = DirectX::XMVectorSubtract( newLookAt, newPos );
 
-        float oldFocalLength, newFocalLength;
-        DirectX::XMStoreFloat( &oldFocalLength, DirectX::XMVector3Length( oldCamLength ) );
-        DirectX::XMStoreFloat( &newFocalLength, DirectX::XMVector3Length( newCamLength ) );
+            float oldFocalLength, newFocalLength;
+            DirectX::XMStoreFloat( &oldFocalLength, DirectX::XMVector3Length( oldCamLength ) );
+            DirectX::XMStoreFloat( &newFocalLength, DirectX::XMVector3Length( newCamLength ) );
 
+            auto oldDir = DirectX::XMVector3Normalize( oldCamLength );
+            auto newDir = DirectX::XMVector3Normalize( newCamLength );
 
+            auto oldView = DirectX::XMMatrixLookToLH( oldPos, oldDir, up );
+            auto newView = DirectX::XMMatrixLookToLH( newPos, newDir, up );
 
-
-        auto oldDir = DirectX::XMVector3Normalize( oldCamLength );
-        auto newDir = DirectX::XMVector3Normalize( newCamLength );
-
-        auto oldView = DirectX::XMMatrixLookToLH( oldPos, oldDir, up );
-        auto newView = DirectX::XMMatrixLookToLH( newPos, newDir, up );
-
-        DirectX::XMStoreFloat3x4( &oldCameraWorldToClip, oldView );
-        DirectX::XMStoreFloat3x4( &newCameraWorldToClip, newView );
+            DirectX::XMStoreFloat3x4( &oldCameraWorldToClip, oldView );
+            DirectX::XMStoreFloat3x4( &newCameraWorldToClip, newView );
+        }
+        
         m_CameraWinSize = cameraWinSize;
         m_WindowResolution = DirectX::XMFLOAT2( static_cast<float>( width ), static_cast<float>( height ) );
     }
