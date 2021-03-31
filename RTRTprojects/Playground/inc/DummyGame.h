@@ -235,7 +235,7 @@ struct DenoiserFilterData
     DirectX::XMFLOAT2 m_CameraWinSize;
     DirectX::XMFLOAT2 m_WindowResolution;
 
-    float m_alpha_new         = 0.2;
+    float m_alpha_new         = 0.1;
     float m_ReprojectErrorLimit = 1;
 
     float sigmaDepth = 1;
@@ -247,7 +247,7 @@ struct DenoiserFilterData
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
     {
-        if (pOld || pNew) {
+        if (pOld && pNew) {
             auto oldCam = DirectX::XMLoadFloat3x4( &pOld->camPixelToWorld );
             auto newCam = DirectX::XMLoadFloat3x4( &pNew->camPixelToWorld );
 

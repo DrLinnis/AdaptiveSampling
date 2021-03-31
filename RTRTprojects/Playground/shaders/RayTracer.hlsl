@@ -303,15 +303,111 @@ float3 _sampleNearestLightDirection(float3 pos, float3 normal)
     return result;
 }
 
+float3 _sampleWeightedLightDirection(float3 pos, float3 normal, inout uint seed)
+{
+    if (globals.nbrActiveLights == 0)
+        return normal;
+    
+    float weightSum = 0;
+    for (int i = 0; i < globals.nbrActiveLights; ++i) 
+        weightSum += globals.lightPositions[i].w; 
+    
+    float selectedWeightIninterval = rnd(seed) * weightSum;
+    float lower = 0, upper = globals.lightPositions[0].w;
+    
+    // just one
+    if (globals.nbrActiveLights == 1) {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+        return normalize(dir);
+    }
+    
+    // middle ground
+    for (int i = 0; i < globals.nbrActiveLights - 1; ++i)
+    {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+
+        
+        if (selectedWeightIninterval >= lower && selectedWeightIninterval < upper)
+            return normalize(dir);
+        
+        lower += globals.lightPositions[i].w;
+        upper += globals.lightPositions[i + 1].w;
+    }
+    // last item
+    if (selectedWeightIninterval > lower)
+    {
+        float3 lightPos = globals.lightPositions[globals.nbrActiveLights - 1].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+        return normalize(dir);
+
+    }
+        
+    
+    return normal;
+}
+
+float3 _sampleWithMaxRadius(float3 pos, float3 normal, inout uint seed)
+{
+    float3 result = normal;
+    
+    int nbrOptions = 0;
+    float3 optionsDir[10];
+    for (int i = 0; i < globals.nbrActiveLights; ++i)
+    {
+        float3 lightPos = globals.lightPositions[i].xyz;
+        lightPos = modelToWorldPosition(lightPos);
+        float3 dir = lightPos - pos;
+        float distLength = length(dir);
+        float allowedRadius = globals.lightPositions[i].w;
+        if (distLength < allowedRadius && distLength > 0)
+        {
+            //increment stack and select index to choose from.
+            optionsDir[nbrOptions] = normalize(dir);
+            ++nbrOptions;
+        }
+    }
+    
+    if (nbrOptions > 0)
+        result = optionsDir[nbrOptions * rnd(seed)];
+    
+    // NOT WORKING
+    return normal;
+}
+
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
-    
 #if 1
+    const float3 staticDir = normalize(float3(0.115, 0.6, 0.791));
+    float3 rotatedDir = staticDir;
+    if (globals.hasSkybox)
+    {
+        float sinTheta = sin(-frame.atmosphere.x);
+        float cosTheta = cos(frame.atmosphere.x);
+        
+        float3x3 rotationMatrix = float3x3(cosTheta, 0, sinTheta, 0, 1, 0, -sinTheta, 0, cosTheta);
+        
+        rotatedDir = mul(rotationMatrix, staticDir);
+        
+    }
+    
+    
+    return rotatedDir;
+    
+#elif 0
+    return _sampleWithMaxRadius(position, normal, seed);
+#elif 0
+    return _sampleWeightedLightDirection(position, normal, seed);
+#elif 0
     return _sampleNearestLightDirection(position, normal);
 #elif 1
     return _sampleRandomLightDirection(position, normal, 1, seed);
 #else
-    return _sampleRandomLightDirection(position, normal, 1 | 1 << 1, seed);
+    return float3(0, 1, 0);
 #endif
     
 }
@@ -349,13 +445,13 @@ VertexAttributes GetVertexAttributes(uint geometryIndex, uint primitiveIndex, fl
         v.position += vertPos[i] * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3
         // normal
-        v.normal += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.normal += normalize(asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex))) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3
         // tangent
-        v.tangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.tangent += normalize(asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex))) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3
         // bitangent
-        v.bitangent += asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex)) * barycentrics[i];
+        v.bitangent += normalize(asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex))) * barycentrics[i];
         triangleVertexIndex += 3 * 4; // check the next float 3
         // tex coordinate
         texels[i] = asfloat(vertices[GeometryIndex()].Load3(triangleVertexIndex));
@@ -461,6 +557,8 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
     currRay.depth = 0;
     currRay.mediumIoR = 1.0f;
     
+    lightRay.rayMode = RAY_SECONDARY;
+    
     uint prevType;
     float3 prevPos;
     while (currRay.depth < frame.nbrBouncesPerPath)
@@ -472,12 +570,12 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         TraceRay( gRtScene, 0, 0xFF, 0, 1, 0, ray, currRay );
         float3 dist = prevPos - currRay.position;
-        float distNewPosSqr = dot(dist, dist);
-        distNewPosSqr = max(distNewPosSqr, 1);
+        float distNewPos = length(dist);
+        distNewPos = max(distNewPos, 1);
         
         // Sampling from the skybox doesn't invovle distance.
         if (currRay.object == -1 || length(dist) == 0)
-            distNewPosSqr = 1;
+            distNewPos = 1;
         
         // Trace light if given a direction
         rayLightDesc.Origin = currRay.position;
@@ -486,7 +584,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         const float wantedMaxRadiance = 10;
         
         
-        float distSqredLight = 1;
+        float distLightRay = 1;
         // If we organize a new light direction, sample the light:
         if (length(currRay.lightDir) != 0)
         {
@@ -497,12 +595,12 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             lightRay.radiance *= lightRadiance > 0 ? wantedMaxRadiance / lightRadiance : 0;
             
             float3 distToLight = currRay.position - lightRay.position;
-            distSqredLight = length(distToLight);
-            distSqredLight = max(distSqredLight, 1);
+            distLightRay = length(distToLight);
+            distLightRay = max(distLightRay, 1);
             
             // Sampling from the skybox doesn't invovle distance.
             if (lightRay.object == -1)
-                distSqredLight = 1;
+                distLightRay = 1;
         }
         
         
@@ -512,8 +610,16 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         // Blend light ray and reflection ray 50/50
         const float shadowRayBounceAlpha = 0.5;
-        radiance += shadowRayBounceAlpha * colour * currRay.radiance / distNewPosSqr
-            + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distSqredLight;
+        if (length(currRay.lightDir) != 0)
+        {
+            radiance += shadowRayBounceAlpha * colour * currRay.radiance / distNewPos
+                + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distLightRay;
+        }
+        else
+        {
+            radiance += colour * currRay.radiance / distNewPos;
+        }
+        
         colour *= currRay.colourReflect;
         
         // Store the first Primary Ray normal/specular/object/position
@@ -537,7 +643,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             break;
         // If it is a normal bounce with a normal new dir but the light is now too low:
         if (length(colour) < 0.01) {
-            //radiance += 0.5 * colour * frame.ambientFactor;
+            radiance += 0.5 * colour * frame.ambientFactor;
             break;
         }
         
@@ -647,26 +753,29 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
     
     
     // Light Sample Ray scatter cone
-    float3 L = SampleLightDirection(mat.pos, mat.normal, seed);
-    cosNL = dot(N, L);
-    float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
-    L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+    float3 L = 0;
     
-    // Can't sample in negative hemisphere
-    if (cosNL <= 0) 
-    {
-        sampleProbLight = 1;
-        brdfEvalLight = 0;
-        L = 0;
-    }
-    else
-    {
-        sampleProbLight = cosNR;
-        brdfEvalLight = mat.colour;
-    }
+    sampleProbLight = 1;
+    brdfEvalLight = 0;
         
     if (mat.type == DIFFUSE)
     {
+        L = SampleLightDirection(mat.pos, mat.normal, seed);
+        cosNL = dot(N, L);
+        float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos( 0.001, seed);
+        L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+    
+        // Can't sample in negative hemisphere
+        if (cosNL <= 0)
+        {
+            L = N;
+        }
+        else
+        {
+            sampleProbLight = cosNR;
+            brdfEvalLight = mat.colour;
+        }
+        
         R = sample_hemisphere_TrowbridgeReitzCos(alpha2, seed);
         R = normalize(applyRotationMappingZToN(N, R));
         
@@ -703,9 +812,11 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
     else if (mat.type == SPECULAR)
     {
         float r = mat.reflectivity;
-        if (rnd(seed) < r)
+        bool reflectRay = rnd(seed) < r;
+        if (reflectRay)
         {
             R = reflect(-V, N);
+            
             H = normalize(R + V);
             
             cosNH = dot(N, H);
@@ -713,9 +824,26 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
             cosVH = dot(V, H);
         
             cosNR = dot(N, R);
+            
         }
         else
         {
+            L = SampleLightDirection(mat.pos, mat.normal, seed);
+            cosNL = dot(N, L);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+    
+            // Can't sample in negative hemisphere
+            if (cosNL <= 0)
+            {
+                L = N;
+            }
+            else
+            {
+                sampleProbLight = cosNR;
+                brdfEvalLight = mat.colour;
+            }
+            
             R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
         
             R = normalize(R);
@@ -746,22 +874,62 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
             brdfEvalReflect = r * spec + (1 - r) * InvPi * mat.colour;
             sampleProbReflect = r * (D * cosNH / denomProb) + (1 - r) * (InvPi * cosNR);
         }
+        
 
     }
     
     else if (mat.type == TRANSMISSIVE)
     {
-        R = refract(V, N, mat.ior);
+        float3 tmpNormal = dot(V, N) < 0 ? -N : N;
+        
+        R = refract(V, tmpNormal, mat.ior);
         
         if (length(R) == 0)
-            R = reflect(-V, N);
+        {
+            L = SampleLightDirection(mat.pos, mat.normal, seed);
+            cosNL = dot(N, L);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+    
+            // Can't sample in negative hemisphere
+            if (cosNL <= 0)
+            {
+                L = N;
+            }
+            else
+            {
+                sampleProbLight = cosNR;
+                brdfEvalLight = mat.colour;
+            }
+            
+            
+            R = reflect(-V, tmpNormal);
+        }
+        else if (mat.ior == 1)
+        {
+            L = SampleLightDirection(mat.pos, mat.normal, seed);
+            cosNL = dot(N, L);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
+    
+            // Can't sample in negative hemisphere
+            if (cosNL <= 0)
+            {
+                L = N;
+            }
+            else
+            {
+                sampleProbLight = cosNR;
+                brdfEvalLight = mat.colour;
+            }
+        }
         
         R = normalize(R);
         
-        cosNR = dot(N, R);
+        cosNR = dot(tmpNormal, R);
             
         sampleProbReflect = cosNR;
-        brdfEvalReflect = (float3(1, 1, 1));
+        brdfEvalReflect = (float3(1, 1, 1) - mat.colour);
     }
     
     else
@@ -914,7 +1082,6 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
     }
     else // We have hit a normal object/pixel
     {
-        
         // Iterate depths
         ++payload.depth;
         
@@ -950,10 +1117,10 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
             
             payload.radiance = mat.Emittance;
             
-            payload.colourLight = 0;
+            payload.colourLight = isLight ? 1 : 0;
             payload.lightDir = 0;
             
-            payload.normal = dot(faceNormal, V) < 0 ? -faceNormal : normal;
+            payload.normal = dot(faceNormal, V) < 0 ? -faceNormal : faceNormal;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;
@@ -974,14 +1141,17 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         float divIoR = payload.mediumIoR / mat.IndexOfRefraction;
         
-        MaterialInfoBDRF matBDRF = MaterialInfo(V, normal, posW, mat.Type, albedo,
+        MaterialInfoBDRF matBDRF = MaterialInfo(V, normalMap, posW, mat.Type, albedo,
                         specVal, mat.Roughness, divIoR, payload.depth);
+        
         sampleBRDF( payload.reflectDir, payload.lightDir, 
                     payload.colourReflect, payload.colourLight, 
                     matBDRF, payload.seed
             );
         
-        if (mat.Type == TRANSMISSIVE && dot(normal, payload.reflectDir) < 0)
+        // If we are in transmissive type, and we see that the view vector and reflection vector
+        // are opposites. Then change the medium IoR
+        if (mat.Type == TRANSMISSIVE && dot(V, payload.reflectDir) < 0)
             payload.mediumIoR = mat.IndexOfRefraction;
         
         payload.position = posW;

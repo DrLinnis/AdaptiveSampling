@@ -177,7 +177,7 @@ void main( ComputeShaderInput IN )
                     
                     
                 // For estimating the variance spatially, we just use normals and depth
-                float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
+                float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), 30);
 
                 //float weightDepth = abs(centreDepth - currDepth) / (length(max(depthGradient.x, depthGradient.y) * float2(xOffset, yOffset)) * filterData.sigmaDepth + EPSILON);
                 float weightDepth = abs(centreDepth - currDepth) / (length(max(depthGradient.x, depthGradient.y) * float2(xOffset, yOffset)) * filterData.sigmaDepth + EPSILON);

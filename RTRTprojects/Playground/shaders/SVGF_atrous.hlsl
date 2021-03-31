@@ -237,13 +237,16 @@ void main(ComputeShaderInput IN)
 #define PROPER 1
 #if PROPER
     filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(sumColourVar.rgb), 1), 0, 1);
+    
 #else
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(centreNormal * 0.5 + 0.5, 1), 0, 1);
     //if (stepsize == 3)
         //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(sumColourVar.rgb), 1), 0, 1);
     //if (stepsize == 2)
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(sumColourVar.w * 100000, 0, 1);
-
+    // Aim
+    //if (filterData.windowResolution.x / 2 == IN.DispatchThreadID.x || filterData.windowResolution.y / 2 == IN.DispatchThreadID.y )
+        //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = float4(1, 0, 0, 0);
 #endif
     
 }

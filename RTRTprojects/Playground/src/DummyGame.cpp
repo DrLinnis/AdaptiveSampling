@@ -197,13 +197,17 @@ void DummyGame::CreateRayTracingPipeline() {
     {
         std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
         // TLAS + Idx + Vert + MatProp + Diffuse
-        size_t rangeSize = 9;
+        size_t rangeSize = 10;
 
         ranges.resize( rangeSize );
 
         size_t                    rangeIdx = 0;
         // The slot after the rendertargets + per frame data
-        size_t offset = ( m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets ) + 1;
+        size_t offset = m_nbrRayRenderTargets + m_nbrHistoryRenderTargets + m_nbrFilterRenderTargets;
+        // per frame data
+        ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+        offset += 1;
+
         // globals
         ranges[rangeIdx++].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0,
                                  D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
@@ -737,8 +741,9 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_BOX_LONG 0
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
-#define CORNELL_WATER 0
-#define SPONZA 1
+#define CORNELL_WATER    0
+#define SUN_TEMPLE       1
+#define SPONZA 0
 #define DEBUG_SCENE 1
 
 bool DummyGame::LoadContent()
@@ -880,18 +885,22 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
+#elif SUN_TEMPLE
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple2.fbx" );
+    m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+    scene_scale = 1 / 10.0f;
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
     lodScaleExp            = 6;
-    m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
-    m_frameData.ambientLight    = 5.0;
+    //m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
+    m_frameData.ambientLight    = 0.0;
     m_Globals.nbrActiveLights   = 5;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 1100, 200, 445, 300 );
     m_Globals.lightPositions[1] = DirectX::XMFLOAT4( 1120, 200, -405, 300 );
     m_Globals.lightPositions[2] = DirectX::XMFLOAT4( -1190, 200, 445, 300 );
     m_Globals.lightPositions[3] = DirectX::XMFLOAT4( -1190, 200, -405, 300 );
-    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 0, 1500, 0, 2000 ); // sun, up?
+    m_Globals.lightPositions[4] = DirectX::XMFLOAT4( 0, 3000, 0, 2000 ); // sun, up?
 
     for (int i = 0; i < 4; ++i) {
 
@@ -1289,6 +1298,8 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         if (m_Print) {
             m_Print = false;
             m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_CamPos.x, m_CamPos.y, m_CamPos.z );
+            DirectX::XMFLOAT3 tmpDir = CalculateDirectionVector( m_Yaw, m_Pitch );
+            m_Logger->info( "Dir: ({:.7},{:.7},{:.7})", tmpDir.x, tmpDir.y, tmpDir.z );
         }
 
     }
@@ -1363,7 +1374,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     
     if (ImGui::Begin( "Camera and Transform Sliders" ))// not demo window
     {
-        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 2000 );
+        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 100 );
         ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
 
         ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
@@ -1413,7 +1424,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
     if ( ImGui::Begin( "Filter Settings" ) )
     {
         float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
-        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 10 );
+        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 20 );
         m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
 
         ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
@@ -1422,7 +1433,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
 
         ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
         ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
-        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.01, 100 );
+        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.001, 30 );
 
 
 
@@ -1550,7 +1561,7 @@ void DummyGame::OnRender()
             commandList->CopyResource( dstMomentHistory, srcMomentTarget );
             commandList->UAVBarrier( dstMomentHistory, true );
             
-
+                
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
             DenoiserFilterData* pData;
@@ -1580,12 +1591,10 @@ void DummyGame::OnRender()
             commandList->UAVBarrier( dstMomentSource, true );
 
             if (i == 1) {
-
                 // Copy COLOUR target to HISTORY once we have finished MOMENT SVGF filter.
                 auto dstIntegradedColour = m_HistoryRenderTarget.GetTexture( m_ColourSlot );
                 commandList->CopyResource( dstIntegradedColour, srcColourTarget );
                 commandList->UAVBarrier( dstIntegradedColour, true );
-            
             
             }
         }
