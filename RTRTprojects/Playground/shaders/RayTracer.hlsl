@@ -379,9 +379,8 @@ float3 _sampleWithMaxRadius(float3 pos, float3 normal, inout uint seed)
     return normal;
 }
 
-float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
+float3 _sampleTowardsSunInSkybox()
 {
-#if 1
     const float3 staticDir = normalize(float3(0.115, 0.6, 0.791));
     float3 rotatedDir = staticDir;
     if (globals.hasSkybox)
@@ -392,12 +391,14 @@ float3 SampleLightDirection(in float3 position, in float3 normal, inout uint see
         float3x3 rotationMatrix = float3x3(cosTheta, 0, sinTheta, 0, 1, 0, -sinTheta, 0, cosTheta);
         
         rotatedDir = mul(rotationMatrix, staticDir);
-        
     }
-    
-    
     return rotatedDir;
-    
+}
+
+float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
+{
+#if 1
+    return _sampleTowardsSunInSkybox();
 #elif 0
     return _sampleWithMaxRadius(position, normal, seed);
 #elif 0
@@ -581,7 +582,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         rayLightDesc.Origin = currRay.position;
         rayLightDesc.Direction = currRay.lightDir;
         lightRay.radiance = 0;
-        const float wantedMaxRadiance = 10;
+        const float wantedMaxRadiance = 5;
         
         
         float distLightRay = 1;
@@ -762,7 +763,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
     {
         L = SampleLightDirection(mat.pos, mat.normal, seed);
         cosNL = dot(N, L);
-        float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos( 0.001, seed);
+        float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos( 0.01, seed);
         L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
         // Can't sample in negative hemisphere
@@ -830,7 +831,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
         {
             L = SampleLightDirection(mat.pos, mat.normal, seed);
             cosNL = dot(N, L);
-            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
             L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
             // Can't sample in negative hemisphere
@@ -888,7 +889,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
         {
             L = SampleLightDirection(mat.pos, mat.normal, seed);
             cosNL = dot(N, L);
-            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
             L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
             // Can't sample in negative hemisphere
@@ -909,7 +910,7 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
         {
             L = SampleLightDirection(mat.pos, mat.normal, seed);
             cosNL = dot(N, L);
-            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.1, seed);
+            float3 lightRandomScatterDir = sample_hemisphere_TrowbridgeReitzCos(0.01, seed);
             L = normalize(applyRotationMappingZToN(L, lightRandomScatterDir));
     
             // Can't sample in negative hemisphere
@@ -1159,7 +1160,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         
         if (payload.rayMode == RAY_PRIMARY)
         {
-            payload.normal = normal;
+            payload.normal = normalMap;
             payload.object = GeometryIndex();
             payload.mask = mat.Type;
             payload.rayMode = RAY_SECONDARY;

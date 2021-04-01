@@ -193,7 +193,7 @@ bool BilienarTapFilter(float2 oldUv, float2 newUv, float3 normal, float3 worldPo
             continue;
         
         // check normal
-        if (dot(normalize(historyBuffer[SLOT_NORMALS][q].xyz * 2.0 - 1), normal) <= 1.0 - EPSILON)
+        if (dot(normalize(historyBuffer[SLOT_NORMALS][q].xyz * 2.0 - 1), normal) <= 0.98)
             continue;
         
         // check position
@@ -317,5 +317,5 @@ void main( ComputeShaderInput IN )
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(newObjMask.w, 0, 0, 0), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(length(oldRayPixelPos - IN.DispatchThreadID.xy) > 1, 0, 0, 0), 0, 1);
     //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(linearToSrgb(newRadiance.rgb), 1), 0, 1);
-    //filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(historyBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz, 1), 0, 1);
+    filterBuffer[FILTER_SLOT_SDR_TARGET][IN.DispatchThreadID.xy] = clamp(float4(historyBuffer[SLOT_NORMALS][IN.DispatchThreadID.xy].xyz, 1), 0, 1);
 }

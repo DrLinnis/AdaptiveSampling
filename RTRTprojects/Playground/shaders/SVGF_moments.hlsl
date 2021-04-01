@@ -143,7 +143,7 @@ void main( ComputeShaderInput IN )
     
     
     // Since spatial accumulation is not good enough, define spatial
-    if (histLength < 4)
+    if (histLength < 8)
     {
         float3 centreNormal = normalize(rayBuffer[SLOT_NORMALS][p].xyz * 2 - 1);
         float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;
@@ -202,7 +202,7 @@ void main( ComputeShaderInput IN )
         float variance = max(0, sumMomentum.y - sumMomentum.x * sumMomentum.x);
         
         // give the variance a boost for the first frames
-        variance *= 4.0 / max(1.0, histLength);
+        //variance *= 4.0 / max(1.0, histLength);
         
         filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = float4(sumColour.rgb, variance);
         momentHistlenStepsize.xy = sumMomentum;
@@ -212,7 +212,7 @@ void main( ComputeShaderInput IN )
     {
         filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = centreColour;
     }
-    momentHistlenStepsize.w = 1;
+    momentHistlenStepsize.w = 0; // initial step size
     
     filterBuffer[FILTER_SLOT_MOMENT_TARGET][p] = momentHistlenStepsize;
     

@@ -187,7 +187,7 @@ void main(ComputeShaderInput IN)
     {
         for (int xOffset = -2; xOffset <= 2; xOffset++)
         {
-            int2 q = p + stepsize * int2(xOffset, yOffset);
+            int2 q = p + pow(2, stepsize) * int2(xOffset, yOffset);
                 
             if ((xOffset == 0 && yOffset == 0)
                     || q.x < 0 || q.x >= filterData.windowResolution.x 
