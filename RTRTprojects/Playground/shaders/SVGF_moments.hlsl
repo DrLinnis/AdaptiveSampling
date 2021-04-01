@@ -202,7 +202,7 @@ void main( ComputeShaderInput IN )
         float variance = max(0, sumMomentum.y - sumMomentum.x * sumMomentum.x);
         
         // give the variance a boost for the first frames
-        //variance *= 4.0 / max(1.0, histLength);
+        variance *= 4.0 / max(1.0, histLength);
         
         filterBuffer[FILTER_SLOT_COLOUR_TARGET][p] = float4(sumColour.rgb, variance);
         momentHistlenStepsize.xy = sumMomentum;

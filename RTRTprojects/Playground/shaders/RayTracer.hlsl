@@ -398,6 +398,8 @@ float3 _sampleTowardsSunInSkybox()
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
 #if 1
+        return _sampleTowardsSunInSkybox();
+#elif 0
     return _sampleTowardsSunInSkybox();
 #elif 0
     return _sampleWithMaxRadius(position, normal, seed);
@@ -582,7 +584,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         rayLightDesc.Origin = currRay.position;
         rayLightDesc.Direction = currRay.lightDir;
         lightRay.radiance = 0;
-        const float wantedMaxRadiance = 5;
+        const float wantedMaxRadiance = 10;
         
         
         float distLightRay = 1;
@@ -615,6 +617,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         {
             radiance += shadowRayBounceAlpha * colour * currRay.radiance / distNewPos
                 + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distLightRay;
+
         }
         else
         {
@@ -631,9 +634,12 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             result.object = currRay.object;
             result.position = currRay.position;
             
+            radiance += colour * frame.ambientFactor;
+            
             // if we sample directly from skybox, sample the colour and not radiance.
             if (length(currRay.radiance) > 0)
                 radiance = currRay.object == -1 ? currRay.colourReflect : currRay.radiance;
+
         }
         
         ray.Origin = currRay.position;
@@ -644,7 +650,6 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
             break;
         // If it is a normal bounce with a normal new dir but the light is now too low:
         if (length(colour) < 0.01) {
-            radiance += 0.5 * colour * frame.ambientFactor;
             break;
         }
         
