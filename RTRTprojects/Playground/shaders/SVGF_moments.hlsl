@@ -143,7 +143,7 @@ void main( ComputeShaderInput IN )
     
     
     // Since spatial accumulation is not good enough, define spatial
-    if (histLength < 8)
+    if (histLength < 4)
     {
         float3 centreNormal = normalize(rayBuffer[SLOT_NORMALS][p].xyz * 2 - 1);
         float3 centreObj = rayBuffer[SLOT_OBJECT_ID_MASK][p].xyz;

@@ -9,7 +9,7 @@
 #define EPSILON 0.00001
 
 #define T_HIT_MIN 0.0001
-#define T_HIT_MAX 100000
+#define T_HIT_MAX 10000
 
 #define DIFFUSE         0
 #define SPECULAR        1
@@ -397,18 +397,18 @@ float3 _sampleTowardsSunInSkybox()
 
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
-#if 1
-        return _sampleTowardsSunInSkybox();
-#elif 0
+#if 0 // Sun Temple
     return _sampleTowardsSunInSkybox();
+#elif 0 // Cornell
+    return _sampleRandomLightDirection(position, normal, 1, seed);
+#elif 1 // Sponza
+    return _sampleWeightedLightDirection(position, normal, seed);
+    //return _sampleRandomLightDirection(position, normal, 1, seed);
+    
 #elif 0
     return _sampleWithMaxRadius(position, normal, seed);
 #elif 0
-    return _sampleWeightedLightDirection(position, normal, seed);
-#elif 0
     return _sampleNearestLightDirection(position, normal);
-#elif 1
-    return _sampleRandomLightDirection(position, normal, 1, seed);
 #else
     return float3(0, 1, 0);
 #endif
@@ -621,7 +621,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         }
         else
         {
-            radiance += colour * currRay.radiance / distNewPos;
+            radiance += colour * currRay.radiance / 1;
         }
         
         colour *= currRay.colourReflect;
@@ -850,8 +850,9 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
                 brdfEvalLight = mat.colour;
             }
             
-            R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
-        
+            //R = applyRotationMappingZToN(N, sample_hemisphere_cos(seed));
+            R = applyRotationMappingZToN(N, sample_hemisphere_TrowbridgeReitzCos(alpha2, seed));
+            
             R = normalize(R);
         
             cosNR = dot(N, R);
@@ -1018,9 +1019,9 @@ void rayGen()
     newRadiance /= (float) nbrSamples;
     
     
-    float depth = length(camOrigin - payload.position) / T_HIT_MAX;
+    float depth = length(camOrigin - payload.position) / (T_HIT_MAX);
 
-    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(newRadiance, 0);
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(clamp(newRadiance, 0, 1), 0);
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
     gOutput[SLOT_OBJECT_ID_MASK][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
@@ -1118,7 +1119,7 @@ void standardChs(inout RayPayload payload, in BuiltInTriangleIntersectionAttribu
         if ((mat.Type != TRANSMISSIVE && dot(faceNormal, V) < 0) || isLight)
         {
             payload.position = posW;
-            payload.colourReflect = 0;
+            payload.colourReflect = isLight ? mat.Emittance : 0;
             payload.reflectDir = 0;
             
             payload.radiance = mat.Emittance;

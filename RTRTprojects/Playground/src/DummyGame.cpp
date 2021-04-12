@@ -742,7 +742,7 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       1
+#define SUN_TEMPLE       0
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -888,6 +888,11 @@ bool DummyGame::LoadContent()
 #elif SUN_TEMPLE
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple.obj" );
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
+    m_CamPos = DirectX::XMFLOAT3( 7.54, 12.63, 15.57 );
+    m_Yaw    = -110;
+    m_Pitch  = 15;
+
     scene_scale = 2;
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
@@ -1433,7 +1438,7 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
 
         ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
         ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
-        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 30 );
+        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 50 );
 
 
 
