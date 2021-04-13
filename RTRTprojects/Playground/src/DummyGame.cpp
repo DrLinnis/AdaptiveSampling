@@ -742,7 +742,7 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       0
+#define SUN_TEMPLE       1
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -1483,21 +1483,29 @@ void DummyGame::OnRender()
                 m_Instances, m_InstanceDescBuffer.get(), true);
 #endif
 
+            auto colourRayOutput = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
+            commandList->ClearTexture( colourRayOutput, clearColor );
+            commandList->UAVBarrier( colourRayOutput, true );
+
             // Set global root signature
             commandList->SetComputeRootSignature(m_GlobalRootSig);
 
-            // Set pipeline and heaps for shader table
-            commandList->SetPipelineState1(m_RayPipelineState, m_RayShaderHeap);
-
-            // Dispatch Rays
-            commandList->DispatchRays(&m_RaytraceDesc);
-
-            for (uint32_t i = 0; i < m_nbrRayRenderTargets; ++i)
+            // Stage 1, sample primaries
             {
-                auto resource = m_RayRenderTarget.GetTexture(static_cast<AttachmentPoint>(i));
+                // Set pipeline and heaps for shader table
+                commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
 
-                commandList->UAVBarrier(resource, true);
+                // Dispatch Rays
+                commandList->DispatchRays( &m_RaytraceDesc );
+
+                for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+                {
+                    auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                    commandList->UAVBarrier( resource, true );
+                }
             }
+            
 
         }
 #endif

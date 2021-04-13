@@ -267,7 +267,6 @@ float3 sample_hemisphere_TrowbridgeReitzCos(in float alpha2, inout uint seed)
 
 
 // My functions
-
 float3 _sampleRandomLightDirection(float3 pos, float3 normal, uint sampleMask, inout uint seed)
 {
     if (globals.nbrActiveLights == 0)
@@ -397,7 +396,7 @@ float3 _sampleTowardsSunInSkybox()
 
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
-#if 0 // Sun Temple
+#if 1 // Sun Temple
     return _sampleTowardsSunInSkybox();
 #elif 0 // Cornell
     return _sampleRandomLightDirection(position, normal, 1, seed);
@@ -613,7 +612,7 @@ RayPayload TraceFullPath(float3 origin, float3 direction, uint seed)
         
         // Blend light ray and reflection ray 50/50
         const float shadowRayBounceAlpha = 0.5;
-        if (length(currRay.lightDir) != 0)
+        if (length(currRay.lightDir) != 0) // && length(lightRay.radiance) != 0
         {
             radiance += shadowRayBounceAlpha * colour * currRay.radiance / distNewPos
                 + (1 - shadowRayBounceAlpha) * colour * currRay.colourLight * lightRay.radiance / distLightRay;
@@ -973,6 +972,8 @@ void rayGen()
     uint3 launchIndex = DispatchRaysIndex();
     uint3 launchDim = DispatchRaysDimensions();
 
+    
+    
     uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
     uint seed = getNewSeed(bufferOffset, frame.cpuGeneratedSeed, 8);
     

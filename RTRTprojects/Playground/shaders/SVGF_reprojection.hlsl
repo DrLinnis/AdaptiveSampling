@@ -298,7 +298,7 @@ void main( ComputeShaderInput IN )
     else
     {
         momentHistlenStepsize.z = 1;
-        reprojectedColour.xyz = newRadiance.xyz;
+        reprojectedColour.xyz = clamp(newRadiance.xyz, 0, 1);
     }
     
     momentHistlenStepsize.x = luminance(reprojectedColour.rgb);
