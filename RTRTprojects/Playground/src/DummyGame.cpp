@@ -139,7 +139,7 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = hitProgram.subObject; 
 
 
-    // Create the ray-gen root-signature and association
+    // Create the ray-gen root-signature
     {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[4] = {};
@@ -188,6 +188,7 @@ void DummyGame::CreateRayTracingPipeline() {
         subobjects[index] = rayGenSubobject;  // 2 RayGen Root Sig
     }
 
+    // Raygen association
     uint32_t          rgsRootIndex = index++;  // 2
     ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
@@ -383,6 +384,118 @@ void DummyGame::CreateRayTracingPipeline() {
     // END GLOBAL
 
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
+
+}
+
+void DummyGame::CreateDenoisingPipeline()
+{
+    // Load compute shader
+    ComPtr<ID3DBlob> svgf_atrous;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_atrous.cso", &svgf_atrous ) );
+
+    ComPtr<ID3DBlob> svgf_reprojection;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_reprojection.cso", &svgf_reprojection ) );
+
+    ComPtr<ID3DBlob> svgf_moments;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_moments.cso", &svgf_moments ) );
+
+    CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
+
+    UINT offset = 0;
+    ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+    offset += m_nbrRayRenderTargets;
+    ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                    offset );
+    offset += m_nbrHistoryRenderTargets;
+    ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                    offset );
+    offset += m_nbrFilterRenderTargets;
+
+    // Add for per frame, globals CB
+    offset += 2;
+
+    ranges[3].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+
+    CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+    rayRootParams[0].InitAsDescriptorTable( 4, ranges );
+
+    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+    rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+
+    m_DenoiserRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+    // Create Pipeline State Object (PSO) for compute shader
+    struct DenoiserPipelineState
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
+    };
+
+    // Atrous wavelet filter
+    struct DenoiserPipelineState svgfAtrousPipelineStateStream = {};
+    svgfAtrousPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfAtrousPipelineStateStream.CS                           = CD3DX12_SHADER_BYTECODE( svgf_atrous.Get() );
+    m_SVGF_AtrousPipelineState = m_Device->CreatePipelineStateObject( svgfAtrousPipelineStateStream );
+
+    // Reprojection filter
+    struct DenoiserPipelineState svgfReprojectionPipelineStateStream = {};
+    svgfReprojectionPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfReprojectionPipelineStateStream.CS = CD3DX12_SHADER_BYTECODE( svgf_reprojection.Get() );
+    m_SVGF_ReprojectionPipelineState       = m_Device->CreatePipelineStateObject( svgfReprojectionPipelineStateStream );
+
+    // Moments filter
+    struct DenoiserPipelineState svgfMomentsPipelineStateStream = {};
+    svgfMomentsPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfMomentsPipelineStateStream.CS                           = CD3DX12_SHADER_BYTECODE( svgf_moments.Get() );
+    m_SVGF_MomentsPipelineState = m_Device->CreatePipelineStateObject( svgfMomentsPipelineStateStream );
+}
+
+void DummyGame::CreateRaySchedularPipeline() 
+{
+    // Load compute shader
+    ComPtr<ID3DBlob> raySchedular;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/RayScheduler.cso", &raySchedular ) );
+
+    CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
+
+    UINT offset = 0;
+    ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+    offset += m_nbrRayRenderTargets;
+
+    // add for history and filter render targets
+    offset += m_nbrHistoryRenderTargets;
+    offset += m_nbrFilterRenderTargets;
+
+    // Add for per frame, globals CB
+    offset += 2;
+
+    ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+
+    CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
+    rayRootParams[0].InitAsDescriptorTable( 2, ranges );
+    rayRootParams[1].InitAsConstants( 1, 1, 0, D3D12_SHADER_VISIBILITY_ALL );
+
+    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+    rootSignatureDescription.Init_1_1( 2, rayRootParams, 0, nullptr, rootSignatureFlags );
+
+    m_RayScheduleRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+    // Create Pipeline State Object (PSO) for compute shader
+    struct ComputePipelineState
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
+    };
+
+    // Scheduler filter
+    struct ComputePipelineState schedularPipelineStream  = {};
+    schedularPipelineStream.pRootSignature              = m_RayScheduleRootSig->GetD3D12RootSignature().Get();
+    schedularPipelineStream.CS                           = CD3DX12_SHADER_BYTECODE( raySchedular.Get() );
+    m_RaySchedulePipelineState = m_Device->CreatePipelineStateObject( schedularPipelineStream );
 
 }
 
@@ -1094,71 +1207,9 @@ bool DummyGame::LoadContent()
 
     UpdateDispatchRaysDesc();
 
-    {
-        // Load compute shader
-        ComPtr<ID3DBlob> svgf_atrous;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_atrous.cso", &svgf_atrous ) );
+    CreateDenoisingPipeline();
 
-        ComPtr<ID3DBlob> svgf_reprojection;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_reprojection.cso", &svgf_reprojection ) );
-
-        ComPtr<ID3DBlob> svgf_moments;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_moments.cso", &svgf_moments ) );
-
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
-
-        UINT offset = 0;
-        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-        offset += m_nbrRayRenderTargets;
-        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-        offset += m_nbrHistoryRenderTargets;
-        ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-        offset += m_nbrFilterRenderTargets;
-
-        // Add for per frame, globals CB
-        offset += 2;
-
-        ranges[3].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-
-        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-        rayRootParams[0].InitAsDescriptorTable( 4, ranges );
-
-        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-
-        m_DenoiserRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-
-        // Create Pipeline State Object (PSO) for compute shader
-        struct DenoiserPipelineState
-        {
-            CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-            CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
-        };
-        
-        // Atrous wavelet filter
-        struct DenoiserPipelineState svgfAtrousPipelineStateStream = {};
-        svgfAtrousPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfAtrousPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_atrous.Get() );
-        m_SVGF_AtrousPipelineState = m_Device->CreatePipelineStateObject( svgfAtrousPipelineStateStream );
-
-        // Reprojection filter
-        struct DenoiserPipelineState svgfReprojectionPipelineStateStream = {};
-        svgfReprojectionPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfReprojectionPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_reprojection.Get() );
-        m_SVGF_ReprojectionPipelineState = m_Device->CreatePipelineStateObject( svgfReprojectionPipelineStateStream );
-
-        // Moments filter
-        struct DenoiserPipelineState svgfMomentsPipelineStateStream = {};
-        svgfMomentsPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfMomentsPipelineStateStream.CS = CD3DX12_SHADER_BYTECODE( svgf_moments.Get() );
-        m_SVGF_MomentsPipelineState = m_Device->CreatePipelineStateObject( svgfMomentsPipelineStateStream );
-
-    }
+    CreateRaySchedularPipeline();
 
 #endif
 
@@ -1445,6 +1496,20 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::End();
     }
 
+    if ( ImGui::Begin( "Adaptive Sampler" ) )
+    {
+        float currentScaleAdjusted = m_FilterData.m_AS_PosDiffLimit / scene_scale;
+        ImGui::SliderFloat( "Position Diff", &currentScaleAdjusted, 0.001, 20 );
+        m_FilterData.m_AS_PosDiffLimit = currentScaleAdjusted * scene_scale;
+
+        ImGui::SliderFloat( "Length Colour Diff", &m_FilterData.m_AS_ColourLimit, 0.0001, 1.0 );
+
+        ImGui::SliderFloat( "Normal Dot Diff", &m_FilterData.m_AS_NormalDotLimit, 0.00, 1 );
+
+
+        ImGui::End();
+    }
+
     m_GUI->Render( commandList, renderTarget );
 }
 
@@ -1459,7 +1524,8 @@ void DummyGame::OnRender()
 
     auto RenderTarget = m_IsLoading ? m_SwapChain->GetRenderTarget() : m_RayRenderTarget;
 
-    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, m_FilterData.gridSize > 0 ? 0.0f : 1.0f };
+     
     if (m_IsLoading) 
     {
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
@@ -1475,6 +1541,11 @@ void DummyGame::OnRender()
     }
     else
     {
+        // Set up block size for compute shaders
+        #define BLOCK_SIZE 16.0 
+
+
+        auto d3d12Command = commandList->GetD3D12CommandList();
 #if RAY_TRACER /* Ray tracing calling. */
         {
 
@@ -1482,19 +1553,44 @@ void DummyGame::OnRender()
             AccelerationBuffer::CreateTopLevelAS(m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
                 m_Instances, m_InstanceDescBuffer.get(), true);
 #endif
-
+            // clear image
             auto colourRayOutput = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
             commandList->ClearTexture( colourRayOutput, clearColor );
             commandList->UAVBarrier( colourRayOutput, true );
 
+            
             // Set global root signature
-            commandList->SetComputeRootSignature(m_GlobalRootSig);
+            commandList->SetComputeRootSignature( m_GlobalRootSig );
 
-            // Stage 1, sample primaries
+            // Set pipeline and heaps for shader table
+            commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
+
+            for (int i = 1; i <= std::max(m_FilterData.gridSize * 2, 1); ++i)
             {
+                // Set global root signature for denoise shaders
+                commandList->SetComputeRootSignature( m_RayScheduleRootSig );
+                commandList->SetCompute32BitConstants( 1, 1, &i);  // Set which step we are on.
+                d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
+
+                commandList->SetPipelineState( m_RaySchedulePipelineState, true, m_RayShaderHeap );
+
+                // Set pipeline for schedule shader and dispatch
+                commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
+                                       static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
+
+                for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+                {
+                    auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                    commandList->UAVBarrier( resource, true );
+                }
+
+
+                // Set global root signature
+                commandList->SetComputeRootSignature( m_GlobalRootSig );
+
                 // Set pipeline and heaps for shader table
                 commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
-
                 // Dispatch Rays
                 commandList->DispatchRays( &m_RaytraceDesc );
 
@@ -1504,8 +1600,9 @@ void DummyGame::OnRender()
 
                     commandList->UAVBarrier( resource, true );
                 }
-            }
-            
+            } 
+
+
 
         }
 #endif
@@ -1519,12 +1616,7 @@ void DummyGame::OnRender()
 
         // Set global root signature for denoise shaders
         commandList->SetComputeRootSignature(m_DenoiserRootSig);
-
-        // Set up block size for shaders
-#define BLOCK_SIZE 16.0 
-
-// Get commandlist and set heap for denoise shaders
-        auto d3d12Command = commandList->GetD3D12CommandList();
+        // Get commandlist and set heap for denoise shaders
         d3d12Command->SetComputeRootDescriptorTable(0, m_RayShaderHeap->GetGpuDescriptorHandle());
 
             // Set pipeline for REPROJECTION shader and dispatch
@@ -1552,8 +1644,8 @@ void DummyGame::OnRender()
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
-            commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
-                               static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
+        commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
+                            static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
 
         // Wait for dispatch to finish writing.
         for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1577,12 +1669,6 @@ void DummyGame::OnRender()
                 
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
-            DenoiserFilterData* pData;
-            ThrowIfFailed( m_FilterCB->Map( (void**)&pData ) );
-            {
-                pData->stepSize = 1;
-            }
-            m_FilterCB->Unmap();
 
             // Set pipeline for MOMENTS shader and dispatch
             commandList->SetPipelineState( m_SVGF_AtrousPipelineState, false, m_RayShaderHeap );

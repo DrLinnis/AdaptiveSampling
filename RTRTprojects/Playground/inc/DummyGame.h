@@ -240,9 +240,16 @@ struct DenoiserFilterData
 
     float sigmaDepth = 1;
     float sigmaNormal = 128;
+
     float sigmaLuminance = 4;
 
-    int stepSize = 1;
+
+    int gridSize = 1;
+
+    float m_AS_PosDiffLimit = 1;
+    float m_AS_NormalDotLimit    = 0.98;
+    float m_AS_DepthDiffLimit = 1;
+    float m_AS_ColourLimit       = 0.1;
 
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
@@ -410,11 +417,6 @@ private:
 
     const uint32_t        m_nbrFilterRenderTargets = 5;
     dx12lib::RenderTarget m_FilterRenderTarget;
-    #define FILTER_SLOT_COLOUR_SOURCE 0
-    #define FILTER_SLOT_MOMENT_SOURCE 1
-    #define FILTER_SLOT_SDR_TARGET    2
-    #define FILTER_SLOT_COLOUR_TARGET 3
-    #define FILTER_SLOT_MOMENT_TARGET 4
 
     dx12lib::AttachmentPoint m_FilterMomentSource = dx12lib::AttachmentPoint::Color1;
     dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color2;
@@ -435,6 +437,16 @@ private:
             ray depth, payload, etc etc.
     */
     void CreateRayTracingPipeline(  );
+
+    /*
+        Create denoising root signature and pipeline stages
+    */
+    void CreateDenoisingPipeline( );
+
+    /*
+        Create schedular root signature and pipeline stages.
+    */
+    void CreateRaySchedularPipeline();
 
     /*
         Upload shader programs and point at relative resources needed per function
@@ -472,6 +484,9 @@ private:
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_AtrousPipelineState;
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_ReprojectionPipelineState; 
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_MomentsPipelineState; 
+    
+    std::shared_ptr<dx12lib::RootSignature>       m_RayScheduleRootSig;
+    std::shared_ptr<dx12lib::PipelineStateObject> m_RaySchedulePipelineState;
 
 #endif
 

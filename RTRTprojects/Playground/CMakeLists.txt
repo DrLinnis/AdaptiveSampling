@@ -15,6 +15,7 @@ set( COMPUTER_SHADER_FILES
     shaders/SVGF_reprojection.hlsl
     shaders/SVGF_atrous.hlsl
     shaders/SVGF_moments.hlsl
+    shaders/RayScheduler.hlsl
 )
 
 set( RAY_TRACING_SHADER_FILES
