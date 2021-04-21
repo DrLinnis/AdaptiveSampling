@@ -855,9 +855,9 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_BOX 0
 #define CORNELL_BOX_LONG 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 1
+#define CORNELL_SPHERES 0
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       0
+#define SUN_TEMPLE       1
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -960,7 +960,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_BOX
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" );
-    scene_scale    = 30;
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -973,7 +973,7 @@ bool DummyGame::LoadContent()
 
 #elif CORNELL_BOX_LONG
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
-    scene_scale    = 30;
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
@@ -1037,6 +1037,20 @@ bool DummyGame::LoadContent()
     m_Pitch  = 15;
 
     scene_scale = 2;
+
+    m_CamPositions = { 
+        DirectX::XMFLOAT3( 7.54, 12.63, 15.57 ), DirectX::XMFLOAT3( 11.28, 17.73, 0.95 ),
+        DirectX::XMFLOAT3( -1.49, 12.01, -18.53 ), DirectX::XMFLOAT3( 0.71, 11.98, -28.72 ),
+        DirectX::XMFLOAT3( 1.51, 12.19, -33.62 ),  DirectX::XMFLOAT3( 13.56, 11.72, -47.34 ),
+        DirectX::XMFLOAT3( 12.57, 9.206, -58.86 ), DirectX::XMFLOAT3( -0.225, 8.33, -70.77 ),
+        DirectX::XMFLOAT3( -0.022, 8.33, -70.81 )
+    };
+    m_CamRotations = { 
+        DirectX::XMFLOAT2( -110, 15 ), DirectX::XMFLOAT2( -170, 16.4 ), DirectX::XMFLOAT2( -264.50, 7.5 ),
+        DirectX::XMFLOAT2( -136, 4.6 ), DirectX::XMFLOAT2( -92.1, -0.40 ), DirectX::XMFLOAT2( -148, -0.50 ),
+        DirectX::XMFLOAT2( -192.4, 6.30 ), DirectX::XMFLOAT2( -264.1, 15.0 ), DirectX::XMFLOAT2( -270.6, 11.7)
+    };
+
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes

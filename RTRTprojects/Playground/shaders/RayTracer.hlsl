@@ -396,7 +396,7 @@ float3 _sampleTowardsSunInSkybox()
 
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
-#if 0 // Sun Temple
+#if 1 // Sun Temple
     return _sampleTowardsSunInSkybox();
 #elif 1 // Cornell
     return _sampleRandomLightDirection(position, normal, 1, seed);
