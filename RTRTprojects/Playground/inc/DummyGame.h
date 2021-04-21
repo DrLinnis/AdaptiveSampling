@@ -244,7 +244,7 @@ struct DenoiserFilterData
     float sigmaLuminance = 4;
 
 
-    int gridSize = 1;
+    int gridSize = 0;
 
     float m_AS_PosDiffLimit = 1;
     float m_AS_NormalDotLimit    = 0.98;
@@ -490,11 +490,14 @@ private:
 
 #endif
 
-    void UpdateCamera( float moveVertically, float moveUp, float moveForward );
+    void UpdateCamera( float moveVertically, float moveUp, float moveForward, double deltaTime );
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     FLOAT backgroundColour[3];
     int lodScaleExp = 1;
+
+    std::vector<DirectX::XMFLOAT3> m_CamPositions;
+    std::vector<DirectX::XMFLOAT2> m_CamRotations;
 
     // General
     std::shared_ptr<dx12lib::Device>    m_Device;
@@ -539,6 +542,9 @@ private:
     bool m_Fullscreen;
 
     bool m_Print;
+
+    bool m_DisplayGUI = true;
+    bool m_CubicInterpolation = false;
 
     // Scale the HDR render target to a fraction of the window size.
     float m_RenderScale;

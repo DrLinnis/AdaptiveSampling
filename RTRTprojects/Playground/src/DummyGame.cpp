@@ -68,6 +68,8 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 0, 2, 0 )
 , m_frameData( 5 )
+, m_CamPositions()
+, m_CamRotations()
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -82,7 +84,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 
 
     UpdateCamera( ( m_Left - m_Right ) * cam_speed , ( m_Up - m_Down ) * cam_speed ,
-                  ( m_Forward - m_Backward ) * cam_speed );
+                  ( m_Forward - m_Backward ) * cam_speed , 0);
 
 }
 
@@ -853,9 +855,9 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_BOX 0
 #define CORNELL_BOX_LONG 0
 #define CORNELL_MIRROR 0
-#define CORNELL_SPHERES 0
+#define CORNELL_SPHERES 1
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       1
+#define SUN_TEMPLE       0
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -863,7 +865,7 @@ bool DummyGame::LoadContent()
 {
     m_IsLoading = true;
 
-    m_Device    = Device::Create(true);
+    m_Device = Device::Create( true );
 
     m_SwapChain = m_Device->CreateSwapChain( m_Window->GetWindowHandle(), DXGI_FORMAT_R8G8B8A8_UNORM );
     m_SwapChain->SetVSync( m_VSync );
@@ -877,7 +879,7 @@ bool DummyGame::LoadContent()
     auto  commandList  = commandQueue.GetCommandList();
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
-    
+
     auto panoramaSkyboxIntensity = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud.hdr" );
 
     // Create a cubemap for the intensity panorama.
@@ -892,14 +894,13 @@ bool DummyGame::LoadContent()
     // Convert the 2D panorama to a 3D cubemap.
     commandList->PanoToCubemap( cubeMapIntensityBackground, panoramaSkyboxIntensity );
 
-    
     auto panoramaSkyboxDiffuse = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud-diffuse.jpg" );
 
     // Create a cubemap for the diffuse panorama.
     auto cubemapDescDiffuse  = panoramaSkyboxDiffuse->GetD3D12ResourceDesc();
     cubemapDescDiffuse.Width = cubemapDescDiffuse.Height = 1024;
-    cubemapDescDiffuse.DepthOrArraySize           = 6;
-    cubemapDescDiffuse.MipLevels                  = 0;
+    cubemapDescDiffuse.DepthOrArraySize                  = 6;
+    cubemapDescDiffuse.MipLevels                         = 0;
 
     auto cubeMapDiffuseBackground = m_Device->CreateTexture( cubemapDescDiffuse );
     cubeMapDiffuseBackground->SetName( L"Skybox Cubemap Diffuse" );
@@ -907,12 +908,11 @@ bool DummyGame::LoadContent()
     // Convert the 2D panorama to a 3D cubemap.
     commandList->PanoToCubemap( cubeMapDiffuseBackground, panoramaSkyboxDiffuse );
 
-
     // DISPLAY MESHES IN RAY TRACING
 #if AMAZON_INTERIOR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
-    scene_scale = 1;
-    lodScaleExp = 16;
+    scene_scale    = 1;
+    lodScaleExp    = 16;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif AMAZON_EXTERIOR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
@@ -921,11 +921,10 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif SAM_MIGUEL
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 1;
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); 
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" );
     scene_scale    = 1;
     lodScaleExp    = 16;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
-
 
     m_Globals.nbrActiveLights   = 9;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 15.55160, 3.359916, -9.547095, 10 );
@@ -938,18 +937,18 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[7] = DirectX::XMFLOAT4( 11.16639, 3.148412, 1.713052, 1 );
     m_Globals.lightPositions[8] = DirectX::XMFLOAT4( 7.508241, 3.150581, 1.559817, 1 );
 
-
-    auto pos                    = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y, m_Globals.lightPositions[0].z );
-    auto m_RaySphere            = commandList->CreateSphere( 0.5, 16u, pos );
+    auto pos         = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y,
+                                  m_Globals.lightPositions[0].z );
+    auto m_RaySphere = commandList->CreateSphere( 0.5, 16u, pos );
 
     auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
-    sphereMat->SetEmissiveColor( DirectX::XMFLOAT4(
-        25,25,25, 0 ) );
+    sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 25, 25, 25, 0 ) );
 
     m_RaySceneMesh->MergeScene( m_RaySphere );
 
-    for (int i = 1; i < 9; ++i) {
-        pos              = DirectX::XMFLOAT3( m_Globals.lightPositions[i].x, m_Globals.lightPositions[i].y,
+    for ( int i = 1; i < 9; ++i )
+    {
+        pos         = DirectX::XMFLOAT3( m_Globals.lightPositions[i].x, m_Globals.lightPositions[i].y,
                                  m_Globals.lightPositions[i].z );
         m_RaySphere = commandList->CreateSphere( 0.05, 16u, pos );
 
@@ -960,12 +959,15 @@ bool DummyGame::LoadContent()
     }
 
 #elif CORNELL_BOX
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); 
-    scene_scale = 30;
-    
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" );
+    scene_scale    = 30;
+
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
+
 #elif CORNELL_BOX_LONG
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
     scene_scale    = 30;
@@ -973,6 +975,8 @@ bool DummyGame::LoadContent()
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
 
 #elif CORNELL_MIRROR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
@@ -982,6 +986,8 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
+    m_CamPos = { -22, 9, 0 };
+
 #elif CORNELL_SPHERES
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
     scene_scale    = 10;
@@ -990,6 +996,18 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ),
+                       DirectX::XMFLOAT3( -22, 9, 0 ),
+                       DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) 
+    };
+    m_CamRotations = {  DirectX::XMFLOAT2( 32, -3 ), 
+                        DirectX::XMFLOAT2( 0, 0 ), 
+                        DirectX::XMFLOAT2( -27, 1.4 )  
+    };
+
+
 #elif CORNELL_WATER
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" );
     scene_scale    = 10;
@@ -997,6 +1015,8 @@ bool DummyGame::LoadContent()
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
 
 #elif SUN_TEMPLE
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple.obj" );
@@ -1303,25 +1323,75 @@ XMFLOAT3 CalculateDirectionVector(float yaw, float pitch) {
     return XMFLOAT3( dx, dy, dz );
 }
 
-void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward )
+void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward, double deltaTime )
 {
     const float cam_dist = 1.0;
 
-    XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
-    XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
+    XMFLOAT3 camDir;
+    if (m_CubicInterpolation && m_CamPositions.size() >= 2) 
+    {
+        static int prev_itr_idx = m_CamPositions.size() - 1;
+        static int itr_idx   = 0;
 
-    m_CamPos.x += moveForward * forward.x;
-    m_CamPos.y += moveForward * forward.y;
-    m_CamPos.z += moveForward * forward.z;
+        static double alpha = 0;
 
-    m_CamPos.x += moveVertically * right.x;
-    m_CamPos.y += moveVertically * right.y;
-    m_CamPos.z += moveVertically * right.z;
+        alpha += deltaTime;
+        if (alpha > 1.0) {
+            prev_itr_idx = itr_idx;
+            itr_idx = ( itr_idx + 1 ) % m_CamPositions.size();
+            alpha   = 0;
+        }
 
-    m_CamPos.y += moveUp;
+        // positions
+        DirectX::XMFLOAT3 pos_n1 = m_CamPositions[prev_itr_idx];
+        DirectX::XMFLOAT3 pos_i0 = m_CamPositions[itr_idx % m_CamPositions.size()];
+        DirectX::XMFLOAT3 pos_i1 = m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()];
+        DirectX::XMFLOAT3 pos_i2 = m_CamPositions[( itr_idx + 2 ) % m_CamPositions.size()];
 
-    XMFLOAT3          camDir = CalculateDirectionVector( m_Yaw, m_Pitch );
+        auto pos_d0 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat3( &pos_i1 ), DirectX::XMLoadFloat3( &pos_n1 ) );
+        pos_d0      = DirectX::XMVectorScale( pos_d0, 0.5 );
+        auto pos_d1 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat3( &pos_i2 ), DirectX::XMLoadFloat3( &pos_i0 ) );
+        pos_d1      = DirectX::XMVectorScale( pos_d1, 0.5 );
 
+        // rotations
+        DirectX::XMFLOAT2 rot_n1 = m_CamRotations[prev_itr_idx];
+        DirectX::XMFLOAT2 rot_i0 = m_CamRotations[itr_idx % m_CamPositions.size()];
+        DirectX::XMFLOAT2 rot_i1 = m_CamRotations[( itr_idx + 1 ) % m_CamPositions.size()];
+        DirectX::XMFLOAT2 rot_i2 = m_CamRotations[( itr_idx + 2 ) % m_CamPositions.size()];
+
+        auto rot_d0 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat2( &rot_i1 ), DirectX::XMLoadFloat2( &rot_n1 ) );
+        rot_d0      = DirectX::XMVectorScale( rot_d0, 0.5 );
+        auto rot_d1 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat2( &rot_i2 ), DirectX::XMLoadFloat2( &rot_i0 ) );
+        rot_d1      = DirectX::XMVectorScale( rot_d1, 0.5 );
+
+        DirectX::XMStoreFloat3( &m_CamPos,
+                                DirectX::XMVectorHermite( DirectX::XMLoadFloat3( &pos_i0 ), pos_d0,
+                                                          DirectX::XMLoadFloat3( &pos_i1 ), pos_d1, alpha ) );
+
+        DirectX::XMFLOAT2 newRot;
+        DirectX::XMStoreFloat2( &newRot, DirectX::XMVectorHermite( DirectX::XMLoadFloat2( &rot_i0 ), rot_d0,
+                                                                   DirectX::XMLoadFloat2( &rot_i1 ), rot_d1, alpha ) );
+
+        m_Yaw = newRot.x;
+        m_Pitch = newRot.y;
+    }
+    else
+    {
+        XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
+        XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
+
+        m_CamPos.x += moveForward * forward.x;
+        m_CamPos.y += moveForward * forward.y;
+        m_CamPos.z += moveForward * forward.z;
+
+        m_CamPos.x += moveVertically * right.x;
+        m_CamPos.y += moveVertically * right.y;
+        m_CamPos.z += moveVertically * right.z;
+
+        m_CamPos.y += moveUp;
+    }
+
+    camDir = CalculateDirectionVector( m_Yaw, m_Pitch );
     auto              lookAt = DirectX::XMLoadFloat3( &m_CamPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
     DirectX::XMFLOAT3 camLookAt;
     DirectX::XMStoreFloat3( &camLookAt, lookAt );
@@ -1333,29 +1403,33 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
 void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
-    static double   totalTime  = 0.0;
+    static double   timer_totalTime     = 0.0;
     static double   accumalatedRotation = 0.0;
 
-    totalTime += e.DeltaTime;
+    timer_totalTime += e.DeltaTime;
     accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
-    if ( totalTime > 1.0 )
+    if ( timer_totalTime > 1.0 )
     {
-        g_FPS = frameCount / totalTime;
+        g_FPS = frameCount / timer_totalTime;
 
         wchar_t buffer[512];
         ::swprintf_s( buffer, L"HDR [FPS: %f]", g_FPS );
         m_Window->SetWindowTitle( buffer );
 
         frameCount = 0;
-        totalTime  = 0.0;
+        timer_totalTime = 0.0;
 
         if (m_Print) {
             m_Print = false;
-            m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_CamPos.x, m_CamPos.y, m_CamPos.z );
+            m_Logger->info( "Pos: {:.7},{:.7},{:.7}", m_CamPos.x, m_CamPos.y, m_CamPos.z );
+            #if 0
             DirectX::XMFLOAT3 tmpDir = CalculateDirectionVector( m_Yaw, m_Pitch );
             m_Logger->info( "Dir: ({:.7},{:.7},{:.7})", tmpDir.x, tmpDir.y, tmpDir.z );
+            #else
+            m_Logger->info( "Yaw: {:.7} , Pitch: {:.7}", m_Yaw, m_Pitch);
+            #endif
         }
 
     }
@@ -1390,7 +1464,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         UpdateCamera( 
             ( m_Right - m_Left ) * cam_speed * e.DeltaTime,
             ( m_Up - m_Down ) * cam_speed * e.DeltaTime, 
-            ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime 
+            ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime, e.DeltaTime
         );
 
 
@@ -1428,87 +1502,85 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::ShowDemoWindow( &showDemoWindow );
     }
     
-    if (ImGui::Begin( "Camera and Transform Sliders" ))// not demo window
-    {
-        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 100 );
-        ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
-
-        ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
-        ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
-
-        ImGui::SliderInt( "Lod Exp2 Scaler", &lodScaleExp, 1, 24 );
-
-        int signedBounces = static_cast<int>( m_frameData.nbrBouncesPerPath );
-        ImGui::SliderInt( "Ray Bounce Budget", &signedBounces, 1, 50 );
-        m_frameData.nbrBouncesPerPath = static_cast<uint32_t>( signedBounces );
-
-        int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
-        ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
-        m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
-
-        ImGui::SliderFloat( "Ambient Light", &m_frameData.ambientLight, 0, 0.1 );
-
-        ImGui::End();
-    }
-
-    if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
-    {
-        if (m_Globals.hasSkybox == 1) 
+    if (m_DisplayGUI) {
+        if ( ImGui::Begin( "Camera and Transform Sliders" ) )  // not demo window
         {
-            float skyboxRotation = Math::Degrees( backgroundColour[0] );
-            ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
-            backgroundColour[0] = Math::Radians( skyboxRotation );
+            ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 100 );
+            ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
 
-            float skyboxIntensity = m_frameData.atmosphere.w;
-            ImGui::SliderFloat( "Skybox Intensity", &skyboxIntensity, 1, 10 );
-            m_frameData.atmosphere.w = skyboxIntensity;
+            ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
+            ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
+
+            ImGui::SliderInt( "Lod Exp2 Scaler", &lodScaleExp, 1, 24 );
+
+            int signedBounces = static_cast<int>( m_frameData.nbrBouncesPerPath );
+            ImGui::SliderInt( "Ray Bounce Budget", &signedBounces, 1, 50 );
+            m_frameData.nbrBouncesPerPath = static_cast<uint32_t>( signedBounces );
+
+            int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
+            ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
+            m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
+
+            ImGui::SliderFloat( "Ambient Light", &m_frameData.ambientLight, 0, 0.1 );
 
             ImGui::End();
         }
-        else 
-        {
-            ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
-            float atmosphereIntensity = m_frameData.atmosphere.w;
-            ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
-            m_frameData.atmosphere.w = atmosphereIntensity;
+        if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
+        {
+            if ( m_Globals.hasSkybox == 1 )
+            {
+                float skyboxRotation = Math::Degrees( backgroundColour[0] );
+                ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
+                backgroundColour[0] = Math::Radians( skyboxRotation );
+
+                float skyboxIntensity = m_frameData.atmosphere.w;
+                ImGui::SliderFloat( "Skybox Intensity", &skyboxIntensity, 1, 10 );
+                m_frameData.atmosphere.w = skyboxIntensity;
+
+                ImGui::End();
+            }
+            else
+            {
+                ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
+
+                float atmosphereIntensity = m_frameData.atmosphere.w;
+                ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
+                m_frameData.atmosphere.w = atmosphereIntensity;
+
+                ImGui::End();
+            }
+        }
+
+        if ( ImGui::Begin( "Filter Settings" ) )
+        {
+            float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
+            ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 20 );
+            m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
+
+            ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
+
+            ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
+            ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
+            ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 50 );
+
+            ImGui::End();
+        }
+
+        if ( ImGui::Begin( "Adaptive Sampler" ) )
+        {
+            float currentScaleAdjusted = m_FilterData.m_AS_PosDiffLimit / scene_scale;
+            ImGui::SliderFloat( "Position Diff", &currentScaleAdjusted, 0.001, 20 );
+            m_FilterData.m_AS_PosDiffLimit = currentScaleAdjusted * scene_scale;
+
+            ImGui::SliderFloat( "Length Colour Diff", &m_FilterData.m_AS_ColourLimit, 0.0001, 1.0 );
+
+            ImGui::SliderFloat( "Normal Dot Diff", &m_FilterData.m_AS_NormalDotLimit, 0.00, 1 );
 
             ImGui::End();
         }
     }
-
-    if ( ImGui::Begin( "Filter Settings" ) )
-    {
-        float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
-        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 20 );
-        m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
-
-        ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
-
-
-
-        ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
-        ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
-        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 50 );
-
-
-
-        ImGui::End();
-    }
-
-    if ( ImGui::Begin( "Adaptive Sampler" ) )
-    {
-        float currentScaleAdjusted = m_FilterData.m_AS_PosDiffLimit / scene_scale;
-        ImGui::SliderFloat( "Position Diff", &currentScaleAdjusted, 0.001, 20 );
-        m_FilterData.m_AS_PosDiffLimit = currentScaleAdjusted * scene_scale;
-
-        ImGui::SliderFloat( "Length Colour Diff", &m_FilterData.m_AS_ColourLimit, 0.0001, 1.0 );
-
-        ImGui::SliderFloat( "Normal Dot Diff", &m_FilterData.m_AS_NormalDotLimit, 0.00, 1 );
-
-
-        ImGui::End();
-    }
+    
 
     m_GUI->Render( commandList, renderTarget );
 }
@@ -1795,6 +1867,12 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
         case KeyCode::P:
             m_Print = true;
             break;
+        case KeyCode::U:
+            m_DisplayGUI = !m_DisplayGUI;
+            break;
+        case KeyCode::L:
+            m_CubicInterpolation = !m_CubicInterpolation;
+            break;
         }
     }
 }
@@ -1843,7 +1921,7 @@ void DummyGame::OnMouseMoved( MouseMotionEventArgs& e )
     const float mouseSpeed = 0.1f;
     if ( !ImGui::GetIO().WantCaptureMouse )
     {
-        if ( e.LeftButton )
+        if ( e.LeftButton && !m_CubicInterpolation)
         {
             m_Pitch += e.RelY * mouseSpeed;
 
