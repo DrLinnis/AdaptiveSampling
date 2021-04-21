@@ -968,6 +968,9 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+
 #elif CORNELL_BOX_LONG
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
     scene_scale    = 30;
@@ -978,6 +981,9 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+
 #elif CORNELL_MIRROR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
     scene_scale    = 10;
@@ -987,6 +993,9 @@ bool DummyGame::LoadContent()
     scene_rot_offset            = 90;
 
     m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
 
 #elif CORNELL_SPHERES
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
@@ -999,11 +1008,9 @@ bool DummyGame::LoadContent()
     m_CamPos = { -22, 9, 0 };
 
     m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ),
-                       DirectX::XMFLOAT3( -22, 9, 0 ),
                        DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) 
     };
     m_CamRotations = {  DirectX::XMFLOAT2( 32, -3 ), 
-                        DirectX::XMFLOAT2( 0, 0 ), 
                         DirectX::XMFLOAT2( -27, 1.4 )  
     };
 
@@ -1017,6 +1024,9 @@ bool DummyGame::LoadContent()
     scene_rot_offset            = 90;
 
     m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
 
 #elif SUN_TEMPLE
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple.obj" );
@@ -1333,13 +1343,25 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
         static int prev_itr_idx = m_CamPositions.size() - 1;
         static int itr_idx   = 0;
 
-        static double alpha = 0;
+        static double deltaAlpha = 0.0;
+        static double alpha = -1;
 
-        alpha += deltaTime;
-        if (alpha > 1.0) {
+        alpha += deltaAlpha * deltaTime;
+        if (alpha > 1.0 || alpha < 0) {
             prev_itr_idx = itr_idx;
             itr_idx = ( itr_idx + 1 ) % m_CamPositions.size();
             alpha   = 0;
+
+            auto diff  = DirectX::XMVector3Length(
+                DirectX::XMVectorSubtract(
+                    DirectX::XMLoadFloat3(&m_CamPositions[itr_idx % m_CamPositions.size()]),
+                    DirectX::XMLoadFloat3(&m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()])
+                )
+            );
+
+            float length;
+            DirectX::XMStoreFloat(&length, diff);
+            deltaAlpha = 0.2 * cam_speed / length;
         }
 
         // positions
