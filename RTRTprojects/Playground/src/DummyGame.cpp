@@ -470,11 +470,11 @@ void DummyGame::CreateRaySchedularPipeline()
 
     // Add for per frame, globals CB
     offset += 2;
-
     ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
 
     CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
     rayRootParams[0].InitAsDescriptorTable( 2, ranges );
+    //rayRootParams[1].InitAsConstantBufferView( 1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
     rayRootParams[1].InitAsConstants( 1, 1, 0, D3D12_SHADER_VISIBILITY_ALL );
 
     D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -1525,7 +1525,7 @@ void DummyGame::OnRender()
     auto RenderTarget = m_IsLoading ? m_SwapChain->GetRenderTarget() : m_RayRenderTarget;
 
     FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, m_FilterData.gridSize > 0 ? 0.0f : 1.0f };
-     
+
     if (m_IsLoading) 
     {
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
@@ -1554,25 +1554,24 @@ void DummyGame::OnRender()
                 m_Instances, m_InstanceDescBuffer.get(), true);
 #endif
             // clear image
-            auto colourRayOutput = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
+            auto colourRayOutput = m_RayRenderTarget.GetTexture( m_ColourSlot );
             commandList->ClearTexture( colourRayOutput, clearColor );
             commandList->UAVBarrier( colourRayOutput, true );
 
+            auto normalsRayOutput = m_RayRenderTarget.GetTexture( m_ColourSlot );
+            //commandList->ClearTexture( normalsRayOutput, clearColorAlphaOne );
+            commandList->UAVBarrier( normalsRayOutput, true );
             
             // Set global root signature
-            commandList->SetComputeRootSignature( m_GlobalRootSig );
-
+            commandList->SetComputeRootSignature( m_RayScheduleRootSig );
             // Set pipeline and heaps for shader table
             commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
+            d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
 
-            for (int i = 1; i <= std::max(m_FilterData.gridSize * 2, 1); ++i)
+            for (uint32_t i = 0; i <= m_FilterData.gridSize; ++i)
             {
-                // Set global root signature for denoise shaders
-                commandList->SetComputeRootSignature( m_RayScheduleRootSig );
-                commandList->SetCompute32BitConstants( 1, 1, &i);  // Set which step we are on.
-                d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
-
                 commandList->SetPipelineState( m_RaySchedulePipelineState, true, m_RayShaderHeap );
+                commandList->SetCompute32BitConstants( 1, 1, &i );
 
                 // Set pipeline for schedule shader and dispatch
                 commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
@@ -1586,8 +1585,6 @@ void DummyGame::OnRender()
                 }
 
 
-                // Set global root signature
-                commandList->SetComputeRootSignature( m_GlobalRootSig );
 
                 // Set pipeline and heaps for shader table
                 commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );

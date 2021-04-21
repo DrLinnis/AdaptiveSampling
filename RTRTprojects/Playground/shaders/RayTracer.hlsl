@@ -1029,7 +1029,13 @@ void rayGen()
     
     float depth = length(camOrigin - payload.position) / (T_HIT_MAX);
 
+#if 1
     gOutput[SLOT_COLOUR][launchIndex.xy] = float4(clamp(newRadiance, 0, 1), AS_CASTED);
+#else
+    float2 gridUv = (launchIndex.xy % 8) / 8.0f;
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(1 - gridUv, 0, AS_CASTED);
+#endif    
+    
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
     gOutput[SLOT_OBJECT_ID_MASK][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
