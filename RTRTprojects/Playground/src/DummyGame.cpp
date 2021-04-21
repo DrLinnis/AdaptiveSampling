@@ -857,7 +857,7 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       1
+#define SUN_TEMPLE       0
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -1086,6 +1086,24 @@ bool DummyGame::LoadContent()
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
+     m_CamPositions = {
+        DirectX::XMFLOAT3( -128.0997, 61.42513, 27.25364 ), DirectX::XMFLOAT3( -85.28310, 47.52109, 11.80546 ),
+        DirectX::XMFLOAT3( -40.24589, 18.54801, 11.25088 ), DirectX::XMFLOAT3( 11.76781, 16.07290, 11.50741 ),
+        DirectX::XMFLOAT3( 58.94822, 13.74548, 5.295980 ), DirectX::XMFLOAT3( 99.80611, 12.03107, 7.033977 ),
+        DirectX::XMFLOAT3( 118.5805, 11.77596, 18.70195 ), DirectX::XMFLOAT3( 114.6657, 12.50319, 21.65592 ), 
+        DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ), DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ),
+        DirectX::XMFLOAT3( 96.96, 14.3, 1.8)
+     };
+
+     m_CamRotations = {
+         DirectX::XMFLOAT2( -27.60001, -3.399998 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+         DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+         DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( 63.09998, -2.099998 ),
+         DirectX::XMFLOAT2( 125.3000, 0.6000019 ), DirectX::XMFLOAT2( 233.5000, 5.400002 ),
+         DirectX::XMFLOAT2( 233.5000, 5.400002 ), DirectX::XMFLOAT2( 260.5000, 5.400002 ),
+         DirectX::XMFLOAT2( 176, 0.5 )
+     };
 
     scene_scale = 1 / 10.0f;
     
