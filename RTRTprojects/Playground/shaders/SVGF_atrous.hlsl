@@ -209,7 +209,7 @@ void main(ComputeShaderInput IN)
             float kernelWeight = kernel[abs(xOffset)] * kernel[abs(yOffset)];
                 
             // w_l
-            float weightLuminace = abs(lumP - lumQ) / weightLumDenominator;
+            float weightLuminace = abs(lumP - lumQ) / (length(currObj) == 0 ? EPSILON : weightLumDenominator);
             // w_n
             float weightNormal = pow(max(0.0, dot(centreNormal, currNormal)), filterData.sigmaNormal);
             // w_z

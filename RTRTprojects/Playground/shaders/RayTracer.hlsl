@@ -396,7 +396,7 @@ float3 _sampleTowardsSunInSkybox()
 
 float3 SampleLightDirection(in float3 position, in float3 normal, inout uint seed)
 {
-#if 1 // Sun Temple
+#if 0 // Sun Temple
     return _sampleTowardsSunInSkybox();
 #elif 0 // Cornell
     return _sampleRandomLightDirection(position, normal, 1, seed);
@@ -966,14 +966,23 @@ void sampleBRDF(out float3 reflectDir, out float3 lightDir,
 #define SLOT_POS_DEPTH 2
 #define SLOT_OBJECT_ID_MASK 3
 
+#define AS_DEFAULT 0
+#define AS_CAST 1
+#define AS_CASTED 2
+#define AS_INTERPOLATED 3
+
 [shader("raygeneration")]
 void rayGen()
 {
     uint3 launchIndex = DispatchRaysIndex();
     uint3 launchDim = DispatchRaysDimensions();
 
+    float val = gOutput[SLOT_COLOUR][launchIndex.xy].w;
     
-    
+    // ignore those that are unselected
+    if (val != AS_CAST)
+        return;
+        
     uint bufferOffset = launchDim.x * launchIndex.y + launchIndex.x;
     uint seed = getNewSeed(bufferOffset, frame.cpuGeneratedSeed, 8);
     
@@ -991,12 +1000,10 @@ void rayGen()
     
     float3 camOrigin = mul(frame.cameraPixelToWorld, float4(0, 0, 0, 1));
     
-    
     float3 newRadiance = 0;
     
     RayPayload payload;
     payload.seed = seed;
-    
     
     int nbrSamples = 1 << frame.exponentSamplesPerPixel;
     
@@ -1006,11 +1013,11 @@ void rayGen()
         float dx = rnd(payload.seed) - 0.5;
         float dy = rnd(payload.seed) - 0.5;
         
-        float4 pixelRayRnd = pixelRay + float4(dx, dy, 0, 0);
+        float4 pixelRayRnd = pixelRay + (i > 0) * float4(dx / dims.x, dy / dims.y, 0, 0);
         
         
         // Opting for no random in initial pixel to not confuse
-        float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
+        float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRayRnd));
         
         payload = TraceFullPath(camOrigin, direction, payload.seed);
         
@@ -1022,11 +1029,17 @@ void rayGen()
     
     float depth = length(camOrigin - payload.position) / (T_HIT_MAX);
 
-    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(clamp(newRadiance, 0, 1), 0);
+#if 1
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(clamp(newRadiance, 0, 1), AS_CASTED);
+#else
+    float2 gridUv = (launchIndex.xy % 8) / 8.0f;
+    gOutput[SLOT_COLOUR][launchIndex.xy] = float4(1 - gridUv, 0, AS_CASTED);
+#endif    
+    
     gOutput[SLOT_NORMALS][launchIndex.xy] = float4((payload.normal + 1) * 0.5, 1);
     gOutput[SLOT_POS_DEPTH][launchIndex.xy] = float4(payload.position, depth);
     gOutput[SLOT_OBJECT_ID_MASK][launchIndex.xy] = float4(GenColour(payload.object + 2), payload.mask);
-
+    
 }
 
 /*

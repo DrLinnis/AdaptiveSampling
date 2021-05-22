@@ -41,6 +41,9 @@ using namespace Microsoft::WRL;
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 
+#include <iostream>
+#include <fstream>
+
 using namespace dx12lib;
 using namespace DirectX;
 
@@ -68,6 +71,8 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 , m_CamWindow( width / (float)height, 1 )
 , m_CamPos( 0, 2, 0 )
 , m_frameData( 5 )
+, m_CamPositions()
+, m_CamRotations()
 {
     m_Logger = GameFramework::Get().CreateLogger( "DummyGame" );
     m_Window = GameFramework::Get().CreateWindow( name, width, height );
@@ -82,7 +87,7 @@ DummyGame::DummyGame( const std::wstring& name, int width, int height, bool vSyn
 
 
     UpdateCamera( ( m_Left - m_Right ) * cam_speed , ( m_Up - m_Down ) * cam_speed ,
-                  ( m_Forward - m_Backward ) * cam_speed );
+                  ( m_Forward - m_Backward ) * cam_speed , 0);
 
 }
 
@@ -91,13 +96,37 @@ DummyGame::~DummyGame()
 
 }
 
+void DummyGame::printToFile() 
+{
+    std::ofstream myfile;
+    myfile.open( "example.txt" );
+    //myfile.clear();
+    if ( myfile.is_open() )
+    {
+        int i = 0;
+        for ( std::pair<double, double>& pair: timeStampDeltaTime )
+        {
+            myfile << i << ", " << pair.first << ", " << pair.second << std::endl;
+            ++i;
+        }
+    }
+    else
+        myfile << "Unable to open file";
+
+    myfile.close();
+}
+
 uint32_t DummyGame::Run()
 {
     LoadContent();
 
     m_Window->Show();
 
+    timeStampDeltaTime.clear();
+
     uint32_t retCode = GameFramework::Get().Run();
+
+    printToFile();
 
     UnloadContent();
 
@@ -139,7 +168,7 @@ void DummyGame::CreateRayTracingPipeline() {
     subobjects[index++] = hitProgram.subObject; 
 
 
-    // Create the ray-gen root-signature and association
+    // Create the ray-gen root-signature
     {
 
         CD3DX12_DESCRIPTOR_RANGE1 ranges[4] = {};
@@ -188,6 +217,7 @@ void DummyGame::CreateRayTracingPipeline() {
         subobjects[index] = rayGenSubobject;  // 2 RayGen Root Sig
     }
 
+    // Raygen association
     uint32_t          rgsRootIndex = index++;  // 2
     ExportAssociation rgsRootAssociation( &kRayGenShader, 1, &( subobjects[rgsRootIndex] ) );
     subobjects[index++] = rgsRootAssociation.subobject;  // 3 Associate Root Sig to RGS
@@ -383,6 +413,118 @@ void DummyGame::CreateRayTracingPipeline() {
     // END GLOBAL
 
     m_RayPipelineState = m_Device->CreateRayPipelineState( index, subobjects.data() );
+
+}
+
+void DummyGame::CreateDenoisingPipeline()
+{
+    // Load compute shader
+    ComPtr<ID3DBlob> svgf_atrous;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_atrous.cso", &svgf_atrous ) );
+
+    ComPtr<ID3DBlob> svgf_reprojection;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_reprojection.cso", &svgf_reprojection ) );
+
+    ComPtr<ID3DBlob> svgf_moments;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_moments.cso", &svgf_moments ) );
+
+    CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
+
+    UINT offset = 0;
+    ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+    offset += m_nbrRayRenderTargets;
+    ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                    offset );
+    offset += m_nbrHistoryRenderTargets;
+    ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2, D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+                    offset );
+    offset += m_nbrFilterRenderTargets;
+
+    // Add for per frame, globals CB
+    offset += 2;
+
+    ranges[3].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+
+    CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
+    rayRootParams[0].InitAsDescriptorTable( 4, ranges );
+
+    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+    rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
+
+    m_DenoiserRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+    // Create Pipeline State Object (PSO) for compute shader
+    struct DenoiserPipelineState
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
+    };
+
+    // Atrous wavelet filter
+    struct DenoiserPipelineState svgfAtrousPipelineStateStream = {};
+    svgfAtrousPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfAtrousPipelineStateStream.CS                           = CD3DX12_SHADER_BYTECODE( svgf_atrous.Get() );
+    m_SVGF_AtrousPipelineState = m_Device->CreatePipelineStateObject( svgfAtrousPipelineStateStream );
+
+    // Reprojection filter
+    struct DenoiserPipelineState svgfReprojectionPipelineStateStream = {};
+    svgfReprojectionPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfReprojectionPipelineStateStream.CS = CD3DX12_SHADER_BYTECODE( svgf_reprojection.Get() );
+    m_SVGF_ReprojectionPipelineState       = m_Device->CreatePipelineStateObject( svgfReprojectionPipelineStateStream );
+
+    // Moments filter
+    struct DenoiserPipelineState svgfMomentsPipelineStateStream = {};
+    svgfMomentsPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
+    svgfMomentsPipelineStateStream.CS                           = CD3DX12_SHADER_BYTECODE( svgf_moments.Get() );
+    m_SVGF_MomentsPipelineState = m_Device->CreatePipelineStateObject( svgfMomentsPipelineStateStream );
+}
+
+void DummyGame::CreateRaySchedularPipeline() 
+{
+    // Load compute shader
+    ComPtr<ID3DBlob> raySchedular;
+    ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/RayScheduler.cso", &raySchedular ) );
+
+    CD3DX12_DESCRIPTOR_RANGE1 ranges[2];
+
+    UINT offset = 0;
+    ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
+    offset += m_nbrRayRenderTargets;
+
+    // add for history and filter render targets
+    offset += m_nbrHistoryRenderTargets;
+    offset += m_nbrFilterRenderTargets;
+
+    // Add for per frame, globals CB
+    offset += 2;
+    ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
+
+    CD3DX12_ROOT_PARAMETER1 rayRootParams[2] = {};
+    rayRootParams[0].InitAsDescriptorTable( 2, ranges );
+    //rayRootParams[1].InitAsConstantBufferView( 1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL );
+    rayRootParams[1].InitAsConstants( 1, 1, 0, D3D12_SHADER_VISIBILITY_ALL );
+
+    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+    rootSignatureDescription.Init_1_1( 2, rayRootParams, 0, nullptr, rootSignatureFlags );
+
+    m_RayScheduleRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
+
+    // Create Pipeline State Object (PSO) for compute shader
+    struct ComputePipelineState
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
+    };
+
+    // Scheduler filter
+    struct ComputePipelineState schedularPipelineStream  = {};
+    schedularPipelineStream.pRootSignature              = m_RayScheduleRootSig->GetD3D12RootSignature().Get();
+    schedularPipelineStream.CS                           = CD3DX12_SHADER_BYTECODE( raySchedular.Get() );
+    m_RaySchedulePipelineState = m_Device->CreatePipelineStateObject( schedularPipelineStream );
 
 }
 
@@ -742,7 +884,7 @@ void DummyGame::UpdateDispatchRaysDesc()
 #define CORNELL_MIRROR 0
 #define CORNELL_SPHERES 0
 #define CORNELL_WATER    0
-#define SUN_TEMPLE       1
+#define SUN_TEMPLE       0
 #define SPONZA 1
 #define DEBUG_SCENE 1
 
@@ -750,7 +892,7 @@ bool DummyGame::LoadContent()
 {
     m_IsLoading = true;
 
-    m_Device    = Device::Create(true);
+    m_Device = Device::Create( true );
 
     m_SwapChain = m_Device->CreateSwapChain( m_Window->GetWindowHandle(), DXGI_FORMAT_R8G8B8A8_UNORM );
     m_SwapChain->SetVSync( m_VSync );
@@ -764,7 +906,7 @@ bool DummyGame::LoadContent()
     auto  commandList  = commandQueue.GetCommandList();
 
     m_DummyTexture = commandList->LoadTextureFromFile( L"Assets/Textures/Tree.png", true, false );
-    
+
     auto panoramaSkyboxIntensity = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud.hdr" );
 
     // Create a cubemap for the intensity panorama.
@@ -779,14 +921,13 @@ bool DummyGame::LoadContent()
     // Convert the 2D panorama to a 3D cubemap.
     commandList->PanoToCubemap( cubeMapIntensityBackground, panoramaSkyboxIntensity );
 
-    
     auto panoramaSkyboxDiffuse = commandList->LoadTextureFromFile( L"Assets/Textures/sky-cloud-diffuse.jpg" );
 
     // Create a cubemap for the diffuse panorama.
     auto cubemapDescDiffuse  = panoramaSkyboxDiffuse->GetD3D12ResourceDesc();
     cubemapDescDiffuse.Width = cubemapDescDiffuse.Height = 1024;
-    cubemapDescDiffuse.DepthOrArraySize           = 6;
-    cubemapDescDiffuse.MipLevels                  = 0;
+    cubemapDescDiffuse.DepthOrArraySize                  = 6;
+    cubemapDescDiffuse.MipLevels                         = 0;
 
     auto cubeMapDiffuseBackground = m_Device->CreateTexture( cubemapDescDiffuse );
     cubeMapDiffuseBackground->SetName( L"Skybox Cubemap Diffuse" );
@@ -794,12 +935,11 @@ bool DummyGame::LoadContent()
     // Convert the 2D panorama to a 3D cubemap.
     commandList->PanoToCubemap( cubeMapDiffuseBackground, panoramaSkyboxDiffuse );
 
-
     // DISPLAY MESHES IN RAY TRACING
 #if AMAZON_INTERIOR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/interior.obj" );
-    scene_scale = 1;
-    lodScaleExp = 16;
+    scene_scale    = 1;
+    lodScaleExp    = 16;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif AMAZON_EXTERIOR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/AmazonLumberyard/exterior.obj" );
@@ -808,11 +948,10 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 #elif SAM_MIGUEL
     // m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel.obj" ); scene_scale = 1;
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" ); 
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/San_Miguel/san-miguel-low-poly.obj" );
     scene_scale    = 1;
     lodScaleExp    = 16;
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
-
 
     m_Globals.nbrActiveLights   = 9;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 15.55160, 3.359916, -9.547095, 10 );
@@ -825,18 +964,18 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[7] = DirectX::XMFLOAT4( 11.16639, 3.148412, 1.713052, 1 );
     m_Globals.lightPositions[8] = DirectX::XMFLOAT4( 7.508241, 3.150581, 1.559817, 1 );
 
-
-    auto pos                    = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y, m_Globals.lightPositions[0].z );
-    auto m_RaySphere            = commandList->CreateSphere( 0.5, 16u, pos );
+    auto pos         = DirectX::XMFLOAT3( m_Globals.lightPositions[0].x, m_Globals.lightPositions[0].y,
+                                  m_Globals.lightPositions[0].z );
+    auto m_RaySphere = commandList->CreateSphere( 0.5, 16u, pos );
 
     auto sphereMat = m_RaySphere->GetRootNode()->GetMesh( 0 )->GetMaterial();
-    sphereMat->SetEmissiveColor( DirectX::XMFLOAT4(
-        25,25,25, 0 ) );
+    sphereMat->SetEmissiveColor( DirectX::XMFLOAT4( 25, 25, 25, 0 ) );
 
     m_RaySceneMesh->MergeScene( m_RaySphere );
 
-    for (int i = 1; i < 9; ++i) {
-        pos              = DirectX::XMFLOAT3( m_Globals.lightPositions[i].x, m_Globals.lightPositions[i].y,
+    for ( int i = 1; i < 9; ++i )
+    {
+        pos         = DirectX::XMFLOAT3( m_Globals.lightPositions[i].x, m_Globals.lightPositions[i].y,
                                  m_Globals.lightPositions[i].z );
         m_RaySphere = commandList->CreateSphere( 0.05, 16u, pos );
 
@@ -847,19 +986,54 @@ bool DummyGame::LoadContent()
     }
 
 #elif CORNELL_BOX
-    m_RaySceneMesh   = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" ); 
-    scene_scale = 30;
-    
-    m_Globals.nbrActiveLights   = 1;
-    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
-    scene_rot_offset            = 90;
-#elif CORNELL_BOX_LONG
-    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
-    scene_scale    = 30;
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Original.obj" );
+    scene_scale    = 10;
 
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+
+    m_FilterData.sigmaLuminance = 10;
+
+#elif CORNELL_BOX_LONG
+    m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
+    scene_scale    = 10;
+
+    m_Globals.nbrActiveLights   = 1;
+    m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
+    scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+    m_FilterData.sigmaLuminance = 10;
 
 #elif CORNELL_MIRROR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
@@ -869,6 +1043,23 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+    m_FilterData.sigmaLuminance = 10;
+
 #elif CORNELL_SPHERES
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
     scene_scale    = 10;
@@ -876,6 +1067,24 @@ bool DummyGame::LoadContent()
     m_Globals.nbrActiveLights   = 1;
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
+
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+    m_FilterData.sigmaLuminance = 10;
+
 
 #elif CORNELL_WATER
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Water.obj" );
@@ -885,19 +1094,51 @@ bool DummyGame::LoadContent()
     m_Globals.lightPositions[0] = DirectX::XMFLOAT4( 0, 1.980, 0, 5 );
     scene_rot_offset            = 90;
 
+    m_CamPos = { -22, 9, 0 };
+
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+
 #elif SUN_TEMPLE
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple.obj" );
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 
+    #if 1 
     m_CamPos = DirectX::XMFLOAT3( 7.54, 12.63, 15.57 );
     m_Yaw    = -110;
     m_Pitch  = 15;
+    #else
+    m_CamPos = DirectX::XMFLOAT3( -13.31532, 8.033751, -71.27465 );
+    m_Yaw    = -302.1001;
+    m_Pitch  = 8.60001;
+    #endif
+
 
     scene_scale = 2;
+
+    m_CamPositions = { 
+        DirectX::XMFLOAT3( 7.54, 12.63, 15.57 ), DirectX::XMFLOAT3( 11.28, 17.73, 0.95 ),
+        DirectX::XMFLOAT3( -1.49, 12.01, -18.53 ), DirectX::XMFLOAT3( 0.71, 11.98, -28.72 ),
+        DirectX::XMFLOAT3( 1.51, 12.19, -33.62 ),  DirectX::XMFLOAT3( 13.56, 11.72, -47.34 ),
+        DirectX::XMFLOAT3( 12.57, 9.206, -58.86 ), DirectX::XMFLOAT3( -0.225, 8.33, -70.77 ),
+        DirectX::XMFLOAT3( -0.022, 8.33, -70.81 )
+    };
+    m_CamRotations = { 
+        DirectX::XMFLOAT2( -110, 15 ), DirectX::XMFLOAT2( -170, 16.4 ), DirectX::XMFLOAT2( -264.50, 7.5 ),
+        DirectX::XMFLOAT2( -136, 4.6 ), DirectX::XMFLOAT2( -92.1, -0.40 ), DirectX::XMFLOAT2( -148, -0.50 ),
+        DirectX::XMFLOAT2( -192.4, 6.30 ), DirectX::XMFLOAT2( -264.1, 15.0 ), DirectX::XMFLOAT2( -270.6, 11.7)
+    };
+
+    // Std settings for scene.
+    m_frameData.atmosphere.x = Math::Radians( 72 );
+    m_frameData.ambientLight = 0.05;
+    m_FilterData.sigmaLuminance = 50;
+    m_FilterData.sigmaDepth     = 27;
+
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
-    lodScaleExp            = 6;
+    lodScaleExp            = 9;
     //m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
     m_frameData.ambientLight    = 0.0;
     m_Globals.nbrActiveLights   = 5;
@@ -929,6 +1170,29 @@ bool DummyGame::LoadContent()
         m_RaySceneMesh->MergeScene( m_RaySphere );
     }
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
+
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -128.0997, 61.42513, 27.25364 ), DirectX::XMFLOAT3( -85.28310, 47.52109, 11.80546 ),
+        DirectX::XMFLOAT3( -40.24589, 18.54801, 11.25088 ), DirectX::XMFLOAT3( 11.76781, 16.07290, 11.50741 ),
+        DirectX::XMFLOAT3( 58.94822, 13.74548, 5.295980 ), DirectX::XMFLOAT3( 99.80611, 12.03107, 7.033977 ),
+        DirectX::XMFLOAT3( 118.5805, 11.77596, 18.70195 ), DirectX::XMFLOAT3( 114.6657, 12.50319, 21.65592 ), 
+        DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ), DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ),
+        DirectX::XMFLOAT3( 96.96, 14.3, 1.8)
+    };
+
+    m_CamRotations = {
+        DirectX::XMFLOAT2( -27.60001, -3.399998 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+        DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+        DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( 63.09998, -2.099998 ),
+        DirectX::XMFLOAT2( 125.3000, 0.6000019 ), DirectX::XMFLOAT2( 233.5000, 5.400002 ),
+        DirectX::XMFLOAT2( 233.5000, 5.400002 ), DirectX::XMFLOAT2( 260.5000, 5.400002 ),
+        DirectX::XMFLOAT2( 176, 0.5 )
+    };
+
+    m_CamPos = DirectX::XMFLOAT3( -112.9, 16.3, 18.9 );
+    m_Yaw    = -37.19;    m_Pitch  = 3.7;
+
+    m_FilterData.sigmaLuminance = 2;
 
     scene_scale = 1 / 10.0f;
     
@@ -1094,71 +1358,9 @@ bool DummyGame::LoadContent()
 
     UpdateDispatchRaysDesc();
 
-    {
-        // Load compute shader
-        ComPtr<ID3DBlob> svgf_atrous;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_atrous.cso", &svgf_atrous ) );
+    CreateDenoisingPipeline();
 
-        ComPtr<ID3DBlob> svgf_reprojection;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_reprojection.cso", &svgf_reprojection ) );
-
-        ComPtr<ID3DBlob> svgf_moments;
-        ThrowIfFailed( D3DReadFileToBlob( L"data/shaders/Playground/SVGF_moments.cso", &svgf_moments ) );
-
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
-
-        UINT offset = 0;
-        ranges[0].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrRayRenderTargets, 0, 0,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, 0 );
-        offset += m_nbrRayRenderTargets;
-        ranges[1].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrHistoryRenderTargets, 0, 1,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-        offset += m_nbrHistoryRenderTargets;
-        ranges[2].Init( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, m_nbrFilterRenderTargets, 0, 2,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-        offset += m_nbrFilterRenderTargets;
-
-        // Add for per frame, globals CB
-        offset += 2;
-
-        ranges[3].Init( D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_NONE, offset );
-
-        CD3DX12_ROOT_PARAMETER1 rayRootParams[1] = {};
-        rayRootParams[0].InitAsDescriptorTable( 4, ranges );
-
-        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-        rootSignatureDescription.Init_1_1( 1, rayRootParams, 0, nullptr, rootSignatureFlags );
-
-        m_DenoiserRootSig = m_Device->CreateRootSignature( rootSignatureDescription.Desc_1_1 );
-
-        // Create Pipeline State Object (PSO) for compute shader
-        struct DenoiserPipelineState
-        {
-            CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-            CD3DX12_PIPELINE_STATE_STREAM_CS             CS;
-        };
-        
-        // Atrous wavelet filter
-        struct DenoiserPipelineState svgfAtrousPipelineStateStream = {};
-        svgfAtrousPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfAtrousPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_atrous.Get() );
-        m_SVGF_AtrousPipelineState = m_Device->CreatePipelineStateObject( svgfAtrousPipelineStateStream );
-
-        // Reprojection filter
-        struct DenoiserPipelineState svgfReprojectionPipelineStateStream = {};
-        svgfReprojectionPipelineStateStream.pRootSignature = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfReprojectionPipelineStateStream.CS             = CD3DX12_SHADER_BYTECODE( svgf_reprojection.Get() );
-        m_SVGF_ReprojectionPipelineState = m_Device->CreatePipelineStateObject( svgfReprojectionPipelineStateStream );
-
-        // Moments filter
-        struct DenoiserPipelineState svgfMomentsPipelineStateStream = {};
-        svgfMomentsPipelineStateStream.pRootSignature               = m_DenoiserRootSig->GetD3D12RootSignature().Get();
-        svgfMomentsPipelineStateStream.CS = CD3DX12_SHADER_BYTECODE( svgf_moments.Get() );
-        m_SVGF_MomentsPipelineState = m_Device->CreatePipelineStateObject( svgfMomentsPipelineStateStream );
-
-    }
+    CreateRaySchedularPipeline();
 
 #endif
 
@@ -1252,25 +1454,96 @@ XMFLOAT3 CalculateDirectionVector(float yaw, float pitch) {
     return XMFLOAT3( dx, dy, dz );
 }
 
-void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward )
+void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForward, double deltaTime )
 {
     const float cam_dist = 1.0;
 
-    XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
-    XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
+    XMFLOAT3 camDir;
+    if (m_CubicInterpolation && m_CamPositions.size() >= 2) 
+    {
+        static int prev_itr_idx = m_CamPositions.size() - 2;
+        static int itr_idx      = m_CamPositions.size() - 1;
 
-    m_CamPos.x += moveForward * forward.x;
-    m_CamPos.y += moveForward * forward.y;
-    m_CamPos.z += moveForward * forward.z;
+        static double deltaAlpha = 0;
+        static double alpha = -1;
 
-    m_CamPos.x += moveVertically * right.x;
-    m_CamPos.y += moveVertically * right.y;
-    m_CamPos.z += moveVertically * right.z;
+        alpha += deltaAlpha * deltaTime;
+        if ((alpha > 1.0 || alpha < 0)) {
+            prev_itr_idx = itr_idx;
+            if (itr_idx + 1 >= m_CamPositions.size() && alpha >= 0) {
+                deltaAlpha = 0;
+            }
+            else
+            {
+                itr_idx = ( itr_idx + 1 ) % m_CamPositions.size();
+                alpha   = 0;
 
-    m_CamPos.y += moveUp;
+                auto diff = DirectX::XMVector3Length( DirectX::XMVectorSubtract(
+                    DirectX::XMLoadFloat3( &m_CamPositions[itr_idx % m_CamPositions.size()] ),
+                    DirectX::XMLoadFloat3( &m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()] ) ) );
 
-    XMFLOAT3          camDir = CalculateDirectionVector( m_Yaw, m_Pitch );
+                float length;
+                DirectX::XMStoreFloat( &length, diff );
+                deltaAlpha = 0.2 * cam_speed / length;
+            }
+            
+        }
 
+#if RecordInterpolate
+        if ( itr_idx + 1 >= m_CamPositions.size() )
+            m_Record = false;
+#endif
+
+        // positions
+        DirectX::XMFLOAT3 pos_n1 = m_CamPositions[prev_itr_idx];
+        DirectX::XMFLOAT3 pos_i0 = m_CamPositions[itr_idx % m_CamPositions.size()];
+        DirectX::XMFLOAT3 pos_i1 = m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()];
+        DirectX::XMFLOAT3 pos_i2 = m_CamPositions[( itr_idx + 2 ) % m_CamPositions.size()];
+
+        auto pos_d0 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat3( &pos_i1 ), DirectX::XMLoadFloat3( &pos_n1 ) );
+        pos_d0      = DirectX::XMVectorScale( pos_d0, 0.5 );
+        auto pos_d1 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat3( &pos_i2 ), DirectX::XMLoadFloat3( &pos_i0 ) );
+        pos_d1      = DirectX::XMVectorScale( pos_d1, 0.5 );
+
+        // rotations
+        DirectX::XMFLOAT2 rot_n1 = m_CamRotations[prev_itr_idx];
+        DirectX::XMFLOAT2 rot_i0 = m_CamRotations[itr_idx % m_CamPositions.size()];
+        DirectX::XMFLOAT2 rot_i1 = m_CamRotations[( itr_idx + 1 ) % m_CamPositions.size()];
+        DirectX::XMFLOAT2 rot_i2 = m_CamRotations[( itr_idx + 2 ) % m_CamPositions.size()];
+
+        auto rot_d0 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat2( &rot_i1 ), DirectX::XMLoadFloat2( &rot_n1 ) );
+        rot_d0      = DirectX::XMVectorScale( rot_d0, 0.5 );
+        auto rot_d1 = DirectX::XMVectorSubtract( DirectX::XMLoadFloat2( &rot_i2 ), DirectX::XMLoadFloat2( &rot_i0 ) );
+        rot_d1      = DirectX::XMVectorScale( rot_d1, 0.5 );
+
+        DirectX::XMStoreFloat3( &m_CamPos,
+                                DirectX::XMVectorHermite( DirectX::XMLoadFloat3( &pos_i0 ), pos_d0,
+                                                          DirectX::XMLoadFloat3( &pos_i1 ), pos_d1, alpha ) );
+
+        DirectX::XMFLOAT2 newRot;
+        DirectX::XMStoreFloat2( &newRot, DirectX::XMVectorHermite( DirectX::XMLoadFloat2( &rot_i0 ), rot_d0,
+                                                                   DirectX::XMLoadFloat2( &rot_i1 ), rot_d1, alpha ) );
+
+        m_Yaw = newRot.x;
+        m_Pitch = newRot.y;
+    }
+    else
+    {
+        XMFLOAT3 forward = CalculateDirectionVector( m_Yaw, m_Pitch );
+        XMFLOAT3 right   = CalculateDirectionVector( m_Yaw + 90, 0 );
+
+        m_CamPos.x += moveForward * forward.x;
+        m_CamPos.y += moveForward * forward.y;
+        m_CamPos.z += moveForward * forward.z;
+
+        m_CamPos.x += moveVertically * right.x;
+        m_CamPos.y += moveVertically * right.y;
+        m_CamPos.z += moveVertically * right.z;
+
+        m_CamPos.y += moveUp;
+    }
+
+    camDir = CalculateDirectionVector( m_Yaw, m_Pitch );
     auto              lookAt = DirectX::XMLoadFloat3( &m_CamPos ) + cam_dist * DirectX::XMLoadFloat3( &camDir );
     DirectX::XMFLOAT3 camLookAt;
     DirectX::XMStoreFloat3( &camLookAt, lookAt );
@@ -1282,31 +1555,41 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
 void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
-    static double   totalTime  = 0.0;
+    static double   timer_totalTime     = 0.0;
+    static double   total_time          = 0.0;
     static double   accumalatedRotation = 0.0;
 
-    totalTime += e.DeltaTime;
+    timer_totalTime += e.DeltaTime;
+    total_time += e.DeltaTime;
     accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
-    if ( totalTime > 1.0 )
+    if ( timer_totalTime > 1.0 )
     {
-        g_FPS = frameCount / totalTime;
+        g_FPS = frameCount / timer_totalTime;
 
         wchar_t buffer[512];
         ::swprintf_s( buffer, L"HDR [FPS: %f]", g_FPS );
         m_Window->SetWindowTitle( buffer );
 
         frameCount = 0;
-        totalTime  = 0.0;
+        timer_totalTime = 0.0;
 
         if (m_Print) {
             m_Print = false;
-            m_Logger->info( "Pos: ({:.7},{:.7},{:.7})", m_CamPos.x, m_CamPos.y, m_CamPos.z );
+            m_Logger->info( "Pos: {:.7},{:.7},{:.7}", m_CamPos.x, m_CamPos.y, m_CamPos.z );
+            #if 0
             DirectX::XMFLOAT3 tmpDir = CalculateDirectionVector( m_Yaw, m_Pitch );
             m_Logger->info( "Dir: ({:.7},{:.7},{:.7})", tmpDir.x, tmpDir.y, tmpDir.z );
+            #else
+            m_Logger->info( "Yaw: {:.7} , Pitch: {:.7}", m_Yaw, m_Pitch);
+            #endif
         }
 
+    }
+
+    if (m_Record) {
+        timeStampDeltaTime.push_back( std::make_pair( total_time, e.DeltaTime ) );
     }
 
     // Defacto update
@@ -1339,7 +1622,7 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
         UpdateCamera( 
             ( m_Right - m_Left ) * cam_speed * e.DeltaTime,
             ( m_Up - m_Down ) * cam_speed * e.DeltaTime, 
-            ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime 
+            ( m_Forward - m_Backward ) * cam_speed * e.DeltaTime, e.DeltaTime
         );
 
 
@@ -1377,73 +1660,85 @@ void DummyGame::OnGUI( const std::shared_ptr<dx12lib::CommandList>& commandList,
         ImGui::ShowDemoWindow( &showDemoWindow );
     }
     
-    if (ImGui::Begin( "Camera and Transform Sliders" ))// not demo window
-    {
-        ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 100 );
-        ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
-
-        ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
-        ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
-
-        ImGui::SliderInt( "Lod Exp2 Scaler", &lodScaleExp, 1, 24 );
-
-        int signedBounces = static_cast<int>( m_frameData.nbrBouncesPerPath );
-        ImGui::SliderInt( "Ray Bounce Budget", &signedBounces, 1, 50 );
-        m_frameData.nbrBouncesPerPath = static_cast<uint32_t>( signedBounces );
-
-        int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
-        ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
-        m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
-
-        ImGui::SliderFloat( "Ambient Light", &m_frameData.ambientLight, 0, 0.1 );
-
-        ImGui::End();
-    }
-
-    if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
-    {
-        if (m_Globals.hasSkybox == 1) 
+    if (m_DisplayGUI) {
+        if ( ImGui::Begin( "Camera and Transform Sliders" ) )  // not demo window
         {
-            float skyboxRotation = Math::Degrees( backgroundColour[0] );
-            ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
-            backgroundColour[0] = Math::Radians( skyboxRotation );
+            ImGui::SliderFloat( "Camera Speed", &cam_speed, 1, 100 );
+            ImGui::SliderFloat( "Rotation Speed", &scene_rot_speed, -1, 1 );
 
-            float skyboxIntensity = m_frameData.atmosphere.w;
-            ImGui::SliderFloat( "Skybox Intensity", &skyboxIntensity, 1, 10 );
-            m_frameData.atmosphere.w = skyboxIntensity;
+            ImGui::SliderFloat( "Scene Rot Offset", &scene_rot_offset, -180, 180 );
+            ImGui::SliderFloat( "Scene Scale", &scene_scale, 1, 1000 );
+
+            ImGui::SliderInt( "Lod Exp2 Scaler", &lodScaleExp, 1, 24 );
+
+            int signedBounces = static_cast<int>( m_frameData.nbrBouncesPerPath );
+            ImGui::SliderInt( "Ray Bounce Budget", &signedBounces, 1, 50 );
+            m_frameData.nbrBouncesPerPath = static_cast<uint32_t>( signedBounces );
+
+            int signedSPP = static_cast<int>( m_frameData.exponentSamplesPerPixel );
+            ImGui::SliderInt( "SPP Exponent (2^X)", &signedSPP, 0, 10 );
+            m_frameData.exponentSamplesPerPixel = static_cast<uint32_t>( signedSPP );
+
+            ImGui::SliderFloat( "Ambient Light", &m_frameData.ambientLight, 0, 0.1 );
 
             ImGui::End();
         }
-        else 
-        {
-            ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
 
-            float atmosphereIntensity = m_frameData.atmosphere.w;
-            ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
-            m_frameData.atmosphere.w = atmosphereIntensity;
+        if ( ImGui::Begin( "Skybox/Atmosphere Sliders" ) )
+        {
+            if ( m_Globals.hasSkybox == 1 )
+            {
+                float skyboxRotation = Math::Degrees( backgroundColour[0] );
+                ImGui::SliderFloat( "Skybox Rotation", &skyboxRotation, -180, 180 );
+                backgroundColour[0] = Math::Radians( skyboxRotation );
+
+                float skyboxIntensity = m_frameData.atmosphere.w;
+                ImGui::SliderFloat( "Skybox Intensity", &skyboxIntensity, 1, 10 );
+                m_frameData.atmosphere.w = skyboxIntensity;
+
+                ImGui::End();
+            }
+            else
+            {
+                ImGui::ColorPicker3( "Atmosphere Colour", backgroundColour );
+
+                float atmosphereIntensity = m_frameData.atmosphere.w;
+                ImGui::SliderFloat( "Atmosphere Intensity", &atmosphereIntensity, 1, 10 );
+                m_frameData.atmosphere.w = atmosphereIntensity;
+
+                ImGui::End();
+            }
+        }
+
+        if ( ImGui::Begin( "Filter Settings" ) )
+        {
+            float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
+            ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 20 );
+            m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
+
+            ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
+
+            ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
+            ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
+            ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 50 );
+
+            ImGui::End();
+        }
+
+        if ( ImGui::Begin( "Adaptive Sampler" ) )
+        {
+            float currentScaleAdjusted = m_FilterData.m_AS_PosDiffLimit / scene_scale;
+            ImGui::SliderFloat( "Position Diff", &currentScaleAdjusted, 0.001, 20 );
+            m_FilterData.m_AS_PosDiffLimit = currentScaleAdjusted * scene_scale;
+
+            ImGui::SliderFloat( "Length Colour Diff", &m_FilterData.m_AS_ColourLimit, 0.0001, 1.0 );
+
+            ImGui::SliderFloat( "Normal Dot Diff", &m_FilterData.m_AS_NormalDotLimit, 0.00, 1 );
 
             ImGui::End();
         }
     }
-
-    if ( ImGui::Begin( "Filter Settings" ) )
-    {
-        float currentScaleAdjusted = m_FilterData.m_ReprojectErrorLimit / scene_scale;
-        ImGui::SliderFloat( "Reproj Err", &currentScaleAdjusted, 0.001, 20 );
-        m_FilterData.m_ReprojectErrorLimit = currentScaleAdjusted * scene_scale;
-
-        ImGui::SliderFloat( "RTRT blend", &m_FilterData.m_alpha_new, 0.01, 1.0 );
-
-
-
-        ImGui::SliderFloat( "Sigma Z", &m_FilterData.sigmaDepth, 0.01, 100 );
-        ImGui::SliderFloat( "Sigma N ", &m_FilterData.sigmaNormal, 1, 200 );
-        ImGui::SliderFloat( "Sigma L", &m_FilterData.sigmaLuminance, 0.005, 50 );
-
-
-
-        ImGui::End();
-    }
+    
 
     m_GUI->Render( commandList, renderTarget );
 }
@@ -1459,7 +1754,8 @@ void DummyGame::OnRender()
 
     auto RenderTarget = m_IsLoading ? m_SwapChain->GetRenderTarget() : m_RayRenderTarget;
 
-    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, m_FilterData.gridSize > 0 ? 0.0f : 1.0f };
+
     if (m_IsLoading) 
     {
         auto& swapChainRT         = m_SwapChain->GetRenderTarget();
@@ -1475,6 +1771,11 @@ void DummyGame::OnRender()
     }
     else
     {
+        // Set up block size for compute shaders
+        #define BLOCK_SIZE 16.0 
+
+
+        auto d3d12Command = commandList->GetD3D12CommandList();
 #if RAY_TRACER /* Ray tracing calling. */
         {
 
@@ -1482,19 +1783,41 @@ void DummyGame::OnRender()
             AccelerationBuffer::CreateTopLevelAS(m_Device.get(), commandList.get(), &mTlasSize, &m_TlasBuffers,
                 m_Instances, m_InstanceDescBuffer.get(), true);
 #endif
-
-            auto colourRayOutput = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( 0 ) );
+            // clear image
+            auto colourRayOutput = m_RayRenderTarget.GetTexture( m_ColourSlot );
             commandList->ClearTexture( colourRayOutput, clearColor );
             commandList->UAVBarrier( colourRayOutput, true );
 
+            auto normalsRayOutput = m_RayRenderTarget.GetTexture( m_ColourSlot );
+            //commandList->ClearTexture( normalsRayOutput, clearColorAlphaOne );
+            commandList->UAVBarrier( normalsRayOutput, true );
+            
             // Set global root signature
-            commandList->SetComputeRootSignature(m_GlobalRootSig);
+            commandList->SetComputeRootSignature( m_RayScheduleRootSig );
+            // Set pipeline and heaps for shader table
+            commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
+            d3d12Command->SetComputeRootDescriptorTable( 0, m_RayShaderHeap->GetGpuDescriptorHandle() );
 
-            // Stage 1, sample primaries
+            for (uint32_t i = 0; i <= m_FilterData.gridSize; ++i)
             {
+                commandList->SetPipelineState( m_RaySchedulePipelineState, true, m_RayShaderHeap );
+                commandList->SetCompute32BitConstants( 1, 1, &i );
+
+                // Set pipeline for schedule shader and dispatch
+                commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
+                                       static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
+
+                for ( uint32_t i = 0; i < m_nbrRayRenderTargets; ++i )
+                {
+                    auto resource = m_RayRenderTarget.GetTexture( static_cast<AttachmentPoint>( i ) );
+
+                    commandList->UAVBarrier( resource, true );
+                }
+
+
+
                 // Set pipeline and heaps for shader table
                 commandList->SetPipelineState1( m_RayPipelineState, m_RayShaderHeap );
-
                 // Dispatch Rays
                 commandList->DispatchRays( &m_RaytraceDesc );
 
@@ -1504,8 +1827,9 @@ void DummyGame::OnRender()
 
                     commandList->UAVBarrier( resource, true );
                 }
-            }
-            
+            } 
+
+
 
         }
 #endif
@@ -1519,12 +1843,7 @@ void DummyGame::OnRender()
 
         // Set global root signature for denoise shaders
         commandList->SetComputeRootSignature(m_DenoiserRootSig);
-
-        // Set up block size for shaders
-#define BLOCK_SIZE 16.0 
-
-// Get commandlist and set heap for denoise shaders
-        auto d3d12Command = commandList->GetD3D12CommandList();
+        // Get commandlist and set heap for denoise shaders
         d3d12Command->SetComputeRootDescriptorTable(0, m_RayShaderHeap->GetGpuDescriptorHandle());
 
             // Set pipeline for REPROJECTION shader and dispatch
@@ -1552,8 +1871,8 @@ void DummyGame::OnRender()
 
         // Set pipeline for MOMENTS shader and dispatch
         commandList->SetPipelineState(m_SVGF_MomentsPipelineState, false, m_RayShaderHeap);
-            commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
-                               static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
+        commandList->Dispatch( static_cast<unsigned int>( std::ceil( m_Width / BLOCK_SIZE ) ),
+                            static_cast<unsigned int>( std::ceil( m_Height / BLOCK_SIZE ) ), 1, true );
 
         // Wait for dispatch to finish writing.
         for (uint32_t i = 0; i < m_nbrFilterRenderTargets; ++i) {
@@ -1577,12 +1896,6 @@ void DummyGame::OnRender()
                 
         // A TROUS WAVELET FILTER
         for (int i = 1; i <= 5; ++i) {
-            DenoiserFilterData* pData;
-            ThrowIfFailed( m_FilterCB->Map( (void**)&pData ) );
-            {
-                pData->stepSize = 1;
-            }
-            m_FilterCB->Unmap();
 
             // Set pipeline for MOMENTS shader and dispatch
             commandList->SetPipelineState( m_SVGF_AtrousPipelineState, false, m_RayShaderHeap );
@@ -1712,6 +2025,22 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
         case KeyCode::P:
             m_Print = true;
             break;
+        case KeyCode::U:
+            m_DisplayGUI = !m_DisplayGUI;
+            break;
+        case KeyCode::L:
+#if RecordInterpolate
+            m_Record             = true;
+#endif
+            m_CubicInterpolation = !m_CubicInterpolation;
+            break;
+        case KeyCode::H:
+            m_Record = !m_Record;
+            if ( m_Record )
+                m_Logger->info( "Toggle recorder! Now Active" );
+            else
+                m_Logger->info( "Toggle recorder! Now Inactive" );
+            break;
         }
     }
 }
@@ -1760,7 +2089,7 @@ void DummyGame::OnMouseMoved( MouseMotionEventArgs& e )
     const float mouseSpeed = 0.1f;
     if ( !ImGui::GetIO().WantCaptureMouse )
     {
-        if ( e.LeftButton )
+        if ( e.LeftButton && !m_CubicInterpolation)
         {
             m_Pitch += e.RelY * mouseSpeed;
 

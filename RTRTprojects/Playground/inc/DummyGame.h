@@ -240,9 +240,16 @@ struct DenoiserFilterData
 
     float sigmaDepth = 1;
     float sigmaNormal = 128;
+
     float sigmaLuminance = 4;
 
-    int stepSize = 1;
+
+    int gridSize = 0;
+
+    float m_AS_PosDiffLimit = 1;
+    float m_AS_NormalDotLimit    = 0.98;
+    float m_AS_DepthDiffLimit = 1;
+    float m_AS_ColourLimit       = 0.1;
 
     void BuildOldAndNewDenoiser( FrameData* pOld, FrameData* pNew, 
         DirectX::XMFLOAT2 cameraWinSize, int width, int height )
@@ -287,6 +294,7 @@ struct DenoiserFilterData
     }
 };
 
+#define RecordInterpolate 0
 
 class DummyGame
 {
@@ -377,7 +385,7 @@ private:
     size_t m_ShaderTableEntrySize;
     size_t m_ShadersEntriesPerGeometry;
     
-    uint64_t mTlasSize = 0;
+    uint64_t mTlasSize = 2;
     
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_StdHitRootSig;
@@ -410,11 +418,6 @@ private:
 
     const uint32_t        m_nbrFilterRenderTargets = 5;
     dx12lib::RenderTarget m_FilterRenderTarget;
-    #define FILTER_SLOT_COLOUR_SOURCE 0
-    #define FILTER_SLOT_MOMENT_SOURCE 1
-    #define FILTER_SLOT_SDR_TARGET    2
-    #define FILTER_SLOT_COLOUR_TARGET 3
-    #define FILTER_SLOT_MOMENT_TARGET 4
 
     dx12lib::AttachmentPoint m_FilterMomentSource = dx12lib::AttachmentPoint::Color1;
     dx12lib::AttachmentPoint m_FilterOutputSDR = dx12lib::AttachmentPoint::Color2;
@@ -435,6 +438,16 @@ private:
             ray depth, payload, etc etc.
     */
     void CreateRayTracingPipeline(  );
+
+    /*
+        Create denoising root signature and pipeline stages
+    */
+    void CreateDenoisingPipeline( );
+
+    /*
+        Create schedular root signature and pipeline stages.
+    */
+    void CreateRaySchedularPipeline();
 
     /*
         Upload shader programs and point at relative resources needed per function
@@ -472,14 +485,22 @@ private:
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_AtrousPipelineState;
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_ReprojectionPipelineState; 
     std::shared_ptr<dx12lib::PipelineStateObject> m_SVGF_MomentsPipelineState; 
+    
+    std::shared_ptr<dx12lib::RootSignature>       m_RayScheduleRootSig;
+    std::shared_ptr<dx12lib::PipelineStateObject> m_RaySchedulePipelineState;
 
 #endif
 
-    void UpdateCamera( float moveVertically, float moveUp, float moveForward );
+    void printToFile();
+
+    void UpdateCamera( float moveVertically, float moveUp, float moveForward, double deltaTime );
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     FLOAT backgroundColour[3];
     int lodScaleExp = 1;
+
+    std::vector<DirectX::XMFLOAT3> m_CamPositions;
+    std::vector<DirectX::XMFLOAT2> m_CamRotations;
 
     // General
     std::shared_ptr<dx12lib::Device>    m_Device;
@@ -524,6 +545,12 @@ private:
     bool m_Fullscreen;
 
     bool m_Print;
+
+    bool m_DisplayGUI = true;
+    bool m_CubicInterpolation = false;
+    bool m_Record             = false;
+
+    std::vector<std::pair<double, double>> timeStampDeltaTime;
 
     // Scale the HDR render target to a fraction of the window size.
     float m_RenderScale;

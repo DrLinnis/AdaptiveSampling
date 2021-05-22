@@ -364,7 +364,27 @@ public:
     {
         SetGraphicsDynamicConstantBuffer( rootParameterIndex, sizeof( T ), &data );
     }
+    /**
+     * Set a compute dynamic constant buffer data to an inline descriptor in the root
+     * signature. // Author: Linus
+     */
+    void SetComputeDynamicConstantBuffer( uint32_t rootParameterIndex, size_t sizeInBytes, const void* bufferData );
+    template<typename T>
+    void SetComputeDynamicConstantBuffer( uint32_t rootParameterIndex, const T& data )
+    {
+        SetComputeDynamicConstantBuffer( rootParameterIndex, sizeof( T ), &data );
+    }
 
+
+    /**
+     * Set a compute dynamic UAV. // Author: Linus
+     */
+    void SetComputeDynamicUnorderedAccesView( uint32_t rootParameterIndex, size_t sizeInBytes, const void* bufferData );
+    template<typename T>
+    void SetComputeDynamicUnorderedAccesView( uint32_t rootParameterIndex, const T& data )
+    {
+        SetComputeDynamicUnorderedAccesView( rootParameterIndex, sizeof( T ), &data );
+    }
     /**
      * Set a set of 32-bit constants on the graphics pipeline.
      */
