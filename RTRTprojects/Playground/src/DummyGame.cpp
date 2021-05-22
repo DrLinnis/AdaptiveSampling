@@ -41,6 +41,9 @@ using namespace Microsoft::WRL;
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 
+#include <iostream>
+#include <fstream>
+
 using namespace dx12lib;
 using namespace DirectX;
 
@@ -93,13 +96,37 @@ DummyGame::~DummyGame()
 
 }
 
+void DummyGame::printToFile() 
+{
+    std::ofstream myfile;
+    myfile.open( "example.txt" );
+    //myfile.clear();
+    if ( myfile.is_open() )
+    {
+        int i = 0;
+        for ( std::pair<double, double>& pair: timeStampDeltaTime )
+        {
+            myfile << i << ", " << pair.first << ", " << pair.second << std::endl;
+            ++i;
+        }
+    }
+    else
+        myfile << "Unable to open file";
+
+    myfile.close();
+}
+
 uint32_t DummyGame::Run()
 {
     LoadContent();
 
     m_Window->Show();
 
+    timeStampDeltaTime.clear();
+
     uint32_t retCode = GameFramework::Get().Run();
+
+    printToFile();
 
     UnloadContent();
 
@@ -968,8 +995,20 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
-    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
-    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+
+    m_FilterData.sigmaLuminance = 10;
 
 #elif CORNELL_BOX_LONG
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-OriginalAllSides.obj" );
@@ -981,8 +1020,20 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
-    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
-    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+    m_FilterData.sigmaLuminance = 10;
 
 #elif CORNELL_MIRROR
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Mirror.obj" );
@@ -994,8 +1045,20 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
-    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) };
-    m_CamRotations = { DirectX::XMFLOAT2( 32, -3 ), DirectX::XMFLOAT2( -27, 1.4 ) };
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+    };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
+    };
+    m_FilterData.sigmaLuminance = 10;
 
 #elif CORNELL_SPHERES
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/CornellBox/CornellBox-Sphere.obj" );
@@ -1007,12 +1070,20 @@ bool DummyGame::LoadContent()
 
     m_CamPos = { -22, 9, 0 };
 
-    m_CamPositions = { DirectX::XMFLOAT3( -17.2, 8.1, -10 ),
-                       DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ) 
+    m_CamPositions = {
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
+        DirectX::XMFLOAT3( -17.2, 8.1, -10 ), DirectX::XMFLOAT3( -17.2, 8.1, 9.0 ),
     };
-    m_CamRotations = {  DirectX::XMFLOAT2( 32, -3 ), 
-                        DirectX::XMFLOAT2( -27, 1.4 )  
+    m_CamRotations = {
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ),
+        DirectX::XMFLOAT2( 32, -3 ),   DirectX::XMFLOAT2( -27, 1.4 ), DirectX::XMFLOAT2( 32, -3 ),
+        DirectX::XMFLOAT2( -27, 1.4 ),
     };
+    m_FilterData.sigmaLuminance = 10;
 
 
 #elif CORNELL_WATER
@@ -1032,9 +1103,16 @@ bool DummyGame::LoadContent()
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/SunTemple/sunTemple.obj" );
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 
+    #if 1 
     m_CamPos = DirectX::XMFLOAT3( 7.54, 12.63, 15.57 );
     m_Yaw    = -110;
     m_Pitch  = 15;
+    #else
+    m_CamPos = DirectX::XMFLOAT3( -13.31532, 8.033751, -71.27465 );
+    m_Yaw    = -302.1001;
+    m_Pitch  = 8.60001;
+    #endif
+
 
     scene_scale = 2;
 
@@ -1051,10 +1129,16 @@ bool DummyGame::LoadContent()
         DirectX::XMFLOAT2( -192.4, 6.30 ), DirectX::XMFLOAT2( -264.1, 15.0 ), DirectX::XMFLOAT2( -270.6, 11.7)
     };
 
+    // Std settings for scene.
+    m_frameData.atmosphere.x = Math::Radians( 72 );
+    m_frameData.ambientLight = 0.05;
+    m_FilterData.sigmaLuminance = 50;
+    m_FilterData.sigmaDepth     = 27;
+
 #elif SPONZA
     m_RaySceneMesh = commandList->LoadSceneFromFile( L"Assets/Models/crytek-sponza/sponza_nobanner.obj" );
     // merge scenes
-    lodScaleExp            = 6;
+    lodScaleExp            = 9;
     //m_frameData.atmosphere = DirectX::XMFLOAT4( .529, .808, .922, 1 );
     m_frameData.ambientLight    = 0.0;
     m_Globals.nbrActiveLights   = 5;
@@ -1087,23 +1171,28 @@ bool DummyGame::LoadContent()
     }
     m_RaySceneMesh->SetSkybox( cubeMapIntensityBackground, cubeMapDiffuseBackground );
 
-     m_CamPositions = {
+    m_CamPositions = {
         DirectX::XMFLOAT3( -128.0997, 61.42513, 27.25364 ), DirectX::XMFLOAT3( -85.28310, 47.52109, 11.80546 ),
         DirectX::XMFLOAT3( -40.24589, 18.54801, 11.25088 ), DirectX::XMFLOAT3( 11.76781, 16.07290, 11.50741 ),
         DirectX::XMFLOAT3( 58.94822, 13.74548, 5.295980 ), DirectX::XMFLOAT3( 99.80611, 12.03107, 7.033977 ),
         DirectX::XMFLOAT3( 118.5805, 11.77596, 18.70195 ), DirectX::XMFLOAT3( 114.6657, 12.50319, 21.65592 ), 
         DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ), DirectX::XMFLOAT3( 114.1840, 15.07475, -14.78958 ),
         DirectX::XMFLOAT3( 96.96, 14.3, 1.8)
-     };
+    };
 
-     m_CamRotations = {
-         DirectX::XMFLOAT2( -27.60001, -3.399998 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
-         DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
-         DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( 63.09998, -2.099998 ),
-         DirectX::XMFLOAT2( 125.3000, 0.6000019 ), DirectX::XMFLOAT2( 233.5000, 5.400002 ),
-         DirectX::XMFLOAT2( 233.5000, 5.400002 ), DirectX::XMFLOAT2( 260.5000, 5.400002 ),
-         DirectX::XMFLOAT2( 176, 0.5 )
-     };
+    m_CamRotations = {
+        DirectX::XMFLOAT2( -27.60001, -3.399998 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+        DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( -7.500011, -2.799999 ),
+        DirectX::XMFLOAT2( -7.500011, -2.799999 ), DirectX::XMFLOAT2( 63.09998, -2.099998 ),
+        DirectX::XMFLOAT2( 125.3000, 0.6000019 ), DirectX::XMFLOAT2( 233.5000, 5.400002 ),
+        DirectX::XMFLOAT2( 233.5000, 5.400002 ), DirectX::XMFLOAT2( 260.5000, 5.400002 ),
+        DirectX::XMFLOAT2( 176, 0.5 )
+    };
+
+    m_CamPos = DirectX::XMFLOAT3( -112.9, 16.3, 18.9 );
+    m_Yaw    = -37.19;    m_Pitch  = 3.7;
+
+    m_FilterData.sigmaLuminance = 2;
 
     scene_scale = 1 / 10.0f;
     
@@ -1372,29 +1461,38 @@ void DummyGame::UpdateCamera( float moveVertically, float moveUp, float moveForw
     XMFLOAT3 camDir;
     if (m_CubicInterpolation && m_CamPositions.size() >= 2) 
     {
-        static int prev_itr_idx = m_CamPositions.size() - 1;
-        static int itr_idx   = 0;
+        static int prev_itr_idx = m_CamPositions.size() - 2;
+        static int itr_idx      = m_CamPositions.size() - 1;
 
-        static double deltaAlpha = 0.0;
+        static double deltaAlpha = 0;
         static double alpha = -1;
 
         alpha += deltaAlpha * deltaTime;
-        if (alpha > 1.0 || alpha < 0) {
+        if ((alpha > 1.0 || alpha < 0)) {
             prev_itr_idx = itr_idx;
-            itr_idx = ( itr_idx + 1 ) % m_CamPositions.size();
-            alpha   = 0;
+            if (itr_idx + 1 >= m_CamPositions.size() && alpha >= 0) {
+                deltaAlpha = 0;
+            }
+            else
+            {
+                itr_idx = ( itr_idx + 1 ) % m_CamPositions.size();
+                alpha   = 0;
 
-            auto diff  = DirectX::XMVector3Length(
-                DirectX::XMVectorSubtract(
-                    DirectX::XMLoadFloat3(&m_CamPositions[itr_idx % m_CamPositions.size()]),
-                    DirectX::XMLoadFloat3(&m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()])
-                )
-            );
+                auto diff = DirectX::XMVector3Length( DirectX::XMVectorSubtract(
+                    DirectX::XMLoadFloat3( &m_CamPositions[itr_idx % m_CamPositions.size()] ),
+                    DirectX::XMLoadFloat3( &m_CamPositions[( itr_idx + 1 ) % m_CamPositions.size()] ) ) );
 
-            float length;
-            DirectX::XMStoreFloat(&length, diff);
-            deltaAlpha = 0.2 * cam_speed / length;
+                float length;
+                DirectX::XMStoreFloat( &length, diff );
+                deltaAlpha = 0.2 * cam_speed / length;
+            }
+            
         }
+
+#if RecordInterpolate
+        if ( itr_idx + 1 >= m_CamPositions.size() )
+            m_Record = false;
+#endif
 
         // positions
         DirectX::XMFLOAT3 pos_n1 = m_CamPositions[prev_itr_idx];
@@ -1458,9 +1556,11 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
 {
     static uint64_t frameCount = 0;
     static double   timer_totalTime     = 0.0;
+    static double   total_time          = 0.0;
     static double   accumalatedRotation = 0.0;
 
     timer_totalTime += e.DeltaTime;
+    total_time += e.DeltaTime;
     accumalatedRotation += scene_rot_speed * e.DeltaTime;
     frameCount++;
 
@@ -1486,6 +1586,10 @@ void DummyGame::OnUpdate( UpdateEventArgs& e )
             #endif
         }
 
+    }
+
+    if (m_Record) {
+        timeStampDeltaTime.push_back( std::make_pair( total_time, e.DeltaTime ) );
     }
 
     // Defacto update
@@ -1925,7 +2029,17 @@ void DummyGame::OnKeyPressed( KeyEventArgs& e )
             m_DisplayGUI = !m_DisplayGUI;
             break;
         case KeyCode::L:
+#if RecordInterpolate
+            m_Record             = true;
+#endif
             m_CubicInterpolation = !m_CubicInterpolation;
+            break;
+        case KeyCode::H:
+            m_Record = !m_Record;
+            if ( m_Record )
+                m_Logger->info( "Toggle recorder! Now Active" );
+            else
+                m_Logger->info( "Toggle recorder! Now Inactive" );
             break;
         }
     }

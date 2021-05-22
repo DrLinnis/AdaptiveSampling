@@ -1013,11 +1013,11 @@ void rayGen()
         float dx = rnd(payload.seed) - 0.5;
         float dy = rnd(payload.seed) - 0.5;
         
-        float4 pixelRayRnd = pixelRay + float4(dx, dy, 0, 0);
+        float4 pixelRayRnd = pixelRay + (i > 0) * float4(dx / dims.x, dy / dims.y, 0, 0);
         
         
         // Opting for no random in initial pixel to not confuse
-        float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRay));
+        float3 direction = normalize(mul(frame.cameraPixelToWorld, pixelRayRnd));
         
         payload = TraceFullPath(camOrigin, direction, payload.seed);
         

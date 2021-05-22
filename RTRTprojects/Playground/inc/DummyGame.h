@@ -294,6 +294,7 @@ struct DenoiserFilterData
     }
 };
 
+#define RecordInterpolate 0
 
 class DummyGame
 {
@@ -384,7 +385,7 @@ private:
     size_t m_ShaderTableEntrySize;
     size_t m_ShadersEntriesPerGeometry;
     
-    uint64_t mTlasSize = 0;
+    uint64_t mTlasSize = 2;
     
     std::shared_ptr<dx12lib::RootSignature>             m_RayGenRootSig;
     std::shared_ptr<dx12lib::RootSignature>             m_StdHitRootSig;
@@ -490,6 +491,8 @@ private:
 
 #endif
 
+    void printToFile();
+
     void UpdateCamera( float moveVertically, float moveUp, float moveForward, double deltaTime );
 
     FLOAT clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -545,6 +548,9 @@ private:
 
     bool m_DisplayGUI = true;
     bool m_CubicInterpolation = false;
+    bool m_Record             = false;
+
+    std::vector<std::pair<double, double>> timeStampDeltaTime;
 
     // Scale the HDR render target to a fraction of the window size.
     float m_RenderScale;
